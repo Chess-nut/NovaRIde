@@ -12,3 +12,10 @@ NovaRide is a highly calibrated, ESP32-driven smart helmet system engineered to 
  - **YL-99 Crash Collision Sensor:** Mechanical impact switch utilized in tandem with the MPU6050 for intersecting trigger validation.
  - **MQ-3 Alcohol Gas Sensor:** Preventive sensor situated in the mouth vent to monitor breath alcohol concentration levels.
  - **NEO-6M GPS Module:** Captures high-precision geographical coordinates (Latitude and Longitude) in real-time.
+
+### Software Stack
+ - **Firmware:** Arduino IDE (C++)
+ - **Mobile App Development:** Flutter SDK & Dart Language (Cross-platform for Android clients)
+ - **Web Portal Development:** HTML5, CSS3, and PHP
+ - **Backend & Cloud Database:** Firebase Realtime Database & Firebase Authentication
+ - **Mapping Integration:** Google Maps Platform API

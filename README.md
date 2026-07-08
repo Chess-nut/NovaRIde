@@ -1,7 +1,7 @@
 # NovaRIde
 An Integrated Internet of Things (IoT) Helmet Framework for Real-Time Accident Detection and Emergency Response Among Ride-Hailing Riders.
 
-NovaRide is a highly calibrated, ESP32-driven smart helmet system engineered to mitigate the critical "Golden Hour" delay in pre-hospital emergency medical response for motorcycle riders in the Philippines. By implementing localized edge computing and multi-sensor intersecting trigger logic, NovaRide accurately classifies true helmet collisions while eliminating false alarms caused by minor road bumps or dropped helmets.
+NovaRide ESP32 based high calibrated smart helmet system developed to overcome a crucial issue in emergency medical response time: the "Golden Hour", particularly for the Philippines motorcycle riders. Localizing computation (edge computing) and cross multiple sensors with intersecting triggering logic,NovaRide detects only the true collision while ignoring false triggers like road bump or dropped helmet.
 
 
 ## 🛠️ Tools & Technologies Used

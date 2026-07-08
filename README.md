@@ -14,7 +14,7 @@ NovaRide ESP32 based high calibrated smart helmet system developed to overcome a
  - **NEO-6M GPS Module:** Captures high-precision geographical coordinates (Latitude and Longitude) in real-time.
 
 ### Software Stack
- - **Firmware:** Arduino IDE (C++)
+ - **Firmware:** Arduino IDE
  - **Mobile App Development:** Flutter SDK & Dart Language (Cross-platform for Android clients)
  - **Web Portal Development:** HTML5, CSS3, and PHP
  - **Backend & Cloud Database:** Firebase Realtime Database & Firebase Authentication

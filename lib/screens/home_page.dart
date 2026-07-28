@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'analytics_page.dart';
+import 'alerts_page.dart';
+import 'profile_page.dart';
 
 /// Color palette used across the NovaRide dashboard.
 /// Keeping these in one place makes it easy to re-theme later.
@@ -41,12 +44,12 @@ class HomePage extends StatelessWidget {
               const SizedBox(height: 24),
               _buildSectionTitle('EMERGENCY SOS'),
               const SizedBox(height: 20),
-              _buildSosButton(),
+              _buildSosButton(context),
             ],
           ),
         ),
       ),
-      bottomNavigationBar: const _BottomNavBar(),
+      bottomNavigationBar: const NovaBottomNavBar(selectedIndex: 0),
     );
   }
 
@@ -300,7 +303,7 @@ class HomePage extends StatelessWidget {
   }
 
   // ---- Big glowing SOS button ----
-  Widget _buildSosButton() {
+  Widget _buildSosButton(BuildContext context) {
     return Center(
       child: Container(
         width: 150,
@@ -321,7 +324,9 @@ class HomePage extends StatelessWidget {
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: () {
-              // TODO: trigger emergency SOS flow
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AlertsPage()),
+              );
             },
             child: const Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -559,8 +564,44 @@ class _TripMetric extends StatelessWidget {
 }
 
 /// Bottom navigation bar: Home, Analytics, Alerts, Profile.
-class _BottomNavBar extends StatelessWidget {
-  const _BottomNavBar();
+///
+/// Public (not prefixed with `_`) so other screens — like AnalyticsPage —
+/// can reuse it and just tell it which tab is currently selected.
+class NovaBottomNavBar extends StatelessWidget {
+  final int selectedIndex;
+
+  const NovaBottomNavBar({super.key, required this.selectedIndex});
+
+  void _onTabTapped(BuildContext context, int index) {
+    if (index == selectedIndex) return;
+
+    switch (index) {
+      case 0:
+        Navigator.of(context).pushReplacement(_noAnimationRoute(const HomePage()));
+        break;
+      case 1:
+        Navigator.of(context).pushReplacement(_noAnimationRoute(const AnalyticsPage()));
+        break;
+      case 2:
+        Navigator.of(context).pushReplacement(_noAnimationRoute(const AlertsPage()));
+        break;
+      case 3:
+        Navigator.of(context).pushReplacement(_noAnimationRoute(const ProfilePage()));
+        break;
+      default:
+        break;
+    }
+  }
+
+  /// A page route with no transition animation — the new screen just
+  /// appears instantly, like switching tabs rather than "navigating".
+  static Route _noAnimationRoute(Widget page) {
+    return PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -574,11 +615,31 @@ class _BottomNavBar extends StatelessWidget {
         top: false,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: const [
-            _NavItem(icon: Icons.home_filled, label: 'HOME', selected: true),
-            _NavItem(icon: Icons.show_chart, label: 'ANALYTICS'),
-            _NavItem(icon: Icons.notifications_none, label: 'ALERTS'),
-            _NavItem(icon: Icons.person_outline, label: 'PROFILE'),
+          children: [
+            _NavItem(
+              icon: Icons.home_filled,
+              label: 'HOME',
+              selected: selectedIndex == 0,
+              onTap: () => _onTabTapped(context, 0),
+            ),
+            _NavItem(
+              icon: Icons.show_chart,
+              label: 'ANALYTICS',
+              selected: selectedIndex == 1,
+              onTap: () => _onTabTapped(context, 1),
+            ),
+            _NavItem(
+              icon: Icons.notifications_none,
+              label: 'ALERTS',
+              selected: selectedIndex == 2,
+              onTap: () => _onTabTapped(context, 2),
+            ),
+            _NavItem(
+              icon: Icons.person_outline,
+              label: 'PROFILE',
+              selected: selectedIndex == 3,
+              onTap: () => _onTabTapped(context, 3),
+            ),
           ],
         ),
       ),
@@ -590,26 +651,35 @@ class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool selected;
+  final VoidCallback? onTap;
 
   const _NavItem({
     required this.icon,
     required this.label,
     this.selected = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final color = selected ? NovaColors.cyan : NovaColors.secondaryText;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color, size: 22),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w600),
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

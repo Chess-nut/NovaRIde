@@ -23,6 +23,14 @@ class Rider {
     required this.phone,
     required this.status,
   });
+
+  Rider copyWith({RiderStatus? status}) => Rider(
+        id: id,
+        fullName: fullName,
+        helmetId: helmetId,
+        phone: phone,
+        status: status ?? this.status,
+      );
 }
 
 class HelmetTelemetry {
@@ -47,6 +55,23 @@ class HelmetTelemetry {
     required this.lng,
     required this.lastUpdate,
   });
+
+  HelmetTelemetry copyWith({
+    double? speedKmh,
+    double? lat,
+    double? lng,
+    DateTime? lastUpdate,
+  }) =>
+      HelmetTelemetry(
+        riderId: riderId,
+        speedKmh: speedKmh ?? this.speedKmh,
+        alcoholLevel: alcoholLevel,
+        batteryPct: batteryPct,
+        gpsFix: gpsFix,
+        lat: lat ?? this.lat,
+        lng: lng ?? this.lng,
+        lastUpdate: lastUpdate ?? this.lastUpdate,
+      );
 }
 
 class AlertEvent {
@@ -56,6 +81,10 @@ class AlertEvent {
   final AlertType type;
   final double lat;
   final double lng;
+
+  /// Street-level location shown in the alert feed. Phase 4 fills this from
+  /// a reverse-geocode of [lat]/[lng]; the mock source hardcodes it.
+  final String address;
   final DateTime timestamp;
   final AlertStatus status;
 
@@ -66,6 +95,7 @@ class AlertEvent {
     required this.type,
     required this.lat,
     required this.lng,
+    required this.address,
     required this.timestamp,
     required this.status,
   });

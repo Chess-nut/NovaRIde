@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:novaride/admin/widgets/dashboard/recent_alerts_feed_panel.dart';
 import 'package:novaride/main_admin.dart';
 
 /// Desktop-sized surface — the shell is designed for >= 1280px.
@@ -14,11 +15,21 @@ Future<void> _useDesktopSurface(WidgetTester tester) async {
   addTearDown(tester.view.reset);
 }
 
+/// The dashboard runs a looping pulse animation and two simulation timers, so
+/// it never settles. Every post-login pump is an explicit duration instead.
 Future<void> _signIn(WidgetTester tester) async {
   await tester.enterText(find.byType(TextFormField).first, 'admin@novaride.ph');
   await tester.enterText(find.byType(TextFormField).last, 'admin123');
   await tester.tap(find.text('SIGN IN'));
-  await tester.pumpAndSettle();
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 1));
+}
+
+/// Unmounts the shell so the dashboard's timers are cancelled — flutter_test
+/// fails the test if any are still pending, which is the leak check.
+Future<void> _tearDownTree(WidgetTester tester) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pump();
 }
 
 void main() {
@@ -40,24 +51,53 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Invalid email or password'), findsOneWidget);
-    expect(find.text('Live Fleet'), findsNothing);
+    expect(find.text('TYPE OF RIDER STATUS'), findsNothing);
   });
 
-  testWidgets('mock login reaches the dashboard with computed KPIs',
+  testWidgets('mock login reaches the six-panel operations grid',
       (tester) async {
     await _useDesktopSurface(tester);
     await tester.pumpWidget(const AdminApp());
     await _signIn(tester);
 
-    expect(find.text('Live Fleet'), findsOneWidget);
-    expect(find.text('Active Riders'), findsOneWidget);
-    expect(find.text('Open Alerts'), findsOneWidget);
-    expect(find.text('Alerts this week'), findsOneWidget);
+    for (final title in [
+      'TYPE OF RIDER STATUS',
+      'ALERTS BY AREA',
+      'LIVE FLEET MAP',
+      'RECENT ALERT',
+      'ALERT PRIORITY',
+      'ALERT TYPES',
+    ]) {
+      expect(find.text(title), findsOneWidget, reason: '$title panel missing');
+    }
 
-    // 5 riding + 1 emergency in the mock fleet.
-    expect(find.text('6'), findsWidgets);
-    // 8 of 10 helmets are not offline.
-    expect(find.text('of 10 registered helmets'), findsOneWidget);
+    // Donut centre and map badge both count the whole mock fleet.
+    expect(find.text('10'), findsOneWidget);
+    expect(find.text('10 helmets'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await _tearDownTree(tester);
+  });
+
+  testWidgets('simulation spawns a new alert into the feed', (tester) async {
+    await _useDesktopSurface(tester);
+    await tester.pumpWidget(const AdminApp());
+    await _signIn(tester);
+
+    final before = tester.widgetList<Text>(find.byType(Text)).length;
+
+    // Alerts arrive every 10–14s, so 15s guarantees at least one.
+    await tester.pump(const Duration(seconds: 15));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.widgetList<Text>(find.byType(Text)).length,
+      greaterThan(before),
+      reason: 'no alert was prepended to the feed',
+    );
+
+    await _tearDownTree(tester);
   });
 
   testWidgets('every nav page renders without exceptions', (tester) async {
@@ -72,12 +112,30 @@ void main() {
       'Dashboard',
     ]) {
       await tester.tap(find.text(label).first);
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
       expect(tester.takeException(), isNull, reason: '$label threw on render');
     }
 
     // Landed back on the dashboard.
-    expect(find.text('Live Fleet'), findsOneWidget);
+    expect(find.text('LIVE FLEET MAP'), findsOneWidget);
+
+    await _tearDownTree(tester);
+  });
+
+  testWidgets('narrow viewport stacks the panels without overflowing',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(const AdminApp());
+    await _signIn(tester);
+
+    expect(find.text('TYPE OF RIDER STATUS'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await _tearDownTree(tester);
   });
 
   testWidgets('logout returns to the login page', (tester) async {
@@ -89,5 +147,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('NovaRide TNVS Operations'), findsOneWidget);
+  });
+
+  test('feed timestamps render in the reference format', () {
+    expect(
+      RecentAlertsFeedPanel.formatStamp(DateTime(2026, 7, 30, 14, 28)),
+      '7/30/2026, 2:28 PM',
+    );
+    expect(
+      RecentAlertsFeedPanel.formatStamp(DateTime(2026, 7, 30, 0, 5)),
+      '7/30/2026, 12:05 AM',
+    );
   });
 }

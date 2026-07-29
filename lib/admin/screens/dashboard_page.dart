@@ -1,243 +1,139 @@
 import 'package:flutter/material.dart';
-import 'package:novaride/admin/mock/mock_data.dart';
-import 'package:novaride/admin/widgets/alert_feed_tile.dart';
-import 'package:novaride/admin/widgets/fleet_table.dart';
-import 'package:novaride/admin/widgets/kpi_card.dart';
-import 'package:novaride/admin/widgets/weekly_alerts_chart.dart';
-import 'package:novaride/shared/models/models.dart';
-import 'package:novaride/shared/theme.dart';
+import 'package:novaride/admin/state/mock_fleet_controller.dart';
+import 'package:novaride/admin/widgets/dashboard/alert_priority_bar_panel.dart';
+import 'package:novaride/admin/widgets/dashboard/alert_types_bar_panel.dart';
+import 'package:novaride/admin/widgets/dashboard/alerts_by_area_bar_panel.dart';
+import 'package:novaride/admin/widgets/dashboard/fleet_status_donut_panel.dart';
+import 'package:novaride/admin/widgets/dashboard/live_fleet_map_panel.dart';
+import 'package:novaride/admin/widgets/dashboard/recent_alerts_feed_panel.dart';
 
 /// Fleet overview — the centrepiece of the operations console.
-class DashboardPage extends StatelessWidget {
+///
+/// A dense panel grid around one large map, sized to the viewport rather than
+/// scrolled: an operator watches this all shift, so nothing important is
+/// allowed below the fold. Every panel reads from one [MockFleetController],
+/// which is what lets a simulated crash land in all six at once.
+class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
 
   @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  final MockFleetController _fleet = MockFleetController();
+
+  /// Below this the side-by-side grid stops being readable and the panels
+  /// stack into a single scrolling column.
+  static const _stackBreakpoint = 1100.0;
+
+  static const _gap = 8.0;
+  static const _outerPadding = 10.0;
+
+  @override
+  void dispose() {
+    _fleet.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final riders = MockData.riders;
-    final telemetry = MockData.telemetry;
-    final alerts = MockData.alerts;
-
-    /* Every KPI is derived from the mock data, never hardcoded. */
-    final activeRiders = riders
-        .where((r) => r.status == RiderStatus.riding || r.status == RiderStatus.emergency)
-        .length;
-    final helmetsOnline = riders.where((r) => r.status != RiderStatus.offline).length;
-    final openAlerts = alerts.where((a) => a.status.isOpen).length;
-
-    final movingSpeeds =
-        telemetry.where((t) => t.speedKmh > 0).map((t) => t.speedKmh).toList();
-    final avgSpeed = movingSpeeds.isEmpty
-        ? 0.0
-        : movingSpeeds.reduce((a, b) => a + b) / movingSpeeds.length;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildKpiRow(
-            activeRiders: activeRiders,
-            helmetsOnline: helmetsOnline,
-            totalRiders: riders.length,
-            openAlerts: openAlerts,
-            avgSpeed: avgSpeed,
-          ),
-          const SizedBox(height: 20),
-          _buildMainGrid(riders, alerts),
-          const SizedBox(height: 20),
-          _buildWeeklyChartCard(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildKpiRow({
-    required int activeRiders,
-    required int helmetsOnline,
-    required int totalRiders,
-    required int openAlerts,
-    required double avgSpeed,
-  }) {
-    final cards = [
-      KpiCard(
-        label: 'Active Riders',
-        value: '$activeRiders',
-        caption: 'currently on a trip',
-        icon: Icons.two_wheeler,
-        accent: NovaColors.green,
-      ),
-      KpiCard(
-        label: 'Helmets Online',
-        value: '$helmetsOnline',
-        caption: 'of $totalRiders registered helmets',
-        icon: Icons.sensors,
-      ),
-      KpiCard(
-        label: 'Open Alerts',
-        value: '$openAlerts',
-        caption: openAlerts > 0 ? 'awaiting dispatch' : 'nothing pending',
-        icon: Icons.warning_amber_rounded,
-        alarmed: openAlerts > 0,
-      ),
-      KpiCard(
-        label: 'Avg Fleet Speed',
-        value: '${avgSpeed.toStringAsFixed(1)} km/h',
-        caption: 'riders in motion',
-        icon: Icons.speed,
-        accent: NovaColors.pink,
-      ),
-    ];
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        /* Two-up on narrow windows so the numbers never squeeze. */
-        final columns = constraints.maxWidth < 1000 ? 2 : 4;
-        const gap = 16.0;
-        final cardWidth = (constraints.maxWidth - gap * (columns - 1)) / columns;
-
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [
-            for (final card in cards) SizedBox(width: cardWidth, child: card),
-          ],
+    return ListenableBuilder(
+      listenable: _fleet,
+      builder: (context, _) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final stacked = constraints.maxWidth < _stackBreakpoint;
+            return Padding(
+              padding: const EdgeInsets.all(_outerPadding),
+              child: stacked ? _buildStacked() : _buildGrid(),
+            );
+          },
         );
       },
     );
   }
 
-  Widget _buildMainGrid(List<Rider> riders, List<AlertEvent> alerts) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final stacked = constraints.maxWidth < 1000;
+  // ------------------------------------------------------------ desktop grid
 
-        final left = _panel(
-          title: 'Live Fleet',
-          trailing: Text(
-            '${riders.length} helmets',
-            style: const TextStyle(color: NovaColors.secondaryText, fontSize: 12),
-          ),
-          child: FleetTable(riders: riders),
-        );
-
-        final right = Column(
-          children: [
-            _buildMapPlaceholder(),
-            const SizedBox(height: 16),
-            _panel(
-              title: 'Emergency Alerts',
-              trailing: Text(
-                '${alerts.where((a) => a.status.isOpen).length} open',
-                style: const TextStyle(color: NovaColors.red, fontSize: 12),
-              ),
-              child: Column(
-                children: [
-                  for (final alert in alerts.take(4)) AlertFeedTile(alert: alert),
-                ],
-              ),
-            ),
-          ],
-        );
-
-        if (stacked) {
-          return Column(children: [left, const SizedBox(height: 16), right]);
-        }
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(flex: 6, child: left),
-            const SizedBox(width: 16),
-            Expanded(flex: 4, child: right),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildMapPlaceholder() {
-    return Container(
-      height: 210,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: NovaColors.cyan.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(Icons.map_outlined, color: NovaColors.cyan, size: 25),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Live GPS map',
-            style: TextStyle(
-              color: NovaColors.primaryText,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'integrated in Phase 5',
-            style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWeeklyChartCard() {
-    return _panel(
-      title: 'Alerts this week',
-      trailing: Text(
-        '${MockData.alertsThisWeek.reduce((a, b) => a + b)} total',
-        style: const TextStyle(color: NovaColors.secondaryText, fontSize: 12),
-      ),
-      child: WeeklyAlertsChart(
-        values: MockData.alertsThisWeek,
-        labels: MockData.weekdayLabels,
-      ),
-    );
-  }
-
-  Widget _panel({required String title, Widget? trailing, required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+  Widget _buildGrid() {
+    return Column(
+      children: [
+        Expanded(
+          flex: 3,
+          child: Row(
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: NovaColors.primaryText,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                flex: 27,
+                child: Column(
+                  children: [
+                    Expanded(flex: 5, child: _donutPanel()),
+                    const SizedBox(height: _gap),
+                    Expanded(flex: 4, child: _areaPanel()),
+                  ],
                 ),
               ),
-              const Spacer(),
-              ?trailing,
+              const SizedBox(width: _gap),
+              Expanded(flex: 73, child: _mapPanel()),
             ],
           ),
-          const SizedBox(height: 14),
-          child,
+        ),
+        const SizedBox(height: _gap),
+        Expanded(
+          flex: 2,
+          child: Row(
+            children: [
+              Expanded(flex: 27, child: _feedPanel()),
+              const SizedBox(width: _gap),
+              Expanded(flex: 36, child: _priorityPanel()),
+              const SizedBox(width: _gap),
+              Expanded(flex: 37, child: _typesPanel()),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --------------------------------------------------------- narrow fallback
+
+  /// Fixed heights because a scrolling column has no viewport to divide up.
+  Widget _buildStacked() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          SizedBox(height: 260, child: _donutPanel()),
+          const SizedBox(height: _gap),
+          SizedBox(height: 220, child: _areaPanel()),
+          const SizedBox(height: _gap),
+          SizedBox(height: 420, child: _mapPanel()),
+          const SizedBox(height: _gap),
+          SizedBox(height: 320, child: _feedPanel()),
+          const SizedBox(height: _gap),
+          SizedBox(height: 240, child: _priorityPanel()),
+          const SizedBox(height: _gap),
+          SizedBox(height: 240, child: _typesPanel()),
         ],
       ),
     );
   }
+
+  // ---------------------------------------------------------------- panels
+
+  Widget _donutPanel() => FleetStatusDonutPanel(counts: _fleet.statusCounts);
+
+  Widget _areaPanel() => AlertsByAreaBarPanel(countsByArea: _fleet.alertsByArea);
+
+  Widget _mapPanel() => LiveFleetMapPanel(
+        riders: _fleet.riders,
+        telemetry: _fleet.telemetry,
+        lastSync: _fleet.lastSync,
+      );
+
+  Widget _feedPanel() => RecentAlertsFeedPanel(alerts: _fleet.alerts);
+
+  Widget _priorityPanel() =>
+      AlertPriorityBarPanel(countsByPriority: _fleet.alertsByPriority);
+
+  Widget _typesPanel() => AlertTypesBarPanel(countsByType: _fleet.alertsByType);
 }

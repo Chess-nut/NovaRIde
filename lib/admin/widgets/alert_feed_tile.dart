@@ -10,8 +10,6 @@ class AlertFeedTile extends StatelessWidget {
 
   const AlertFeedTile({super.key, required this.alert});
 
-  static const _amber = Color(0xFFFFB020);
-
   static IconData iconFor(AlertType type) => switch (type) {
         AlertType.crash => Icons.car_crash,
         AlertType.alcoholWarning => Icons.local_bar,
@@ -21,7 +19,7 @@ class AlertFeedTile extends StatelessWidget {
 
   static Color colorFor(AlertType type) => switch (type) {
         AlertType.crash => NovaColors.red,
-        AlertType.alcoholWarning => _amber,
+        AlertType.alcoholWarning => NovaColors.amber,
         AlertType.lowBattery => NovaColors.cyan,
         AlertType.sos => NovaColors.red,
       };

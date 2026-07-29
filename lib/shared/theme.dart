@@ -13,4 +13,8 @@ class NovaColors {
   static const cyan = Color(0xFF4CC9F0);
   static const pink = Color(0xFFEF476F);
   static const red = Color(0xFFFF3B5C);
+
+  /// Chart series accents — used by the admin dashboard panels.
+  static const amber = Color(0xFFFFB020);
+  static const purple = Color(0xFF9B5DE5);
 }

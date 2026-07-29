@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'home_page.dart';
+import 'package:novaride/shared/theme.dart';
+import '../widgets/nova_bottom_nav_bar.dart';
 
 /// "Alerts" screen — shown when the SOS button is triggered, or when the
 /// ALERTS tab in the bottom nav bar is selected. Explains what happens

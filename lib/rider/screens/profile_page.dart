@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'home_page.dart';
+import 'package:novaride/shared/theme.dart';
+import '../widgets/nova_bottom_nav_bar.dart';
 import 'login_page.dart';
 
 /// "Profile" screen — rider info, quick stats, account settings, and

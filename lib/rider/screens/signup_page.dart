@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'home_page.dart';
+import 'package:novaride/shared/theme.dart';
 
 /// Sign up screen for NovaRide.
 ///

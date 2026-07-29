@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:novaride/shared/theme.dart';
 import 'home_page.dart';
 import 'signup_page.dart';
 

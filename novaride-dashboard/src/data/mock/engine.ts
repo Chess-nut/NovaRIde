@@ -9,7 +9,8 @@ import type {
   Unsubscribe,
 } from '../types';
 import { ALCOHOL_THRESHOLD, COUNTDOWN_MS, SEVERITY_BY_TYPE } from '../types';
-import { advance, bounce, labelFor } from './geo';
+import { labelFor } from './geo';
+import { stepTelemetry } from './movement';
 import { liveRng } from './rng';
 import { buildAlertHistory, buildFleet } from './seed';
 
@@ -118,50 +119,15 @@ export class MockEngine {
     for (const rider of this.fleet.riders) {
       const prev = this.fleet.telemetry[rider.id];
       if (!prev) continue;
+      /* Offline helmets report nothing — their last snapshot freezes. */
       telemetry[rider.id] =
-        rider.status === 'offline' ? prev : this.step(rider, prev, now);
+        rider.status === 'offline' ? prev : stepTelemetry(rider.status, prev, now);
     }
 
     this.fleet = { ...this.fleet, telemetry };
     this.emitFleet();
 
     if (liveRng.next() < MINOR_EVENT_CHANCE) this.minorEvent();
-  }
-
-  private step(rider: Rider, prev: TelemetrySnapshot, now: number): TelemetrySnapshot {
-    /* Alcohol always decays back toward the baseline. */
-    const alcoholLevel = Math.max(0, prev.alcoholLevel - liveRng.range(0, 0.02));
-
-    if (rider.status !== 'riding') {
-      /* Idle and post-crash riders jitter in place. */
-      return {
-        ...prev,
-        lat: prev.lat + liveRng.range(-0.00004, 0.00004),
-        lng: prev.lng + liveRng.range(-0.00004, 0.00004),
-        speedKph: 0,
-        alcoholLevel: Number(alcoholLevel.toFixed(3)),
-        accelMagG: Number(liveRng.range(0.96, 1.04).toFixed(2)),
-        updatedAt: now,
-      };
-    }
-
-    const speedKph = Math.min(75, Math.max(0, prev.speedKph + liveRng.range(-9, 9)));
-    const heading = prev.headingDeg + liveRng.range(-14, 14);
-    const meters = liveRng.range(80, 250);
-    const moved = bounce(advance({ lat: prev.lat, lng: prev.lng }, heading, meters), heading);
-
-    return {
-      ...prev,
-      lat: moved.point.lat,
-      lng: moved.point.lng,
-      headingDeg: moved.headingDeg,
-      speedKph: Number(speedKph.toFixed(1)),
-      alcoholLevel: Number(alcoholLevel.toFixed(3)),
-      batteryPct: Math.max(3, prev.batteryPct - (liveRng.next() < 0.12 ? 1 : 0)),
-      accelMagG: Number(liveRng.range(0.9, 1.35).toFixed(2)),
-      gpsFix: true,
-      updatedAt: now,
-    };
   }
 
   /** Low battery below 20%, or a brief sub-threshold alcohol blip. */

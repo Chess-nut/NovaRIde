@@ -1,4 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom';
+import { useLiveFeed } from '../../hooks/useLiveFeed';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 
@@ -11,6 +12,7 @@ const TITLES: Record<string, string> = {
 export function AppLayout() {
   const { pathname } = useLocation();
   const title = TITLES[pathname] ?? 'NovaRide';
+  useLiveFeed();
 
   return (
     <div className="flex h-full min-h-screen bg-ink">

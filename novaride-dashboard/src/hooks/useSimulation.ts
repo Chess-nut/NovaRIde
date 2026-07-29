@@ -1,8 +1,7 @@
-/**
- * Demo-only control surface for the mock feed.
- * Phase 0 ships the shell wiring; the mock engine lands in phase 1 and
- * replaces the body of this hook without touching any component.
- */
+import { useMemo } from 'react';
+import { useAlertStore } from '../store/useAlertStore';
+
+/** Demo-only control surface for the feed. Goes through the store, never the provider. */
 export interface SimulationApi {
   crashCountdown: () => void;
   highSpeedCrash: () => void;
@@ -11,16 +10,17 @@ export interface SimulationApi {
   reset: () => void;
 }
 
-const notWired = (action: string) => () => {
-  console.warn(`[novaride] simulate "${action}" — mock engine arrives in phase 1`);
-};
-
 export function useSimulation(): SimulationApi {
-  return {
-    crashCountdown: notWired('crash_countdown'),
-    highSpeedCrash: notWired('high_speed_crash'),
-    riderCancel: notWired('rider_cancel'),
-    alcoholWarning: notWired('alcohol_warning'),
-    reset: notWired('reset'),
-  };
+  const simulate = useAlertStore((state) => state.simulate);
+
+  return useMemo(
+    () => ({
+      crashCountdown: () => simulate('crash_countdown'),
+      highSpeedCrash: () => simulate('high_speed_crash'),
+      riderCancel: () => simulate('rider_cancel'),
+      alcoholWarning: () => simulate('alcohol_warning'),
+      reset: () => simulate('reset'),
+    }),
+    [simulate],
+  );
 }

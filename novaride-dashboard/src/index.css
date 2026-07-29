@@ -141,4 +141,13 @@
     opacity: 1;
     transform: none;
   }
+
+  /* Killing the keyframes would drop the ring entirely — restate it statically. */
+  .animate-ring-pulse {
+    box-shadow: 0 0 0 1px rgba(244, 63, 94, 0.9);
+  }
+
+  .animate-row-pulse {
+    background-color: rgba(244, 63, 94, 0.12);
+  }
 }

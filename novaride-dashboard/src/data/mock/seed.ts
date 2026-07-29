@@ -108,7 +108,7 @@ export function buildFleet(): FleetSnapshot {
       lat: at.lat,
       lng: at.lng,
       headingDeg: rng.range(0, 360),
-      speedKph: status === 'riding' ? rng.range(12, 62) : 0,
+      speedKph: status === 'riding' ? Number(rng.range(12, 62).toFixed(1)) : 0,
       alcoholLevel: Number(rng.range(0, 0.12).toFixed(3)),
       batteryPct: rng.int(35, 100),
       accelMagG: Number(rng.range(0.9, 1.2).toFixed(2)),

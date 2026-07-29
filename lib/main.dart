@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
-import 'screens/login_page.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const AdminApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class AdminApp extends StatelessWidget {
+  const AdminApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'NovaRide',
+      title: 'NovaRide Admin',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -19,7 +18,14 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF0A0E1A),
         fontFamily: 'Roboto',
       ),
-      home: const LoginPage(),
+      home: const Scaffold(
+        body: Center(
+          child: Text(
+            'NovaRide Admin Dashboard',
+            style: TextStyle(color: Colors.white, fontSize: 24),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:novaride/shared/theme.dart';
 import '../widgets/nova_bottom_nav_bar.dart';
 import 'login_page.dart';
+import 'profile/personal_information.dart';
+import 'profile/emergency_contacts_page.dart';
+import 'profile/helmet_settings_page.dart';
+import 'profile/notifications_page.dart';
 
 /// "Profile" screen — rider info, quick stats, account settings, and
 /// logout. Opened from the bottom nav bar's PROFILE tab.
@@ -26,7 +30,7 @@ class ProfilePage extends StatelessWidget {
               const SizedBox(height: 24),
               _buildSectionTitle('ACCOUNT'),
               const SizedBox(height: 12),
-              _buildAccountCard(),
+              _buildAccountCard(context),
               const SizedBox(height: 24),
               _buildSectionTitle('SUPPORT'),
               const SizedBox(height: 12),
@@ -175,7 +179,7 @@ class ProfilePage extends StatelessWidget {
   }
 
   // ---- Account settings list ----
-  Widget _buildAccountCard() {
+  Widget _buildAccountCard(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
@@ -184,29 +188,49 @@ class ProfilePage extends StatelessWidget {
         border: Border.all(color: NovaColors.cardBorder),
       ),
       child: Column(
-        children: const [
+        children: [
           _SettingsTile(
             icon: Icons.person_outline,
             iconColor: NovaColors.cyan,
             title: 'Personal Information',
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PersonalInformationPage()),
+              );
+            },
           ),
-          Divider(height: 1, color: NovaColors.cardBorder, indent: 56),
+          const Divider(height: 1, color: NovaColors.cardBorder, indent: 56),
           _SettingsTile(
             icon: Icons.contact_phone_outlined,
             iconColor: NovaColors.pink,
             title: 'Emergency Contacts',
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const EmergencyContactsPage()),
+              );
+            },
           ),
-          Divider(height: 1, color: NovaColors.cardBorder, indent: 56),
+          const Divider(height: 1, color: NovaColors.cardBorder, indent: 56),
           _SettingsTile(
             icon: Icons.sports_motorsports_outlined,
             iconColor: NovaColors.green,
             title: 'Helmet Settings',
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HelmetSettingsPage()),
+              );
+            },
           ),
-          Divider(height: 1, color: NovaColors.cardBorder, indent: 56),
+          const Divider(height: 1, color: NovaColors.cardBorder, indent: 56),
           _SettingsTile(
             icon: Icons.notifications_none,
-            iconColor: Color(0xFFF5A623),
+            iconColor: const Color(0xFFF5A623),
             title: 'Notifications',
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const NotificationsPage()),
+              );
+            },
           ),
         ],
       ),

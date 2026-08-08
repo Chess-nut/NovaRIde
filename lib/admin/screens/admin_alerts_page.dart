@@ -1,16 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:novaride/admin/mock/mock_data.dart';
+import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/widgets/alert_feed_tile.dart';
 import 'package:novaride/shared/models/models.dart';
 import 'package:novaride/shared/theme.dart';
 
 /// Full alert history, reusing the dashboard's feed tile.
+///
+/// Reads the app-scoped controller rather than the seed statics, so alerts
+/// the simulation spawns show up here with the same IDs the dashboard feed
+/// is showing.
 class AdminAlertsPage extends StatelessWidget {
   const AdminAlertsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final alerts = MockData.alerts;
+    final fleet = FleetScope.of(context);
+
+    return ListenableBuilder(
+      listenable: fleet,
+      builder: (context, _) => _buildList(fleet.alerts),
+    );
+  }
+
+  Widget _buildList(List<AlertEvent> alerts) {
     final openCount = alerts.where((a) => a.status.isOpen).length;
 
     return SingleChildScrollView(

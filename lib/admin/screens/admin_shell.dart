@@ -4,19 +4,32 @@ import 'package:novaride/admin/screens/admin_login_page.dart';
 import 'package:novaride/admin/screens/dashboard_page.dart';
 import 'package:novaride/admin/screens/rider_monitoring_page.dart';
 import 'package:novaride/admin/screens/user_management_page.dart';
+import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/widgets/admin_sidebar.dart';
 import 'package:novaride/shared/theme.dart';
 
-/// Sidebar + topbar frame. Pages are kept alive in an IndexedStack so
-/// switching tabs never rebuilds them from scratch — no routing package.
-class AdminShell extends StatefulWidget {
+/// Signed-in console. Owns nothing itself — it mounts the [FleetHost] that
+/// holds the live fleet state for the whole session, so every page below
+/// reads one controller instead of its own copy.
+class AdminShell extends StatelessWidget {
   const AdminShell({super.key});
 
   @override
-  State<AdminShell> createState() => _AdminShellState();
+  Widget build(BuildContext context) {
+    return const FleetHost(child: _AdminShellFrame());
+  }
 }
 
-class _AdminShellState extends State<AdminShell> {
+/// Sidebar + topbar frame. Pages are kept alive in an IndexedStack so
+/// switching tabs never rebuilds them from scratch — no routing package.
+class _AdminShellFrame extends StatefulWidget {
+  const _AdminShellFrame();
+
+  @override
+  State<_AdminShellFrame> createState() => _AdminShellFrameState();
+}
+
+class _AdminShellFrameState extends State<_AdminShellFrame> {
   int _selectedIndex = 0;
 
   static const _pages = <Widget>[

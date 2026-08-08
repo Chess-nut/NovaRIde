@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/state/mock_fleet_controller.dart';
 import 'package:novaride/admin/widgets/dashboard/alert_priority_bar_panel.dart';
 import 'package:novaride/admin/widgets/dashboard/alert_types_bar_panel.dart';
@@ -11,17 +12,11 @@ import 'package:novaride/admin/widgets/dashboard/recent_alerts_feed_panel.dart';
 ///
 /// A dense panel grid around one large map, sized to the viewport rather than
 /// scrolled: an operator watches this all shift, so nothing important is
-/// allowed below the fold. Every panel reads from one [MockFleetController],
-/// which is what lets a simulated crash land in all six at once.
-class DashboardPage extends StatefulWidget {
+/// allowed below the fold. Every panel reads the app-scoped
+/// [MockFleetController], which is what lets a simulated crash land in all
+/// six at once — and in the other pages at the same time.
+class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
-
-  @override
-  State<DashboardPage> createState() => _DashboardPageState();
-}
-
-class _DashboardPageState extends State<DashboardPage> {
-  final MockFleetController _fleet = MockFleetController();
 
   /// Below this the side-by-side grid stops being readable and the panels
   /// stack into a single scrolling column.
@@ -31,22 +26,19 @@ class _DashboardPageState extends State<DashboardPage> {
   static const _outerPadding = 10.0;
 
   @override
-  void dispose() {
-    _fleet.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    // The controller is owned by FleetHost — this page must never dispose it.
+    final fleet = FleetScope.of(context);
+
     return ListenableBuilder(
-      listenable: _fleet,
+      listenable: fleet,
       builder: (context, _) {
         return LayoutBuilder(
           builder: (context, constraints) {
             final stacked = constraints.maxWidth < _stackBreakpoint;
             return Padding(
               padding: const EdgeInsets.all(_outerPadding),
-              child: stacked ? _buildStacked() : _buildGrid(),
+              child: stacked ? _buildStacked(fleet) : _buildGrid(fleet),
             );
           },
         );
@@ -56,7 +48,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // ------------------------------------------------------------ desktop grid
 
-  Widget _buildGrid() {
+  Widget _buildGrid(MockFleetController fleet) {
     return Column(
       children: [
         Expanded(
@@ -67,14 +59,14 @@ class _DashboardPageState extends State<DashboardPage> {
                 flex: 27,
                 child: Column(
                   children: [
-                    Expanded(flex: 5, child: _donutPanel()),
+                    Expanded(flex: 5, child: _donutPanel(fleet)),
                     const SizedBox(height: _gap),
-                    Expanded(flex: 4, child: _areaPanel()),
+                    Expanded(flex: 4, child: _areaPanel(fleet)),
                   ],
                 ),
               ),
               const SizedBox(width: _gap),
-              Expanded(flex: 73, child: _mapPanel()),
+              Expanded(flex: 73, child: _mapPanel(fleet)),
             ],
           ),
         ),
@@ -83,11 +75,11 @@ class _DashboardPageState extends State<DashboardPage> {
           flex: 2,
           child: Row(
             children: [
-              Expanded(flex: 27, child: _feedPanel()),
+              Expanded(flex: 27, child: _feedPanel(fleet)),
               const SizedBox(width: _gap),
-              Expanded(flex: 36, child: _priorityPanel()),
+              Expanded(flex: 36, child: _priorityPanel(fleet)),
               const SizedBox(width: _gap),
-              Expanded(flex: 37, child: _typesPanel()),
+              Expanded(flex: 37, child: _typesPanel(fleet)),
             ],
           ),
         ),
@@ -98,21 +90,21 @@ class _DashboardPageState extends State<DashboardPage> {
   // --------------------------------------------------------- narrow fallback
 
   /// Fixed heights because a scrolling column has no viewport to divide up.
-  Widget _buildStacked() {
+  Widget _buildStacked(MockFleetController fleet) {
     return SingleChildScrollView(
       child: Column(
         children: [
-          SizedBox(height: 260, child: _donutPanel()),
+          SizedBox(height: 260, child: _donutPanel(fleet)),
           const SizedBox(height: _gap),
-          SizedBox(height: 220, child: _areaPanel()),
+          SizedBox(height: 220, child: _areaPanel(fleet)),
           const SizedBox(height: _gap),
-          SizedBox(height: 420, child: _mapPanel()),
+          SizedBox(height: 420, child: _mapPanel(fleet)),
           const SizedBox(height: _gap),
-          SizedBox(height: 320, child: _feedPanel()),
+          SizedBox(height: 320, child: _feedPanel(fleet)),
           const SizedBox(height: _gap),
-          SizedBox(height: 240, child: _priorityPanel()),
+          SizedBox(height: 240, child: _priorityPanel(fleet)),
           const SizedBox(height: _gap),
-          SizedBox(height: 240, child: _typesPanel()),
+          SizedBox(height: 240, child: _typesPanel(fleet)),
         ],
       ),
     );
@@ -120,20 +112,24 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // ---------------------------------------------------------------- panels
 
-  Widget _donutPanel() => FleetStatusDonutPanel(counts: _fleet.statusCounts);
+  Widget _donutPanel(MockFleetController fleet) =>
+      FleetStatusDonutPanel(counts: fleet.statusCounts);
 
-  Widget _areaPanel() => AlertsByAreaBarPanel(countsByArea: _fleet.alertsByArea);
+  Widget _areaPanel(MockFleetController fleet) =>
+      AlertsByAreaBarPanel(countsByArea: fleet.alertsByArea);
 
-  Widget _mapPanel() => LiveFleetMapPanel(
-        riders: _fleet.riders,
-        telemetry: _fleet.telemetry,
-        lastSync: _fleet.lastSync,
+  Widget _mapPanel(MockFleetController fleet) => LiveFleetMapPanel(
+        riders: fleet.riders,
+        telemetry: fleet.telemetry,
+        lastSync: fleet.lastSync,
       );
 
-  Widget _feedPanel() => RecentAlertsFeedPanel(alerts: _fleet.alerts);
+  Widget _feedPanel(MockFleetController fleet) =>
+      RecentAlertsFeedPanel(alerts: fleet.alerts);
 
-  Widget _priorityPanel() =>
-      AlertPriorityBarPanel(countsByPriority: _fleet.alertsByPriority);
+  Widget _priorityPanel(MockFleetController fleet) =>
+      AlertPriorityBarPanel(countsByPriority: fleet.alertsByPriority);
 
-  Widget _typesPanel() => AlertTypesBarPanel(countsByType: _fleet.alertsByType);
+  Widget _typesPanel(MockFleetController fleet) =>
+      AlertTypesBarPanel(countsByType: fleet.alertsByType);
 }

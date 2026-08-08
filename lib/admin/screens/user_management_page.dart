@@ -1,18 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:novaride/admin/mock/mock_data.dart';
+import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/widgets/status_pill.dart';
 import 'package:novaride/shared/models/models.dart';
 import 'package:novaride/shared/theme.dart';
 
 /// Rider roster. Editing arrives in Phase 4 — the add button is deliberately
 /// disabled and labelled so the state is obvious during the demo.
+///
+/// Reads the app-scoped controller so a rider flipped to `emergency` by the
+/// simulation shows that status here too, not the frozen seed value.
 class UserManagementPage extends StatelessWidget {
   const UserManagementPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final riders = MockData.riders;
+    final fleet = FleetScope.of(context);
 
+    return ListenableBuilder(
+      listenable: fleet,
+      builder: (context, _) => _buildTable(fleet.riders),
+    );
+  }
+
+  Widget _buildTable(List<Rider> riders) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Container(

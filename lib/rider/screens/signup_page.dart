@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:novaride/shared/theme.dart';
+import 'legal_document_page.dart';
+import 'role_selection_page.dart';
 
 /// Sign up screen for NovaRide.
 ///
@@ -8,8 +11,15 @@ import 'package:novaride/shared/theme.dart';
 /// only account that can actually log in is the hardcoded one:
 ///   username: admin
 ///   password: admin123
+///
+/// [role] comes from RoleSelectionPage and decides the header copy below.
+/// The form fields are the same for both roles for now — Phase 2 is
+/// where a real backend would branch riders into the crash-detection
+/// dashboard and emergency contacts into the rider-monitoring dashboard.
 class SignupPage extends StatefulWidget {
-  const SignupPage({super.key});
+  final UserRole role;
+
+  const SignupPage({super.key, this.role = UserRole.rider});
 
   @override
   State<SignupPage> createState() => _SignupPageState();
@@ -26,6 +36,8 @@ class _SignupPageState extends State<SignupPage> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
+  bool _agreedToTerms = false;
+  bool _showConsentError = false;
 
   @override
   void dispose() {
@@ -40,6 +52,11 @@ class _SignupPageState extends State<SignupPage> {
   Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (!_agreedToTerms) {
+      setState(() => _showConsentError = true);
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     // Simulate account creation (no backend yet).
@@ -52,9 +69,11 @@ class _SignupPageState extends State<SignupPage> {
       SnackBar(
         backgroundColor: NovaColors.card,
         behavior: SnackBarBehavior.floating,
-        content: const Text(
-          'Account created! Please log in with admin / admin123.',
-          style: TextStyle(color: NovaColors.primaryText),
+        content: Text(
+          widget.role == UserRole.rider
+              ? 'Rider account created! Please log in with admin / admin123.'
+              : 'Emergency contact account created! Please log in with admin / admin123.',
+          style: const TextStyle(color: NovaColors.primaryText),
         ),
       ),
     );
@@ -78,23 +97,29 @@ class _SignupPageState extends State<SignupPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text(
-                        'Create Account',
-                        style: TextStyle(
+                      Text(
+                        widget.role == UserRole.rider
+                            ? 'Create Rider Account'
+                            : 'Create Emergency Contact Account',
+                        style: const TextStyle(
                           color: NovaColors.primaryText,
                           fontSize: 24,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        'Set up your rider profile to get started',
-                        style: TextStyle(
+                      Text(
+                        widget.role == UserRole.rider
+                            ? 'Set up your rider profile to get started'
+                            : "Set up your account to watch over your rider",
+                        style: const TextStyle(
                           color: NovaColors.secondaryText,
                           fontSize: 13,
                         ),
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 14),
+                      _buildRoleChip(context),
+                      const SizedBox(height: 24),
                       _buildLabel('FULL NAME'),
                       const SizedBox(height: 8),
                       _buildTextField(
@@ -179,7 +204,9 @@ class _SignupPageState extends State<SignupPage> {
                           return null;
                         },
                       ),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 26),
+                      _buildConsentRow(),
+                      const SizedBox(height: 20),
                       _buildSignUpButton(),
                       const SizedBox(height: 20),
                       _buildLoginRow(),
@@ -202,6 +229,48 @@ class _SignupPageState extends State<SignupPage> {
           IconButton(
             icon: const Icon(Icons.arrow_back, color: NovaColors.primaryText),
             onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoleChip(BuildContext context) {
+    final isRider = widget.role == UserRole.rider;
+    final color = isRider ? NovaColors.cyan : NovaColors.pink;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isRider ? Icons.sports_motorsports : Icons.family_restroom,
+            color: color,
+            size: 16,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              isRider ? 'Signing up as Rider' : 'Signing up as Emergency Contact',
+              style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: const Text(
+              'Change',
+              style: TextStyle(
+                color: NovaColors.secondaryText,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                decoration: TextDecoration.underline,
+              ),
+            ),
           ),
         ],
       ),
@@ -290,6 +359,106 @@ class _SignupPageState extends State<SignupPage> {
                 ),
               ),
       ),
+    );
+  }
+
+  Widget _buildConsentRow() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () => setState(() {
+            _agreedToTerms = !_agreedToTerms;
+            if (_agreedToTerms) _showConsentError = false;
+          }),
+          behavior: HitTestBehavior.opaque,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: Checkbox(
+                    value: _agreedToTerms,
+                    onChanged: (v) => setState(() {
+                      _agreedToTerms = v ?? false;
+                      if (_agreedToTerms) _showConsentError = false;
+                    }),
+                    activeColor: NovaColors.cyan,
+                    checkColor: Colors.black,
+                    side: BorderSide(
+                      color: _showConsentError ? NovaColors.red : NovaColors.cardBorder,
+                      width: 1.5,
+                    ),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    style: const TextStyle(
+                      color: NovaColors.secondaryText,
+                      fontSize: 12.5,
+                      height: 1.5,
+                    ),
+                    children: [
+                      const TextSpan(text: 'I agree to the '),
+                      TextSpan(
+                        text: 'Terms of Service',
+                        style: const TextStyle(
+                          color: NovaColors.cyan,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        recognizer: TapGestureRecognizer()
+                          ..onTap = () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const LegalDocumentPage(document: LegalDocument.terms),
+                                ),
+                              ),
+                      ),
+                      const TextSpan(text: ' and '),
+                      TextSpan(
+                        text: 'Privacy Policy',
+                        style: const TextStyle(
+                          color: NovaColors.cyan,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        recognizer: TapGestureRecognizer()
+                          ..onTap = () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const LegalDocumentPage(document: LegalDocument.privacy),
+                                ),
+                              ),
+                      ),
+                      const TextSpan(
+                        text: ', including sharing my GPS location with my emergency '
+                            'contacts and ride-hailing operator during an SOS.',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_showConsentError) ...[
+          const SizedBox(height: 6),
+          const Padding(
+            padding: EdgeInsets.only(left: 32),
+            child: Text(
+              'Please agree to the Terms of Service and Privacy Policy to continue.',
+              style: TextStyle(color: NovaColors.red, fontSize: 11.5),
+            ),
+          ),
+        ],
+      ],
     );
   }
 

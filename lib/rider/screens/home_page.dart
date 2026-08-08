@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:novaride/shared/theme.dart';
 import '../widgets/nova_bottom_nav_bar.dart';
 import 'alerts_page.dart';
+import 'gps_map_page.dart';
+import 'notification_feed_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -16,13 +18,13 @@ class HomePage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildHeader(),
+              _buildHeader(context),
               const SizedBox(height: 20),
               _buildProfileCard(),
               const SizedBox(height: 16),
               _buildQuickStatsRow(),
               const SizedBox(height: 16),
-              _buildCircleStatsRow(),
+              _buildCircleStatsRow(context),
               const SizedBox(height: 24),
               _buildSectionTitle('CURRENT TRIP', showLive: true),
               const SizedBox(height: 12),
@@ -40,7 +42,7 @@ class HomePage extends StatelessWidget {
   }
 
   // ---- Top app title + notification bell ----
-  Widget _buildHeader() {
+  Widget _buildHeader(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -67,23 +69,30 @@ class HomePage extends StatelessWidget {
             ),
           ],
         ),
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            const Icon(Icons.notifications_none, color: Colors.white, size: 26),
-            Positioned(
-              right: -1,
-              top: -1,
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: NovaColors.red,
-                  shape: BoxShape.circle,
+        GestureDetector(
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const NotificationFeedPage()),
+            );
+          },
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(Icons.notifications_none, color: Colors.white, size: 26),
+              Positioned(
+                right: -1,
+                top: -1,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: NovaColors.red,
+                    shape: BoxShape.circle,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );
@@ -172,10 +181,10 @@ class HomePage extends StatelessWidget {
   }
 
   // ---- Impact / Air quality / GPS row ----
-  Widget _buildCircleStatsRow() {
+  Widget _buildCircleStatsRow(BuildContext context) {
     return Row(
-      children: const [
-        Expanded(
+      children: [
+        const Expanded(
           child: _CircleStatCard(
             icon: Icons.bolt,
             iconColor: NovaColors.green,
@@ -185,8 +194,8 @@ class HomePage extends StatelessWidget {
             statusColor: NovaColors.green,
           ),
         ),
-        SizedBox(width: 10),
-        Expanded(
+        const SizedBox(width: 10),
+        const Expanded(
           child: _CircleStatCard(
             icon: Icons.water_drop_outlined,
             iconColor: NovaColors.green,
@@ -196,7 +205,7 @@ class HomePage extends StatelessWidget {
             statusColor: NovaColors.green,
           ),
         ),
-        SizedBox(width: 10),
+        const SizedBox(width: 10),
         Expanded(
           child: _CircleStatCard(
             icon: Icons.location_on_outlined,
@@ -205,6 +214,11 @@ class HomePage extends StatelessWidget {
             label: 'LOCATION',
             statusText: 'ACTIVE',
             statusColor: NovaColors.green,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const GpsMapPage()),
+              );
+            },
           ),
         ),
       ],
@@ -426,6 +440,7 @@ class _CircleStatCard extends StatelessWidget {
   final String label;
   final String statusText;
   final Color statusColor;
+  final VoidCallback? onTap;
 
   const _CircleStatCard({
     required this.icon,
@@ -434,63 +449,67 @@ class _CircleStatCard extends StatelessWidget {
     required this.label,
     required this.statusText,
     required this.statusColor,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 6),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            value,
-            style: const TextStyle(
-              color: NovaColors.primaryText,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(
-              color: NovaColors.secondaryText,
-              fontSize: 10,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.circle, color: statusColor, size: 6),
-              const SizedBox(width: 4),
-              Text(
-                statusText,
-                style: TextStyle(
-                  color: statusColor,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 6),
+        decoration: BoxDecoration(
+          color: NovaColors.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: NovaColors.cardBorder),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
               ),
-            ],
-          ),
-        ],
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              value,
+              style: const TextStyle(
+                color: NovaColors.primaryText,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(
+                color: NovaColors.secondaryText,
+                fontSize: 10,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.circle, color: statusColor, size: 6),
+                const SizedBox(width: 4),
+                Text(
+                  statusText,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -548,4 +567,3 @@ class _TripMetric extends StatelessWidget {
     );
   }
 }
-

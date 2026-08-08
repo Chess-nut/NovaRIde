@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'shared/theme.dart';
-import 'rider/screens/login_page.dart';
+import 'rider/screens/welcome_page.dart';
 
 /// Rider mobile app entrypoint.
 /// The TNVS operations dashboard has its own entrypoint: lib/main_admin.dart.
@@ -22,7 +22,7 @@ class NovaRideApp extends StatelessWidget {
         scaffoldBackgroundColor: NovaColors.background,
         fontFamily: 'Roboto',
       ),
-      home: const LoginPage(),
+      home: const WelcomePage(),
     );
   }
 }

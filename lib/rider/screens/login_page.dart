@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/shared/theme.dart';
 import 'home_page.dart';
+import 'forgot_password_page.dart';
+import 'role_selection_page.dart';
 import 'signup_page.dart';
 
 /// Login screen for NovaRide.
@@ -8,8 +10,15 @@ import 'signup_page.dart';
 /// Auth is hardcoded for now (no backend yet):
 ///   username: admin
 ///   password: admin123
+///
+/// [role] comes from RoleSelectionPage. Login itself doesn't behave any
+/// differently per role (a real backend would already know an existing
+/// account's type) — it's carried through only so the "Sign Up" link
+/// below can hand it to Signup without asking the person twice.
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  final UserRole role;
+
+  const LoginPage({super.key, this.role = UserRole.rider});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -95,7 +104,9 @@ class _LoginPageState extends State<LoginPage> {
                       fontSize: 13,
                     ),
                   ),
-                  const SizedBox(height: 36),
+                  const SizedBox(height: 18),
+                  Center(child: _buildRoleChip(context)),
+                  const SizedBox(height: 18),
                   _buildLabel('USERNAME'),
                   const SizedBox(height: 8),
                   _buildUsernameField(),
@@ -103,6 +114,25 @@ class _LoginPageState extends State<LoginPage> {
                   _buildLabel('PASSWORD'),
                   const SizedBox(height: 8),
                   _buildPasswordField(),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ForgotPasswordPage()),
+                        );
+                      },
+                      child: const Text(
+                        'Forgot Password?',
+                        style: TextStyle(
+                          color: NovaColors.cyan,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
                   if (_errorText != null) ...[
                     const SizedBox(height: 14),
                     _buildErrorBanner(_errorText!),
@@ -116,6 +146,48 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildRoleChip(BuildContext context) {
+    final isRider = widget.role == UserRole.rider;
+    final color = isRider ? NovaColors.cyan : NovaColors.pink;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isRider ? Icons.sports_motorsports : Icons.family_restroom,
+            color: color,
+            size: 16,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            isRider ? 'Continuing as Rider' : 'Continuing as Emergency Contact',
+            style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: const Text(
+              'Change',
+              style: TextStyle(
+                color: NovaColors.secondaryText,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -302,7 +374,7 @@ class _LoginPageState extends State<LoginPage> {
         GestureDetector(
           onTap: () {
             Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SignupPage()),
+              MaterialPageRoute(builder: (_) => SignupPage(role: widget.role)),
             );
           },
           child: const Text(

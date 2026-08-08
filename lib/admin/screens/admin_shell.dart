@@ -8,6 +8,32 @@ import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/widgets/admin_sidebar.dart';
 import 'package:novaride/shared/theme.dart';
 
+/// Lets a page ask the shell to switch tabs.
+///
+/// Only cross-tab navigation lives here — the shell owns which tab is
+/// showing, and a page has no other way to reach that state without a router
+/// package. Rebuild is never needed, so [updateShouldNotify] is always false.
+class AdminNavScope extends InheritedWidget {
+  /// Opens the Alerts tab with its search pre-filled, used by the roster's
+  /// "View alerts" row action.
+  final void Function(String query) openAlertsForRider;
+
+  const AdminNavScope({
+    super.key,
+    required this.openAlertsForRider,
+    required super.child,
+  });
+
+  static AdminNavScope of(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<AdminNavScope>();
+    assert(scope != null, 'AdminNavScope.of() found no AdminShell ancestor.');
+    return scope!;
+  }
+
+  @override
+  bool updateShouldNotify(AdminNavScope oldWidget) => false;
+}
+
 /// Signed-in console. Owns nothing itself — it mounts the [FleetHost] that
 /// holds the live fleet state for the whole session, so every page below
 /// reads one controller instead of its own copy.
@@ -30,14 +56,34 @@ class _AdminShellFrame extends StatefulWidget {
 }
 
 class _AdminShellFrameState extends State<_AdminShellFrame> {
+  /// Index of the Alerts tab in [adminNavItems] — cross-tab jumps target it.
+  static const _alertsIndex = 3;
+
   int _selectedIndex = 0;
 
-  static const _pages = <Widget>[
-    DashboardPage(),
-    RiderMonitoringPage(),
-    UserManagementPage(),
-    AdminAlertsPage(),
-  ];
+  /// Search text handed to the alerts page by a "View alerts" jump. The token
+  /// increments on every request so asking twice for the same rider still
+  /// re-applies the filter.
+  String? _alertsPrefill;
+  int _alertsPrefillToken = 0;
+
+  void _openAlertsForRider(String query) {
+    setState(() {
+      _alertsPrefill = query;
+      _alertsPrefillToken++;
+      _selectedIndex = _alertsIndex;
+    });
+  }
+
+  List<Widget> get _pages => [
+        const DashboardPage(),
+        const RiderMonitoringPage(),
+        const UserManagementPage(),
+        AdminAlertsPage(
+          prefillQuery: _alertsPrefill,
+          prefillToken: _alertsPrefillToken,
+        ),
+      ];
 
   void _handleLogout() {
     Navigator.of(context).pushReplacement(
@@ -50,27 +96,30 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
     /// Below 900px the sidebar drops to an icon rail so content keeps its room.
     final collapsed = MediaQuery.sizeOf(context).width < 900;
 
-    return Scaffold(
-      backgroundColor: NovaColors.background,
-      body: Row(
-        children: [
-          AdminSidebar(
-            selectedIndex: _selectedIndex,
-            onSelect: (index) => setState(() => _selectedIndex = index),
-            onLogout: _handleLogout,
-            collapsed: collapsed,
-          ),
-          Expanded(
-            child: Column(
-              children: [
-                _buildTopBar(),
-                Expanded(
-                  child: IndexedStack(index: _selectedIndex, children: _pages),
-                ),
-              ],
+    return AdminNavScope(
+      openAlertsForRider: _openAlertsForRider,
+      child: Scaffold(
+        backgroundColor: NovaColors.background,
+        body: Row(
+          children: [
+            AdminSidebar(
+              selectedIndex: _selectedIndex,
+              onSelect: (index) => setState(() => _selectedIndex = index),
+              onLogout: _handleLogout,
+              collapsed: collapsed,
             ),
-          ),
-        ],
+            Expanded(
+              child: Column(
+                children: [
+                  _buildTopBar(),
+                  Expanded(
+                    child: IndexedStack(index: _selectedIndex, children: _pages),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

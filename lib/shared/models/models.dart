@@ -19,13 +19,21 @@ class Rider {
   final String phone;
   final RiderStatus status;
 
-  const Rider({
+  /// Deactivated riders are kept, never deleted — alert history references
+  /// rider IDs, so removing the row would orphan past incidents.
+  final bool isActive;
+
+  final DateTime registeredAt;
+
+  Rider({
     required this.id,
     required this.fullName,
     required this.helmetId,
     required this.phone,
     required this.status,
-  });
+    this.isActive = true,
+    DateTime? registeredAt,
+  }) : registeredAt = registeredAt ?? DateTime.now();
 
   Rider copyWith({
     String? id,
@@ -33,6 +41,8 @@ class Rider {
     String? helmetId,
     String? phone,
     RiderStatus? status,
+    bool? isActive,
+    DateTime? registeredAt,
   }) =>
       Rider(
         id: id ?? this.id,
@@ -40,6 +50,8 @@ class Rider {
         helmetId: helmetId ?? this.helmetId,
         phone: phone ?? this.phone,
         status: status ?? this.status,
+        isActive: isActive ?? this.isActive,
+        registeredAt: registeredAt ?? this.registeredAt,
       );
 }
 

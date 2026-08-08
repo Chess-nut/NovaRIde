@@ -26,7 +26,18 @@ extension _AlertSortLabel on _AlertSort {
 /// recording who did it. Filters exist because an operator with forty alerts
 /// on the board needs the three that matter.
 class AdminAlertsPage extends StatefulWidget {
-  const AdminAlertsPage({super.key});
+  /// Search text pushed in by a cross-tab jump (the roster's "View alerts").
+  final String? prefillQuery;
+
+  /// Bumped by the shell on every jump so requesting the same rider twice
+  /// still re-applies the filter.
+  final int prefillToken;
+
+  const AdminAlertsPage({
+    super.key,
+    this.prefillQuery,
+    this.prefillToken = 0,
+  });
 
   @override
   State<AdminAlertsPage> createState() => _AdminAlertsPageState();
@@ -50,6 +61,32 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   String _query = '';
   _AlertSort _sort = _AlertSort.newest;
   String? _selectedId;
+
+  @override
+  void initState() {
+    super.initState();
+    _applyPrefill();
+  }
+
+  @override
+  void didUpdateWidget(AdminAlertsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.prefillToken != oldWidget.prefillToken) _applyPrefill();
+  }
+
+  /// A jump replaces the search text and clears the chips, so the operator
+  /// lands on every alert for that rider rather than an accidental
+  /// intersection with filters they left set earlier.
+  void _applyPrefill() {
+    final query = widget.prefillQuery;
+    if (query == null || query.isEmpty) return;
+
+    _searchController.text = query;
+    _query = query.trim().toLowerCase();
+    _statusFilter.clear();
+    _typeFilter.clear();
+    _selectedId = null;
+  }
 
   @override
   void dispose() {

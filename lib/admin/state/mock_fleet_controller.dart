@@ -314,6 +314,80 @@ class MockFleetController extends ChangeNotifier {
     return best;
   }
 
+  // ------------------------------------------------------------- roster CRUD
+
+  /// Registers a new rider and gives their helmet an initial fix so they
+  /// appear on the map immediately rather than after the first jitter tick.
+  ///
+  /// Throws [StateError] if the id or helmet serial is already taken —
+  /// uniqueness is enforced here as well as in the form, so a caller cannot
+  /// bypass it.
+  void addRider(Rider rider) {
+    if (_riders.any((r) => r.id == rider.id)) {
+      throw StateError('Rider ${rider.id} already exists.');
+    }
+    if (_riders.any(
+      (r) => r.helmetId.toUpperCase() == rider.helmetId.toUpperCase(),
+    )) {
+      throw StateError('Helmet ${rider.helmetId} is already assigned.');
+    }
+
+    _riders.add(rider);
+
+    // Drop them near a random district so the new dot is not stacked on an
+    // existing one.
+    final district = kFleetDistricts[_rng.nextInt(kFleetDistricts.length)];
+    final telemetry = HelmetTelemetry(
+      riderId: rider.id,
+      speedKmh: rider.status == RiderStatus.riding ? 24 + _rng.nextDouble() * 20 : 0,
+      alcoholLevel: 0,
+      batteryPct: 80 + _rng.nextInt(20),
+      gpsFix: true,
+      lat: district.lat + _signed(0.006),
+      lng: district.lng + _signed(0.006),
+      lastUpdate: DateTime.now(),
+    );
+    _telemetry.add(telemetry);
+    _trails[rider.id] = [TrailPoint(telemetry.lat, telemetry.lng)];
+
+    notifyListeners();
+  }
+
+  /// Replaces a rider's editable fields. Throws if the id is unknown or the
+  /// new helmet serial belongs to somebody else.
+  void updateRider(Rider rider) {
+    final index = _riders.indexWhere((r) => r.id == rider.id);
+    if (index == -1) {
+      throw StateError('Rider ${rider.id} is not on the roster.');
+    }
+    if (_riders.any(
+      (r) =>
+          r.id != rider.id &&
+          r.helmetId.toUpperCase() == rider.helmetId.toUpperCase(),
+    )) {
+      throw StateError('Helmet ${rider.helmetId} is already assigned.');
+    }
+
+    _riders[index] = rider;
+    notifyListeners();
+  }
+
+  /// Takes a rider off active duty without deleting them. Their alerts keep
+  /// resolving against a real rider record, and reactivating puts them back
+  /// as idle rather than guessing at their previous status.
+  void setRiderActive(String riderId, bool active) {
+    final index = _riders.indexWhere((r) => r.id == riderId);
+    if (index == -1) {
+      throw StateError('Rider $riderId is not on the roster.');
+    }
+
+    _riders[index] = _riders[index].copyWith(
+      isActive: active,
+      status: active ? RiderStatus.idle : RiderStatus.offline,
+    );
+    notifyListeners();
+  }
+
   // -------------------------------------------------------------- workflow
 
   /// Operator takes ownership of an open alert.

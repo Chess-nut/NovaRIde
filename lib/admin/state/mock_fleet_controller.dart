@@ -521,6 +521,19 @@ class MockFleetController extends ChangeNotifier {
   }
 
   void _spawnAlert() {
+    _emitAlert();
+    _scheduleNextAlert();
+  }
+
+  /// Spawns one alert without touching the timer.
+  ///
+  /// Separated from [_spawnAlert] so tests can drive the simulation a step at
+  /// a time — calling the timer path directly would reschedule and orphan the
+  /// pending timer.
+  @visibleForTesting
+  void debugEmitAlert() => _emitAlert();
+
+  void _emitAlert() {
     final district = kFleetDistricts[_rng.nextInt(kFleetDistricts.length)];
     final type = _randomType();
     final rider = _alertCandidate();
@@ -550,7 +563,6 @@ class MockFleetController extends ChangeNotifier {
     _standDownOldestEmergency();
     _lastSync = DateTime.now();
     notifyListeners();
-    _scheduleNextAlert();
   }
 
   /// Anyone but an offline helmet can raise an alert; riding riders are the

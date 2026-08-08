@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/shared/theme.dart';
-import 'package:novaride/shared/no_animation_route.dart';
 import 'login_page.dart';
 import 'role_selection_page.dart';
 
@@ -116,7 +115,7 @@ class WelcomePage extends StatelessWidget {
           child: ElevatedButton(
             onPressed: () {
               Navigator.of(context).push(
-                noAnimationRoute(const RoleSelectionPage()),
+                MaterialPageRoute(builder: (_) => const RoleSelectionPage()),
               );
             },
             style: ElevatedButton.styleFrom(
@@ -146,7 +145,7 @@ class WelcomePage extends StatelessWidget {
             GestureDetector(
               onTap: () {
                 Navigator.of(context).push(
-                  noAnimationRoute(const LoginPage()),
+                  MaterialPageRoute(builder: (_) => const LoginPage()),
                 );
               },
               child: const Text(

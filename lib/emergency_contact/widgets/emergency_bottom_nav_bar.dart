@@ -3,11 +3,10 @@ import 'package:novaride/shared/theme.dart';
 import '../screens/rider_dashboard_page.dart';
 import '../screens/rider_map_page.dart';
 import '../screens/notification_feed_page.dart';
+import '../screens/profile_page.dart';
 
 /// Bottom navigation for the Emergency Contact side of the app:
-/// Dashboard, Map, Notifications. No Profile/Settings tab — per the
-/// Capstone scope, the emergency contact side only has these three plus
-/// Login/Signup, which are shared with the Rider module.
+/// Dashboard, Map, Notifications, Profile.
 ///
 /// Lives in its own `emergency_contact/` module (parallel to `rider/` and
 /// `admin/`) rather than inside `rider/`, since this is a distinct actor
@@ -34,6 +33,11 @@ class EmergencyBottomNavBar extends StatelessWidget {
       case 2:
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const NotificationFeedPage()),
+        );
+        break;
+      case 3:
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const ProfilePage()),
         );
         break;
     }
@@ -69,6 +73,12 @@ class EmergencyBottomNavBar extends StatelessWidget {
               label: 'NOTIFICATIONS',
               selected: selectedIndex == 2,
               onTap: () => _onTabTapped(context, 2),
+            ),
+            _NavItem(
+              icon: Icons.person_outline,
+              label: 'PROFILE',
+              selected: selectedIndex == 3,
+              onTap: () => _onTabTapped(context, 3),
             ),
           ],
         ),

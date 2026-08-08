@@ -177,8 +177,10 @@ class AlertsPage extends StatelessWidget {
       ),
       child: Column(
         children: const [
-          _ContactTile(name: 'Maria Santos (Spouse)'),
-          _ContactTile(name: 'Juan Reyes (Parent)'),
+          _ContactTile(name: 'David Chester M. Legarde (sibling)'),
+          _ContactTile(name: 'Denzil P. Legarde (sibling)'),
+          _ContactTile(name: 'Ralph Lluewyne U. Natal (sibling)'),
+          _ContactTile(name: 'Hanz Jibriel C. Agbayani (sibling)'),
           _ContactTile(name: 'Emergency Services'),
           _ContactTile(name: 'Nearby TNVS Services'),
         ],

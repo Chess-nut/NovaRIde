@@ -18,9 +18,9 @@ class _PersonalInformationPageState extends State<PersonalInformationPage> {
   final _formKey = GlobalKey<FormState>();
 
   // Pre-filled with the same mock rider used across the app.
-  final _fullNameController = TextEditingController(text: 'Juan dela Cruz');
+  final _fullNameController = TextEditingController(text: 'Deor the great');
   final _usernameController = TextEditingController(text: 'admin');
-  final _emailController = TextEditingController(text: 'juan.delacruz@email.com');
+  final _emailController = TextEditingController(text: 'deor.thegreat@email.com');
   final _phoneController = TextEditingController(text: '+63 917 123 4567');
   final _addressController = TextEditingController(text: 'Makati City, Metro Manila');
 

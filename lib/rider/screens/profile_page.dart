@@ -108,7 +108,7 @@ class ProfilePage extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const Text(
-            'Juan dela Cruz',
+            'Deor the great',
             style: TextStyle(
               color: NovaColors.primaryText,
               fontSize: 18,

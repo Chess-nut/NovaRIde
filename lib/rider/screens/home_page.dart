@@ -127,7 +127,7 @@ class HomePage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Juan dela Cruz',
+                  'Deor the great',
                   style: TextStyle(
                     color: NovaColors.primaryText,
                     fontWeight: FontWeight.w700,
@@ -200,7 +200,7 @@ class HomePage extends StatelessWidget {
             icon: Icons.water_drop_outlined,
             iconColor: NovaColors.green,
             value: '0.00%',
-            label: '% CLEAN',
+            label: '% Alcohol',
             statusText: 'CLEAR',
             statusColor: NovaColors.green,
           ),

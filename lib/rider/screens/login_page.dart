@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/shared/theme.dart';
+import 'package:novaride/emergency_contact/screens/rider_dashboard_page.dart';
 import 'home_page.dart';
 import 'forgot_password_page.dart';
 import 'role_selection_page.dart';
@@ -11,10 +12,10 @@ import 'signup_page.dart';
 ///   username: admin
 ///   password: admin123
 ///
-/// [role] comes from RoleSelectionPage. Login itself doesn't behave any
-/// differently per role (a real backend would already know an existing
-/// account's type) — it's carried through only so the "Sign Up" link
-/// below can hand it to Signup without asking the person twice.
+/// [role] comes from RoleSelectionPage. A real backend would know an
+/// existing account's type on its own — here we still use it for one
+/// thing: routing a successful login to the right dashboard (Rider vs.
+/// Emergency Contact), since both currently share this same Login screen.
 class LoginPage extends StatefulWidget {
   final UserRole role;
 
@@ -59,8 +60,11 @@ class _LoginPageState extends State<LoginPage> {
 
     if (username == _validUsername && password == _validPassword) {
       if (!mounted) return;
+      final destination = widget.role == UserRole.rider
+          ? const HomePage()
+          : const RiderDashboardPage();
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomePage()),
+        MaterialPageRoute(builder: (_) => destination),
       );
     } else {
       setState(() {

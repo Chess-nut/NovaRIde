@@ -7,6 +7,9 @@ class AdminNavItem {
   const AdminNavItem(this.icon, this.label);
 }
 
+/// Every tab the console can show, in order. The shell builds a role-filtered
+/// subset of these paired with their pages — it does not index into this list,
+/// so nothing desynchronises when User Management is hidden.
 const adminNavItems = <AdminNavItem>[
   AdminNavItem(Icons.dashboard_outlined, 'Dashboard'),
   AdminNavItem(Icons.map_outlined, 'Rider Monitoring'),
@@ -19,6 +22,9 @@ const adminNavItems = <AdminNavItem>[
 /// Collapses to an icon rail below 900px so the shell stays usable on a
 /// smaller laptop screen.
 class AdminSidebar extends StatelessWidget {
+  /// The tabs this role can reach, already filtered by the shell.
+  final List<AdminNavItem> items;
+
   final int selectedIndex;
   final ValueChanged<int> onSelect;
   final VoidCallback onLogout;
@@ -26,6 +32,7 @@ class AdminSidebar extends StatelessWidget {
 
   const AdminSidebar({
     super.key,
+    required this.items,
     required this.selectedIndex,
     required this.onSelect,
     required this.onLogout,
@@ -49,8 +56,7 @@ class AdminSidebar extends StatelessWidget {
           _buildBrand(),
           const Divider(height: 1, color: NovaColors.cardBorder),
           const SizedBox(height: 12),
-          for (var i = 0; i < adminNavItems.length; i++)
-            _buildNavItem(adminNavItems[i], i),
+          for (var i = 0; i < items.length; i++) _buildNavItem(items[i], i),
           const Spacer(),
           const Divider(height: 1, color: NovaColors.cardBorder),
           _buildLogout(),

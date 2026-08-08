@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/admin/screens/admin_shell.dart';
+import 'package:novaride/admin/state/admin_session.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/state/mock_fleet_controller.dart';
 import 'package:novaride/admin/state/rider_validation.dart';
@@ -34,6 +35,11 @@ class _UserManagementPageState extends State<UserManagementPage> {
   String _query = '';
   _RosterSort _sort = _RosterSort.name;
   bool _ascending = true;
+
+  /// Re-checked here rather than trusting that the nav item was hidden —
+  /// hiding a tab is convenience, this is the actual gate.
+  AdminRole get _role => AdminSessionScope.of(context).role;
+  bool get _canManage => _role.canManageRiders;
 
   @override
   void dispose() {
@@ -166,19 +172,31 @@ class _UserManagementPageState extends State<UserManagementPage> {
                 ),
               ),
               const Spacer(),
-              ElevatedButton.icon(
-                onPressed: () => _openRiderForm(fleet),
-                icon: const Icon(Icons.person_add_alt, size: 16),
-                label: const Text('Add Rider'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: NovaColors.cyan,
-                  foregroundColor: Colors.black,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+              Tooltip(
+                message: _canManage ? '' : _role.restrictionMessage,
+                child: ElevatedButton.icon(
+                  onPressed: _canManage ? () => _openRiderForm(fleet) : null,
+                  icon: const Icon(Icons.person_add_alt, size: 16),
+                  label: const Text('Add Rider'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: NovaColors.cyan,
+                    foregroundColor: Colors.black,
+                    disabledBackgroundColor: NovaColors.background,
+                    disabledForegroundColor: NovaColors.secondaryText,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(
+                        color: _canManage
+                            ? Colors.transparent
+                            : NovaColors.cardBorder,
+                      ),
+                    ),
+                    elevation: 0,
                   ),
-                  elevation: 0,
                 ),
               ),
             ],
@@ -444,12 +462,29 @@ class _UserManagementPageState extends State<UserManagementPage> {
         }
       },
       itemBuilder: (context) => [
-        const PopupMenuItem(value: 'edit', child: _MenuRow(Icons.edit_outlined, 'Edit')),
+        // Mutating entries are disabled — not hidden — for roles that cannot
+        // use them, so the capability is visible and explained.
+        PopupMenuItem(
+          value: 'edit',
+          enabled: _canManage,
+          child: _MenuRow(
+            Icons.edit_outlined,
+            'Edit',
+            disabled: !_canManage,
+            tooltip: _canManage ? null : _role.restrictionMessage,
+          ),
+        ),
         PopupMenuItem(
           value: 'toggle',
-          child: rider.isActive
-              ? const _MenuRow(Icons.person_off_outlined, 'Deactivate')
-              : const _MenuRow(Icons.person_add_alt_1_outlined, 'Reactivate'),
+          enabled: _canManage,
+          child: _MenuRow(
+            rider.isActive
+                ? Icons.person_off_outlined
+                : Icons.person_add_alt_1_outlined,
+            rider.isActive ? 'Deactivate' : 'Reactivate',
+            disabled: !_canManage,
+            tooltip: _canManage ? null : _role.restrictionMessage,
+          ),
         ),
         const PopupMenuItem(
           value: 'alerts',
@@ -575,23 +610,40 @@ class _HeaderLabel extends StatelessWidget {
 class _MenuRow extends StatelessWidget {
   final IconData icon;
   final String label;
+  final bool disabled;
 
-  const _MenuRow(this.icon, this.label);
+  /// Explains why the entry is unavailable for the current role.
+  final String? tooltip;
+
+  const _MenuRow(
+    this.icon,
+    this.label, {
+    this.disabled = false,
+    this.tooltip,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final row = Row(
       children: [
-        Icon(icon, size: 15, color: NovaColors.secondaryText),
+        Icon(
+          disabled ? Icons.lock_outline : icon,
+          size: 15,
+          color: NovaColors.secondaryText,
+        ),
         const SizedBox(width: 9),
         Text(
           label,
-          style: const TextStyle(
-            color: NovaColors.primaryText,
+          style: TextStyle(
+            color:
+                disabled ? NovaColors.secondaryText : NovaColors.primaryText,
             fontSize: 13,
           ),
         ),
       ],
     );
+
+    if (tooltip == null) return row;
+    return Tooltip(message: tooltip!, child: row);
   }
 }

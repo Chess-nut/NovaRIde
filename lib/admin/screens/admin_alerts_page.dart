@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/admin/console_format.dart';
+import 'package:novaride/admin/state/admin_session.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/state/mock_fleet_controller.dart';
 import 'package:novaride/admin/widgets/alert_feed_tile.dart';
@@ -48,9 +49,6 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   /// Matches the dashboard's breakpoint: below this the detail panel stops
   /// sitting beside the list and reflows above it in one scrolling column.
   static const _stackBreakpoint = 1100.0;
-
-  /// Phase 6 replaces this with the signed-in admin's name.
-  static const _operator = 'Ops Admin';
 
   final TextEditingController _searchController = TextEditingController();
 
@@ -153,6 +151,7 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
                     child: _AlertDetailPanel(
                       alert: selected,
                       fleet: fleet,
+                      role: AdminSessionScope.of(context).role,
                       onClose: () => setState(() => _selectedId = null),
                       onAcknowledge: () => _acknowledge(fleet, selected),
                       onDispatch: () => _promptDispatch(fleet, selected),
@@ -186,6 +185,7 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
             _AlertDetailPanel(
               alert: selected,
               fleet: fleet,
+              role: AdminSessionScope.of(context).role,
               onClose: () => setState(() => _selectedId = null),
               onAcknowledge: () => _acknowledge(fleet, selected),
               onDispatch: () => _promptDispatch(fleet, selected),
@@ -550,11 +550,11 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   }
 
   void _acknowledge(MockFleetController fleet, AlertEvent alert) {
-    _run(() => fleet.acknowledgeAlert(alert.id, actor: _operator));
+    _run(() => fleet.acknowledgeAlert(alert.id, actor: AdminSessionScope.of(context).name));
   }
 
   void _resolve(MockFleetController fleet, AlertEvent alert) {
-    _run(() => fleet.resolveAlert(alert.id, actor: _operator));
+    _run(() => fleet.resolveAlert(alert.id, actor: AdminSessionScope.of(context).name));
   }
 
   Future<void> _promptDispatch(
@@ -570,7 +570,7 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
     _run(
       () => fleet.dispatchAlert(
         alert.id,
-        actor: _operator,
+        actor: AdminSessionScope.of(context).name,
         responder: result.responder,
         note: result.note,
       ),
@@ -585,6 +585,10 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
 class _AlertDetailPanel extends StatelessWidget {
   final AlertEvent alert;
   final MockFleetController fleet;
+
+  /// Decides whether the lifecycle actions are live or read-only.
+  final AdminRole role;
+
   final VoidCallback onClose;
   final VoidCallback onAcknowledge;
   final VoidCallback onDispatch;
@@ -593,6 +597,7 @@ class _AlertDetailPanel extends StatelessWidget {
   const _AlertDetailPanel({
     required this.alert,
     required this.fleet,
+    required this.role,
     required this.onClose,
     required this.onAcknowledge,
     required this.onDispatch,
@@ -725,7 +730,11 @@ class _AlertDetailPanel extends StatelessWidget {
       return _muted('This incident is closed. No further action available.');
     }
 
-    return Wrap(
+    // Read-only roles see the workflow but cannot drive it, so the console
+    // still explains what would happen next.
+    final allowed = role.canActOnAlerts;
+
+    final buttons = Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
@@ -733,22 +742,53 @@ class _AlertDetailPanel extends StatelessWidget {
           label: 'Acknowledge',
           icon: Icons.visibility_outlined,
           color: NovaColors.cyan,
-          primary: alert.status.canTransitionTo(AlertStatus.acknowledged),
+          primary: allowed &&
+              alert.status.canTransitionTo(AlertStatus.acknowledged),
+          enabled: allowed,
           onPressed: onAcknowledge,
         ),
         _ActionButton(
           label: 'Dispatch',
           icon: Icons.local_shipping_outlined,
           color: NovaColors.pink,
-          primary: alert.status.canTransitionTo(AlertStatus.dispatched),
+          primary:
+              allowed && alert.status.canTransitionTo(AlertStatus.dispatched),
+          enabled: allowed,
           onPressed: onDispatch,
         ),
         _ActionButton(
           label: 'Resolve',
           icon: Icons.check_circle_outline,
           color: NovaColors.green,
-          primary: alert.status.canTransitionTo(AlertStatus.resolved),
+          primary:
+              allowed && alert.status.canTransitionTo(AlertStatus.resolved),
+          enabled: allowed,
           onPressed: onResolve,
+        ),
+      ],
+    );
+
+    if (allowed) return buttons;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Tooltip(message: role.restrictionMessage, child: buttons),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const Icon(Icons.lock_outline, size: 13, color: NovaColors.amber),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Read-only — ${role.label} cannot act on alerts.',
+                style: const TextStyle(
+                  color: NovaColors.amber,
+                  fontSize: 11.5,
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -1087,6 +1127,10 @@ class _ActionButton extends StatelessWidget {
 
   /// True when this is the legal next step — filled instead of outlined.
   final bool primary;
+
+  /// False for a read-only role: the button renders but does nothing.
+  final bool enabled;
+
   final VoidCallback onPressed;
 
   const _ActionButton({
@@ -1095,42 +1139,46 @@ class _ActionButton extends StatelessWidget {
     required this.color,
     required this.primary,
     required this.onPressed,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: primary ? color : Colors.transparent,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onPressed,
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: Material(
+        color: primary ? color : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: primary ? color : NovaColors.cardBorder,
+        child: InkWell(
+          onTap: enabled ? onPressed : null,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: primary ? color : NovaColors.cardBorder,
+              ),
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 15,
-                color: primary ? Colors.black : NovaColors.secondaryText,
-              ),
-              const SizedBox(width: 7),
-              Text(
-                label,
-                style: TextStyle(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 15,
                   color: primary ? Colors.black : NovaColors.secondaryText,
-                  fontSize: 12.5,
-                  fontWeight: primary ? FontWeight.w700 : FontWeight.w500,
                 ),
-              ),
-            ],
+                const SizedBox(width: 7),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: primary ? Colors.black : NovaColors.secondaryText,
+                    fontSize: 12.5,
+                    fontWeight: primary ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

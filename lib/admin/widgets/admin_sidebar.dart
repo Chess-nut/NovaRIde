@@ -12,6 +12,7 @@ const adminNavItems = <AdminNavItem>[
   AdminNavItem(Icons.map_outlined, 'Rider Monitoring'),
   AdminNavItem(Icons.people_outline, 'User Management'),
   AdminNavItem(Icons.notifications_none, 'Alerts'),
+  AdminNavItem(Icons.insights_outlined, 'Reports'),
 ];
 
 /// Persistent left navigation for the operations console.

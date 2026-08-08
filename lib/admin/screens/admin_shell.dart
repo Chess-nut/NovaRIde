@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:novaride/admin/screens/admin_alerts_page.dart';
 import 'package:novaride/admin/screens/admin_login_page.dart';
 import 'package:novaride/admin/screens/dashboard_page.dart';
+import 'package:novaride/admin/screens/reports_page.dart';
 import 'package:novaride/admin/screens/rider_monitoring_page.dart';
 import 'package:novaride/admin/screens/user_management_page.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
@@ -83,6 +84,7 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
           prefillQuery: _alertsPrefill,
           prefillToken: _alertsPrefillToken,
         ),
+        const ReportsPage(),
       ];
 
   void _handleLogout() {

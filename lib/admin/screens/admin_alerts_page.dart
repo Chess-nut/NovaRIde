@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:novaride/admin/console_format.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/state/mock_fleet_controller.dart';
 import 'package:novaride/admin/widgets/alert_feed_tile.dart';
@@ -577,27 +578,6 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   }
 }
 
-/// "1m 04s" / "2h 13m" / "—". Hand-rolled: intl would be a dependency for
-/// one format string.
-String formatDuration(Duration? duration) {
-  if (duration == null) return '—';
-  if (duration.inHours > 0) {
-    return '${duration.inHours}h ${duration.inMinutes % 60}m';
-  }
-  if (duration.inMinutes > 0) {
-    final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
-    return '${duration.inMinutes}m ${seconds}s';
-  }
-  return '${duration.inSeconds}s';
-}
-
-String _clock(DateTime t) {
-  final hour12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
-  final minute = t.minute.toString().padLeft(2, '0');
-  final second = t.second.toString().padLeft(2, '0');
-  return '$hour12:$minute:$second ${t.hour < 12 ? 'AM' : 'PM'}';
-}
-
 // ---------------------------------------------------------------- detail pane
 
 /// Everything an operator needs to act on one alert: who and where, what the
@@ -712,7 +692,7 @@ class _AlertDetailPanel extends StatelessWidget {
               ),
               const SizedBox(height: 3),
               Text(
-                '${alert.id} · raised ${_clock(alert.timestamp)}',
+                '${alert.id} · raised ${formatClock(alert.timestamp)}',
                 style: const TextStyle(
                   color: NovaColors.secondaryText,
                   fontSize: 11,
@@ -916,7 +896,7 @@ class _AlertTimeline extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        _clock(at),
+                        formatClock(at),
                         style: const TextStyle(
                           color: NovaColors.secondaryText,
                           fontSize: 10.5,

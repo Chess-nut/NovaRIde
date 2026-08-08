@@ -124,6 +124,10 @@ extension AlertPriorityLabel on AlertPriority {
 ///
 /// Phase 4 seam: swap the two timers below for Firestore snapshot
 /// subscriptions — the panels only ever see the getters, so nothing else moves.
+/// The workflow mutations become Firestore writes on the same seam: a
+/// transition becomes an `alerts/{id}` update plus an `alerts/{id}/history`
+/// sub-collection append, and the local mutation disappears in favour of the
+/// snapshot echoing the write back. Injection happens once, in `FleetHost`.
 class MockFleetController extends ChangeNotifier {
   MockFleetController() {
     _riders = List.of(MockData.riders);
@@ -218,6 +222,32 @@ class MockFleetController extends ChangeNotifier {
 
   /// Life-critical first, then severity by type. Anything already resolved
   /// stops competing for dispatch attention and drops to "none".
+  /// Life-critical alerts still on the board. Drives the "open critical"
+  /// KPI and the resolve-clears-the-rider rule.
+  int get openCriticalCount =>
+      _alerts.where((a) => a.type.isCritical && a.status.isActive).length;
+
+  /// Mean time from an alert firing to an operator acknowledging it — the
+  /// headline "Golden Hour" number the console exists to shrink.
+  /// Null until at least one alert has been acknowledged.
+  Duration? get averageAcknowledgeTime =>
+      _meanTimeTo(AlertStatus.acknowledged);
+
+  Duration? get averageResolveTime => _meanTimeTo(AlertStatus.resolved);
+
+  Duration? _meanTimeTo(AlertStatus status) {
+    var totalMicros = 0;
+    var count = 0;
+    for (final alert in _alerts) {
+      final at = alert.reachedAt(status);
+      if (at == null) continue;
+      totalMicros += at.difference(alert.timestamp).inMicroseconds;
+      count++;
+    }
+    if (count == 0) return null;
+    return Duration(microseconds: totalMicros ~/ count);
+  }
+
   static AlertPriority priorityOf(AlertEvent alert) {
     if (alert.status == AlertStatus.resolved) return AlertPriority.none;
     return switch (alert.type) {
@@ -243,6 +273,98 @@ class MockFleetController extends ChangeNotifier {
       }
     }
     return best;
+  }
+
+  // -------------------------------------------------------------- workflow
+
+  /// Operator takes ownership of an open alert.
+  ///
+  /// Throws [StateError] if the alert is unknown or the move is illegal —
+  /// callers surface [StateError.message] in a SnackBar rather than letting a
+  /// rejected action look like a successful one.
+  void acknowledgeAlert(String alertId, {required String actor}) {
+    _transition(alertId, AlertStatus.acknowledged, actor: actor);
+  }
+
+  /// Sends a responder. Requires the alert to already be acknowledged.
+  void dispatchAlert(
+    String alertId, {
+    required String actor,
+    required ResponderType responder,
+    String? note,
+  }) {
+    _transition(
+      alertId,
+      AlertStatus.dispatched,
+      actor: actor,
+      responder: responder,
+      note: note,
+    );
+  }
+
+  /// Closes the incident and, where nothing else is outstanding, puts the
+  /// rider back on the road.
+  void resolveAlert(String alertId, {required String actor, String? note}) {
+    _transition(alertId, AlertStatus.resolved, actor: actor, note: note);
+  }
+
+  /// The one place an alert's status changes. Enforces the linear lifecycle
+  /// declared on [AlertStatusLabel.nextStatus] and appends the audit entry.
+  void _transition(
+    String alertId,
+    AlertStatus target, {
+    required String actor,
+    ResponderType? responder,
+    String? note,
+  }) {
+    final index = _alerts.indexWhere((a) => a.id == alertId);
+    if (index == -1) {
+      throw StateError('Alert $alertId is no longer on the board.');
+    }
+
+    final alert = _alerts[index];
+    if (!alert.status.canTransitionTo(target)) {
+      throw StateError(
+        'Cannot mark ${alert.id} as ${target.label.toLowerCase()} while it is '
+        '${alert.status.label.toLowerCase()} — an alert must go '
+        'open → acknowledged → dispatched → resolved.',
+      );
+    }
+
+    _alerts[index] = alert.copyWith(
+      status: target,
+      history: [
+        ...alert.history,
+        AlertAction(
+          toStatus: target,
+          actorName: actor,
+          note: note,
+          responder: responder,
+          at: DateTime.now(),
+        ),
+      ],
+    );
+
+    if (target == AlertStatus.resolved) {
+      _clearRiderIfSettled(alert.riderId);
+    }
+
+    notifyListeners();
+  }
+
+  /// A rider comes off emergency once none of their critical alerts are
+  /// still active. Anything less would clear the dot while responders are
+  /// still en route to a second incident.
+  void _clearRiderIfSettled(String riderId) {
+    final rider = riderFor(riderId);
+    if (rider == null || rider.status != RiderStatus.emergency) return;
+
+    final stillActive = _alerts.any(
+      (a) => a.riderId == riderId && a.type.isCritical && a.status.isActive,
+    );
+    if (stillActive) return;
+
+    _setStatus(riderId, RiderStatus.idle);
   }
 
   // ------------------------------------------------------------- simulation
@@ -331,11 +453,30 @@ class MockFleetController extends ChangeNotifier {
 
   /// Emergencies would otherwise pile up until the whole fleet is red; once
   /// three are open, the first one in fleet order goes back on the road.
+  ///
+  /// Only riders with no active critical alert are eligible — an alert the
+  /// operator is working through owns its rider's status until it is
+  /// resolved, so a demo acknowledge/dispatch can never be silently undone by
+  /// this timer. Riders qualify again once their alerts are resolved, or once
+  /// the [_maxAlerts] cap ages them off the board entirely.
+  ///
+  /// Consequence worth knowing during a demo: if the operator never resolves
+  /// anything, emergencies now persist rather than self-clearing. Clearing
+  /// them is the operator's job as of the response workflow.
   void _standDownOldestEmergency() {
     final emergencies =
         _riders.where((r) => r.status == RiderStatus.emergency).toList();
     if (emergencies.length < 3) return;
-    _setStatus(emergencies.first.id, RiderStatus.riding);
+
+    for (final rider in emergencies) {
+      final hasActiveAlert = _alerts.any(
+        (a) => a.riderId == rider.id && a.type.isCritical && a.status.isActive,
+      );
+      if (!hasActiveAlert) {
+        _setStatus(rider.id, RiderStatus.riding);
+        return;
+      }
+    }
   }
 
   void _setStatus(String riderId, RiderStatus status) {

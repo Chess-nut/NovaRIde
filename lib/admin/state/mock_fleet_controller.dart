@@ -104,6 +104,17 @@ const List<FleetDistrict> kFleetDistricts = [
   ),
 ];
 
+/// One historical GPS fix in a rider's breadcrumb trail.
+///
+/// Deliberately not a full [HelmetTelemetry] — the trail only needs geometry,
+/// and keeping twenty full telemetry records per rider would be wasteful.
+class TrailPoint {
+  final double lat;
+  final double lng;
+
+  const TrailPoint(this.lat, this.lng);
+}
+
 /// Dispatch priority buckets for the "alert priority" chart.
 enum AlertPriority { critical, high, medium, low, none }
 
@@ -133,6 +144,11 @@ class MockFleetController extends ChangeNotifier {
     _riders = List.of(MockData.riders);
     _telemetry = List.of(MockData.telemetry);
     _alerts = List.of(MockData.alerts);
+    // Seed each trail with the rider's starting fix so the first jitter tick
+    // already has something to draw a segment from.
+    for (final t in _telemetry) {
+      _trails[t.riderId] = [TrailPoint(t.lat, t.lng)];
+    }
     _jitterTimer = Timer.periodic(_jitterInterval, (_) => _stepTelemetry());
     _scheduleNextAlert();
   }
@@ -147,17 +163,25 @@ class MockFleetController extends ChangeNotifier {
   /// Cap so the feed never grows unbounded over a long demo session.
   static const _maxAlerts = 40;
 
+  /// Breadcrumb depth per rider. Twenty fixes at the 3s jitter interval is
+  /// about a minute of history — long enough to read as a path, short enough
+  /// that the map does not turn into spaghetti.
+  static const _maxTrailPoints = 20;
+
   final Random _rng = Random();
 
   late final List<Rider> _riders;
   late final List<HelmetTelemetry> _telemetry;
   late final List<AlertEvent> _alerts;
 
+  final Map<String, List<TrailPoint>> _trails = {};
+
   Timer? _jitterTimer;
   Timer? _alertTimer;
 
   DateTime _lastSync = DateTime.now();
   int _nextAlertId = 102;
+  String? _selectedRiderId;
 
   UnmodifiableListView<Rider> get riders => UnmodifiableListView(_riders);
   UnmodifiableListView<HelmetTelemetry> get telemetry =>
@@ -166,6 +190,21 @@ class MockFleetController extends ChangeNotifier {
 
   /// Timestamp of the most recent simulated telemetry push.
   DateTime get lastSync => _lastSync;
+
+  /// Rider the operator is drilled into, shared between the roster table and
+  /// the map so clicking either keeps both in agreement. Null means no
+  /// selection.
+  String? get selectedRiderId => _selectedRiderId;
+
+  void selectRider(String? riderId) {
+    if (_selectedRiderId == riderId) return;
+    _selectedRiderId = riderId;
+    notifyListeners();
+  }
+
+  /// Recent GPS fixes for one rider, oldest first.
+  UnmodifiableListView<TrailPoint> trailFor(String riderId) =>
+      UnmodifiableListView(_trails[riderId] ?? const <TrailPoint>[]);
 
   HelmetTelemetry? telemetryFor(String riderId) {
     for (final t in _telemetry) {
@@ -377,16 +416,28 @@ class MockFleetController extends ChangeNotifier {
       final t = _telemetry[i];
       if (riderFor(t.riderId)?.status != RiderStatus.riding) continue;
 
-      _telemetry[i] = t.copyWith(
+      final moved = t.copyWith(
         lat: (t.lat + _signed(_latJitter)).clamp(kFleetLatMin, kFleetLatMax).toDouble(),
         lng: (t.lng + _signed(_lngJitter)).clamp(kFleetLngMin, kFleetLngMax).toDouble(),
         speedKmh: (t.speedKmh + _signed(_speedJitter)).clamp(8.0, 78.0).toDouble(),
         lastUpdate: now,
       );
+      _telemetry[i] = moved;
+      _recordTrailPoint(moved);
     }
 
     _lastSync = now;
     notifyListeners();
+  }
+
+  /// Appends a fix to the rider's breadcrumb, dropping the oldest once the
+  /// cap is reached so a long demo session cannot grow the trail unbounded.
+  void _recordTrailPoint(HelmetTelemetry telemetry) {
+    final trail = _trails.putIfAbsent(telemetry.riderId, () => <TrailPoint>[]);
+    trail.add(TrailPoint(telemetry.lat, telemetry.lng));
+    if (trail.length > _maxTrailPoints) {
+      trail.removeRange(0, trail.length - _maxTrailPoints);
+    }
   }
 
   /// Alerts arrive on an irregular 10–14s cadence — a fixed beat reads as fake.

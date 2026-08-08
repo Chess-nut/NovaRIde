@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/state/mock_fleet_controller.dart';
 import 'package:novaride/admin/widgets/alert_feed_tile.dart';
+import 'package:novaride/admin/widgets/filter_controls.dart';
 import 'package:novaride/admin/widgets/kpi_card.dart';
 import 'package:novaride/admin/widgets/status_pill.dart';
 import 'package:novaride/shared/models/models.dart';
@@ -261,9 +262,9 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
             runSpacing: 6,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              const _FilterGroupLabel('STATUS'),
+              const FilterGroupLabel('STATUS'),
               for (final status in AlertStatus.values)
-                _FilterChip(
+                FilterChipButton(
                   label: status.label,
                   color: StatusPill.colorForAlert(status),
                   selected: _statusFilter.contains(status),
@@ -281,9 +282,9 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
             runSpacing: 6,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              const _FilterGroupLabel('TYPE'),
+              const FilterGroupLabel('TYPE'),
               for (final type in AlertType.values)
-                _FilterChip(
+                FilterChipButton(
                   label: type.label,
                   color: AlertFeedTile.colorFor(type),
                   selected: _typeFilter.contains(type),
@@ -296,7 +297,7 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
               if (_statusFilter.isNotEmpty ||
                   _typeFilter.isNotEmpty ||
                   _query.isNotEmpty)
-                _FilterChip(
+                FilterChipButton(
                   label: 'Clear filters',
                   color: NovaColors.secondaryText,
                   selected: false,
@@ -987,7 +988,7 @@ class _DispatchDialogState extends State<_DispatchDialog> {
               runSpacing: 6,
               children: [
                 for (final responder in ResponderType.values)
-                  _FilterChip(
+                  FilterChipButton(
                     label: responder.label,
                     color: NovaColors.pink,
                     selected: _responder == responder,
@@ -1061,76 +1062,6 @@ class _DispatchDialogState extends State<_DispatchDialog> {
 }
 
 // ------------------------------------------------------------- small widgets
-
-class _FilterGroupLabel extends StatelessWidget {
-  final String text;
-  const _FilterGroupLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: NovaColors.secondaryText,
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.9,
-        ),
-      ),
-    );
-  }
-}
-
-/// Hand-rolled rather than Material's FilterChip, which needs a pile of
-/// theme overrides to sit correctly on the dark console palette.
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _FilterChip({
-    required this.label,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-          decoration: BoxDecoration(
-            color: selected
-                ? color.withValues(alpha: 0.18)
-                : NovaColors.background,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: selected
-                  ? color.withValues(alpha: 0.65)
-                  : NovaColors.cardBorder,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? color : NovaColors.secondaryText,
-              fontSize: 11.5,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _ActionButton extends StatelessWidget {
   final String label;

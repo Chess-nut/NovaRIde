@@ -67,6 +67,7 @@ class ProfilePage extends StatelessWidget {
   // ---- Avatar, name, rider ID, edit button ----
   Widget _buildProfileCard() {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: NovaColors.card,

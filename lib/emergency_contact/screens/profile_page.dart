@@ -102,7 +102,7 @@ class ProfilePage extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const Text(
-            'Chistir',
+            'Hanz',
             style: TextStyle(color: NovaColors.primaryText, fontSize: 18, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),

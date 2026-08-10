@@ -110,7 +110,7 @@ class RiderDashboardPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Juan dela Cruz',
+                  'Deor the great',
                   style: TextStyle(
                     color: NovaColors.primaryText,
                     fontSize: 15.5,
@@ -119,7 +119,7 @@ class RiderDashboardPage extends StatelessWidget {
                 ),
                 SizedBox(height: 2),
                 Text(
-                  'Rider #NV-08567 · Spouse',
+                  'Rider #NV-08567 · Sibling',
                   style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
                 ),
               ],

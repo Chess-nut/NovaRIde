@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:novaride/family/screens/family_dashboard_page.dart';
 import 'package:novaride/shared/theme.dart';
 import 'package:novaride/emergency_contact/screens/rider_dashboard_page.dart';
 import 'home_page.dart';
@@ -62,7 +63,7 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
       final destination = widget.role == UserRole.rider
           ? const HomePage()
-          : const RiderDashboardPage();
+          : const FamilyDashboardPage();
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => destination),
       );

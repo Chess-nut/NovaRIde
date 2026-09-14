@@ -296,8 +296,7 @@ class _SettingsTile extends StatelessWidget {
     required this.icon,
     required this.iconColor,
     required this.title,
-    this.onTap,
-  });
+  }) : onTap = null;
 
   @override
   Widget build(BuildContext context) {

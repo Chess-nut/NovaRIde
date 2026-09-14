@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'family/screens/family_dashboard_page.dart';
+import 'family/screens/family_emergency_alert_page.dart';
+import 'family/screens/family_incident_history_page.dart';
+import 'family/screens/family_live_location_page.dart';
+import 'family/screens/family_monitoring_page.dart';
+import 'family/screens/family_profile_page.dart';
 import 'shared/theme.dart';
 import 'rider/screens/welcome_page.dart';
 
@@ -23,6 +29,14 @@ class NovaRideApp extends StatelessWidget {
         fontFamily: 'Roboto',
       ),
       home: const WelcomePage(),
+      routes: {
+        '/family-dashboard': (_) => const FamilyDashboardPage(),
+        '/family-monitoring': (_) => const FamilyMonitoringPage(),
+        '/family-map': (_) => const FamilyLiveLocationPage(),
+        '/family-alerts': (_) => const FamilyEmergencyAlertPage(),
+        '/family-history': (_) => const FamilyIncidentHistoryPage(),
+        '/family-profile': (_) => const FamilyProfilePage(),
+      },
     );
   }
 }

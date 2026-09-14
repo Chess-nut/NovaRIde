@@ -19,3 +19,26 @@ NovaRide ESP32 based high calibrated smart helmet system developed to overcome a
  - **Web Portal Development:** HTML5, CSS3, and PHP
  - **Backend & Cloud Database:** Firebase Realtime Database & Firebase Authentication
  - **Mapping Integration:** Google Maps Platform API
+
+## Family Live Location
+
+The Family Map route is `/family-map`. It currently consumes the existing
+`FamilyRepository` mock stream, which is permission-gated by the connected
+rider's `liveLocation` permission. The location payload shape is represented by
+`RiderLocation` and is ready to be populated by a Firebase Realtime Database
+listener at `riderTelemetry/{riderId}/location` when Firebase is added to the
+project.
+
+Google Maps keys are intentionally supplied through native build settings and
+are not stored in this repository. For Android, provide the Gradle property
+`GOOGLE_MAPS_API_KEY` when building. For iOS, set the `GOOGLE_MAPS_API_KEY`
+build setting for the Runner target. The Android manifest and iOS delegate read
+these values at runtime.
+
+Useful checks:
+
+```text
+flutter pub get
+flutter analyze
+flutter test test/family_module_test.dart test/rider_location_test.dart
+```

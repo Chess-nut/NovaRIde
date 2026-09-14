@@ -436,7 +436,7 @@ class _ToggleRow extends StatelessWidget {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: NovaColors.cyan,
+            activeThumbColor: NovaColors.cyan,
             activeTrackColor: NovaColors.cyan.withValues(alpha: 0.3),
             inactiveThumbColor: NovaColors.secondaryText,
             inactiveTrackColor: NovaColors.cardBorder,

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:novaride/family/models/family_models.dart';
+import 'package:novaride/family/models/rider_location.dart';
 
 /// Firebase-backed repository seam for the Family Module.
 ///
@@ -110,6 +111,42 @@ class FamilyRepository {
   Stream<FamilyConnectedRider> watchRiderStatus() {
     _riderStreamController.add(_connectedRider);
     return _riderStreamController.stream;
+  }
+
+  Stream<RiderLocation> watchRiderLocation() async* {
+    yield _locationFor(_connectedRider);
+    await for (final rider in _riderStreamController.stream) {
+      if (canMonitorLocation) yield _locationFor(rider);
+    }
+  }
+
+  bool get canMonitorLocation => _riderPermissions.any(
+        (permission) => permission.type == FamilyPermissionType.liveLocation && permission.enabled,
+      );
+
+  RiderLocation _locationFor(FamilyConnectedRider rider) => RiderLocation(
+        riderId: rider.id,
+        latitude: rider.latitude,
+        longitude: rider.longitude,
+        speedKmh: rider.speedKmh,
+        heading: _headingDegrees(rider.heading),
+        timestamp: rider.lastUpdated,
+        status: rider.status.label,
+        address: rider.address,
+      );
+
+  double? _headingDegrees(String heading) {
+    const directions = <String, double>{
+      'N': 0,
+      'NE': 45,
+      'E': 90,
+      'SE': 135,
+      'S': 180,
+      'SW': 225,
+      'W': 270,
+      'NW': 315,
+    };
+    return directions[heading.toUpperCase()];
   }
 
   void updateRiderStatus(FamilyRiderStatus status) {

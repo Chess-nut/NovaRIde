@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/family/data/family_repository.dart';
-import 'package:novaride/family/models/family_models.dart';
 import 'package:novaride/family/widgets/family_bottom_nav_bar.dart';
 import 'package:novaride/shared/theme.dart';
 

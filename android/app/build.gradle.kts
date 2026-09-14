@@ -28,6 +28,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["AIzaSyDrEp1SJshCZlISfAUK03y1jLHm-yAfw6o"] = project.findProperty("AIzaSyDrEp1SJshCZlISfAUK03y1jLHm-yAfw6o") ?: ""
     }
 
     buildTypes {

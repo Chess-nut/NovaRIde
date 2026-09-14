@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/family/screens/family_dashboard_page.dart';
 import 'package:novaride/shared/theme.dart';
-import 'package:novaride/emergency_contact/screens/rider_dashboard_page.dart';
 import 'home_page.dart';
 import 'forgot_password_page.dart';
 import 'role_selection_page.dart';

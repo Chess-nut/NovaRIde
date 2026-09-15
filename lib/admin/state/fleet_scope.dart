@@ -37,8 +37,28 @@ class FleetScope extends InheritedNotifier<FleetController> {
   }
 }
 
-/// Builds the repository a [FleetHost] hands to its controller.
-typedef FleetRepositoryFactory = FleetRepository Function();
+/// Names the data source for every [FleetHost] below it.
+///
+/// `main_admin.dart` resolves the source once, before `runApp`, and mounts
+/// this above the app so the host can pick it up without the login page
+/// having to carry it. Absent — as in the widget tests, which pump
+/// `AdminApp()` bare — the host falls back to the simulation.
+class FleetSourceScope extends InheritedWidget {
+  final FleetRepositoryFactory createRepository;
+
+  const FleetSourceScope({
+    super.key,
+    required this.createRepository,
+    required super.child,
+  });
+
+  static FleetRepositoryFactory? maybeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<FleetSourceScope>()?.createRepository;
+
+  @override
+  bool updateShouldNotify(FleetSourceScope oldWidget) =>
+      oldWidget.createRepository != createRepository;
+}
 
 /// Owns the controller's lifecycle for as long as the console is signed in.
 ///
@@ -46,9 +66,10 @@ typedef FleetRepositoryFactory = FleetRepository Function();
 /// [initState] and disposed in [dispose], so switching tabs — which rebuilds
 /// pages — can never cancel the data subscriptions out from under the app.
 ///
-/// This is the single injection point for the data source. Pass
-/// [createRepository] to choose one explicitly (tests do, to stay on the
-/// simulation); otherwise the host uses the in-process mock.
+/// This is the single injection point for the data source. The repository
+/// comes from, in order: [createRepository] if given, the enclosing
+/// [FleetSourceScope] if any, else the in-process simulation. The controller
+/// owns the repository it is given and disposes it with itself.
 class FleetHost extends StatefulWidget {
   final Widget child;
   final FleetRepositoryFactory? createRepository;
@@ -65,7 +86,9 @@ class _FleetHostState extends State<FleetHost> {
   @override
   void initState() {
     super.initState();
-    final create = widget.createRepository ?? MockFleetRepository.new;
+    final create = widget.createRepository ??
+        FleetSourceScope.maybeOf(context) ??
+        MockFleetRepository.new;
     _fleet = FleetController(create());
   }
 

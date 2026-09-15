@@ -6,6 +6,7 @@ import 'package:novaride/admin/screens/reports_page.dart';
 import 'package:novaride/admin/screens/rider_monitoring_page.dart';
 import 'package:novaride/admin/screens/user_management_page.dart';
 import 'package:novaride/admin/state/admin_session.dart';
+import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/widgets/admin_sidebar.dart';
 import 'package:novaride/shared/theme.dart';
@@ -182,45 +183,26 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
       ),
       child: Row(
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: NovaColors.primaryText,
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
+          // The title yields to the status cluster on narrow viewports rather
+          // than the row overflowing — the chips are what an operator needs.
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: NovaColors.primaryText,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          const Spacer(),
-          _buildLiveIndicator(),
+          const SizedBox(width: 12),
+          const _SourceChip(),
+          const SizedBox(width: 10),
+          const _ConnectionPill(),
           const SizedBox(width: 16),
           _buildAdminChip(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLiveIndicator() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: NovaColors.green.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: NovaColors.green.withValues(alpha: 0.35)),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.circle, color: NovaColors.green, size: 8),
-          SizedBox(width: 7),
-          Text(
-            'LIVE',
-            style: TextStyle(
-              color: NovaColors.green,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-            ),
-          ),
         ],
       ),
     );
@@ -295,6 +277,115 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
           fontSize: 9,
           fontWeight: FontWeight.w800,
           letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+}
+
+/// Names the data source in the top bar: `FIRESTORE` or `SIMULATION`.
+///
+/// Exists so a demo can prove at a glance that the board is real — and so
+/// nobody can present the simulation while believing it is Firebase. Its
+/// own widget rather than a helper on the frame, so a fleet tick rebuilds
+/// this chip and not the whole shell.
+class _SourceChip extends StatelessWidget {
+  const _SourceChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final fleet = FleetScope.of(context);
+    final source = fleet.source;
+    final color = switch (source) {
+      FleetSource.firestore => NovaColors.cyan,
+      FleetSource.simulation => NovaColors.amber,
+    };
+    final icon = switch (source) {
+      FleetSource.firestore => Icons.cloud_outlined,
+      FleetSource.simulation => Icons.science_outlined,
+    };
+    final tooltip = switch (source) {
+      FleetSource.firestore =>
+        'Live data from Cloud Firestore (project novaride-266bc)',
+      FleetSource.simulation =>
+        'In-process simulation — no Firebase config found',
+    };
+
+    // Below 1000px the label goes and the icon carries the meaning; the
+    // tooltip still spells it out.
+    final compact = MediaQuery.sizeOf(context).width < 1000;
+
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 13),
+            if (!compact) ...[
+              const SizedBox(width: 6),
+              Text(
+                source.label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Link health: `LIVE`, `CONNECTING` or `OFFLINE`, from the repository's
+/// own report (snapshot metadata for Firestore) rather than guessed from
+/// failures. The tooltip carries the reason when something is wrong.
+class _ConnectionPill extends StatelessWidget {
+  const _ConnectionPill();
+
+  @override
+  Widget build(BuildContext context) {
+    final connection = FleetScope.of(context).connection;
+    final (label, color) = switch (connection.state) {
+      FleetConnectionState.connected => ('LIVE', NovaColors.green),
+      FleetConnectionState.connecting => ('CONNECTING', NovaColors.amber),
+      FleetConnectionState.disconnected => ('OFFLINE', NovaColors.red),
+    };
+
+    return Tooltip(
+      message: connection.message ?? 'Receiving updates from the data source',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.circle, color: color, size: 8),
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ],
         ),
       ),
     );

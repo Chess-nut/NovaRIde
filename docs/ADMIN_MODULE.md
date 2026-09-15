@@ -31,6 +31,7 @@ lib/
 ├── rider/                 rider screens and widgets
 ├── admin/                 admin console  ← this document
 │   ├── console_format.dart    shared duration/date/CSV formatting
+│   ├── data/                  FleetRepository contract, mock + Firestore implementations
 │   ├── mock/                  seed data
 │   ├── screens/               one file per tab, plus login
 │   ├── state/                 controller, scopes, validation, session
@@ -61,7 +62,9 @@ imports from `lib/admin/`. The only shared surface is `lib/shared/`.
 **Decision: `ChangeNotifier` + `InheritedNotifier`, with zero third-party
 packages.**
 
-`pubspec.yaml` has no non-Flutter dependencies. That is deliberate:
+Apart from `firebase_core` and `cloud_firestore` (the data tier) and the rider
+app's `google_maps_flutter`, `pubspec.yaml` has no non-Flutter dependencies.
+That is deliberate:
 
 - **Defensibility.** Every mechanism in the console can be explained from the
   Flutter SDK alone. There is no "the package does it" answer to a panel
@@ -90,7 +93,7 @@ AdminApp
 └── AdminLoginPage                  authenticate() → AdminUser
     └── AdminShell(user)
         ├── AdminSessionScope       who is signed in (InheritedWidget)
-        └── FleetHost               OWNS the MockFleetController
+        └── FleetHost               OWNS the FleetController (+ its repository)
             └── FleetScope          the controller (InheritedNotifier)
                 └── AdminNavScope   cross-tab navigation requests
                     └── Scaffold
@@ -109,41 +112,57 @@ Pages read state with `FleetScope.of(context)` and wrap the reactive part in a
 
 ---
 
-## 3. `FleetScope` — the Firebase injection seam
+## 3. The repository seam — `FleetRepository`
 
-`FleetScope` is the single place a Firestore-backed controller gets injected.
+The controller never talks to a store. It is handed one `FleetRepository`
+and reads everything through that repository's streams:
 
-```dart
-// lib/admin/state/fleet_scope.dart
-class FleetScope extends InheritedNotifier<MockFleetController> { ... }
+```
+lib/admin/data/
+├── fleet_repository.dart            the contract (streams + narrow writes)
+├── mock_fleet_repository.dart       in-process simulation, timers, seed data
+├── firestore_fleet_repository.dart  Cloud Firestore snapshots + batched writes
+├── fleet_bootstrap.dart             picks one at startup (see below)
+├── firestore_seed.dart              one-time seed, gated by --dart-define
+└── fleet_geography.dart             district table + map window
 
-class _FleetHostState extends State<FleetHost> {
-  late final MockFleetController _fleet;
-
-  @override
-  void initState() {
-    super.initState();
-    _fleet = MockFleetController();   // ← the one line that changes
-  }
-}
+lib/admin/state/
+├── fleet_controller.dart            workflow rules, derived metrics, selection
+└── fleet_scope.dart                 FleetScope / FleetSourceScope / FleetHost
 ```
 
-Migration plan, when the ESP32 telemetry feed and Firestore are connected:
+Division of labour:
 
-| Today (mock) | Later (Firestore) |
+| `FleetController` (state) | `FleetRepository` (data) |
 |---|---|
-| `Timer.periodic` jitter loop | `snapshots()` on `telemetry/{riderId}` |
-| `Timer` alert spawner | `snapshots()` on `alerts` |
-| `List<Rider> _riders` in memory | `snapshots()` on `riders` |
-| `_transition()` mutates the list | `update()` on `alerts/{id}` + append to `alerts/{id}/history`; the snapshot echoes the write back |
-| `addRider` / `updateRider` | `set()` / `update()` on `riders/{id}` |
-| `RiderValidation` runs client-side | same predicates as Firestore security rules, plus a uniqueness constraint on `helmetId` |
-| `authenticate()` over `demoAccounts` | Firebase Auth + a custom claim carrying `AdminRole` |
+| Legal alert transitions, roster uniqueness, when a rider comes off emergency | Carrying a validated write to the store |
+| Validates against its **local copy**, throws `StateError` synchronously | Echoes the resulting state back through `watchRiders / watchTelemetry / watchAlerts` |
+| Trails, selection, `lastSync`, `statusCounts`, response-time averages | `FleetSource` (simulation / firestore) and `FleetConnection` for the top-bar chips |
 
-Because every page consumes only the controller's public getters and
-mutations, none of them change. Seam comments marking these points are kept
-in `mock_data.dart`, `mock_fleet_controller.dart`, `fleet_scope.dart`,
-`rider_validation.dart` and `admin_session.dart`.
+The streams are the source of truth: a write is only "done" once it comes
+back through them. The mock's streams deliver synchronously, which is why the
+controller and widget tests can stay synchronous; Firestore's are async and
+the pages never notice, because they only read the controller's getters.
+
+### Choosing the source
+
+`main_admin.dart` calls `FleetBootstrap.resolve()` once, before `runApp`:
+
+1. `--dart-define=NOVARIDE_FORCE_SIMULATION=true` → simulation.
+2. `assets/config/firebase.json` absent or unusable → simulation.
+3. `Firebase.initializeApp` fails → simulation (reason printed).
+4. Otherwise → `FirestoreFleetRepository`.
+
+The result is mounted as a `FleetSourceScope` above the app; `FleetHost`
+reads it in `initState`. Widget tests pump `AdminApp()` bare, so they never
+reach the network. The top bar shows the outcome: a `FIRESTORE` or
+`SIMULATION` chip, and a `LIVE / CONNECTING / OFFLINE` pill fed by the
+repository's own connection report (snapshot metadata, for Firestore).
+
+The schema, naming convention, firmware contract and rules are in
+[FIRESTORE_SCHEMA.md](FIRESTORE_SCHEMA.md). Still pending: `RiderValidation`
+predicates as security rules once Auth lands, and `authenticate()` over
+`demoAccounts` becoming Firebase Auth with a custom claim carrying `AdminRole`.
 
 ---
 
@@ -285,16 +304,20 @@ the monitoring page — one painter, not two), `fleet_table.dart`,
 
 ## 7. Simulated vs. real — full disclosure
 
-**Everything below the UI is currently simulated. No hardware, network or
-database is involved.** This section states exactly what that means, because
-a reviewer who discovers undisclosed mocking is entitled to treat the whole
-module with suspicion.
+**The console has two data sources and says which one it is on.** With
+`assets/config/firebase.json` present it reads and writes Cloud Firestore
+(`FIRESTORE` chip in the top bar); without it, everything below the UI is
+simulated in-process (`SIMULATION` chip). Even on Firestore, no hardware is
+involved yet — the seeded riders and their positions are the simulation's
+fixtures written into the database once. This section states exactly what
+that means, because a reviewer who discovers undisclosed mocking is entitled
+to treat the whole module with suspicion.
 
 ### What is simulated
 
 | Area | How it is faked today | What the real implementation will be |
 |---|---|---|
-| **Helmet telemetry** | `MockFleetController` jitters lat/lng/speed for every `riding` rider every 3s via `Timer.periodic`. Battery, alcohol and GPS-fix are fixed seed values that never change. | ESP32 publishes MPU6050 + MQ-3 + NEO-6M readings; the app subscribes to a Firestore/RTDB stream. |
+| **Helmet telemetry** | Simulation: `MockFleetRepository` jitters lat/lng/speed for every `riding` rider every 3s via `Timer.periodic`. Battery, alcohol and GPS-fix are fixed seed values that never change. Firestore: whatever is in `devices/`, which today is the seed's static readings. | ESP32 publishes MPU6050 + MQ-3 + NEO-6M readings into `devices/{helmetId}`; the console already subscribes to that collection. |
 | **Accident detection** | No detection at all. Alerts are *invented* on a random 10–14s timer, with a weighted type roll (18% crash, 16% SOS, 30% alcohol, 36% low battery) and a random rider and district. | On-helmet edge algorithm: MPU6050 magnitude threshold **intersected** with the YL-99 impact switch, so bumps and drops do not fire. The helmet raises the alert; the console only receives it. |
 | **GPS position** | Random walk inside a fixed lat/lng box over Metro Manila, clamped to the window. | NEO-6M coordinates. |
 | **Map** | `FleetMapView` paints a *stylized* basemap — a street grid, four avenues and a river drawn from hardcoded normalized coordinates. It is **not** Metro Manila's real road network. District centroids and the projection are real coordinates, so relative dot movement is geographically meaningful. No pan or zoom; the controls are decorative. | Google Maps Platform tiles with real markers. |
@@ -302,7 +325,7 @@ module with suspicion.
 | **Street addresses** | Hardcoded per district in `kFleetDistricts`; an alert borrows its district's address string. | Reverse geocode of the real coordinates. |
 | **Authentication** | `authenticate()` compares against three hardcoded accounts in `admin_session.dart`. Passwords are plaintext in source. | Firebase Auth; role as a custom claim. |
 | **Responder dispatch** | Choosing a `ResponderType` records an audit entry. **Nobody is contacted.** | Integration with emergency services / the rider's emergency contacts. |
-| **Persistence** | None. All state is in memory and is lost on refresh or logout. | Firestore. |
+| **Persistence** | Simulation: none — state is in memory and lost on refresh or logout. Firestore: riders, alerts and the acknowledge → dispatch → resolve audit trail persist across refresh and between operators. | Firestore, with Auth-backed rules (see FIRESTORE_SCHEMA.md). |
 | **"Resolved Today" / date ranges** | Operate on real data, but the seeded alerts are only minutes-to-hours old and the board caps at 40, so nearly everything falls inside "Today". The ranges filter correctly; they just have little history to separate. | Meaningful once real history accumulates. |
 | **Weekly alerts chart** | Real counts bucketed from actual alert timestamps over the last 7 calendar days — but see the point above about how little history exists. | Same code, real history. |
 

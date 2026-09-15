@@ -80,3 +80,6 @@ abstract class FleetRepository {
   /// Cancels timers and subscriptions. The repository is unusable afterwards.
   void dispose();
 }
+
+/// Builds the repository a `FleetHost` hands to its controller.
+typedef FleetRepositoryFactory = FleetRepository Function();

@@ -77,7 +77,7 @@ class MockFleetRepository implements FleetRepository {
   /// The simulation has nothing to lose a connection to.
   @override
   Stream<FleetConnection> watchConnection() =>
-      Stream.value(FleetConnection.connected);
+      _replaying(() => FleetConnection.connected, const Stream.empty());
 
   /// Hands a new listener the current value during `listen()`, then forwards
   /// every later emission. Both synchronous, see the class comment.

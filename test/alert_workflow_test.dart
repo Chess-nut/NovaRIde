@@ -7,13 +7,18 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:novaride/admin/state/mock_fleet_controller.dart';
+import 'package:novaride/admin/data/mock_fleet_repository.dart';
+import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/shared/models/models.dart';
 
-/// A controller with its timers cancelled at teardown, so a test never leaks
-/// the simulation into the next one.
-MockFleetController _controller() {
-  final fleet = MockFleetController();
+/// A controller over a fresh simulation. Disposing the controller cancels
+/// the repository's timers, so a test never leaks the simulation into the
+/// next one. The repository is kept so tests can drive the simulation by hand.
+late MockFleetRepository _repo;
+
+FleetController _controller() {
+  _repo = MockFleetRepository();
+  final fleet = FleetController(_repo);
   addTearDown(fleet.dispose);
   return fleet;
 }
@@ -283,7 +288,7 @@ void main() {
       // Drive the simulation hard enough to trip the three-emergency guard
       // many times over.
       for (var i = 0; i < 60; i++) {
-        fleet.debugEmitAlert();
+        _repo.debugEmitAlert();
       }
 
       final r3 = fleet.riderFor('R-003')!;

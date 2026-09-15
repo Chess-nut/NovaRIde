@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:novaride/admin/screens/admin_shell.dart';
 import 'package:novaride/admin/state/admin_session.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
-import 'package:novaride/admin/state/mock_fleet_controller.dart';
+import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/admin/state/rider_validation.dart';
 import 'package:novaride/admin/widgets/filter_controls.dart';
 import 'package:novaride/admin/widgets/kpi_card.dart';
@@ -77,7 +77,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
   // -------------------------------------------------------------------- KPIs
 
-  Widget _buildKpiRow(MockFleetController fleet, double width) {
+  Widget _buildKpiRow(FleetController fleet, double width) {
     final riders = fleet.riders;
     final active = riders.where((r) => r.isActive).length;
     final riding = riders.where((r) => r.status == RiderStatus.riding).length;
@@ -142,7 +142,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
   // ------------------------------------------------------------------ roster
 
-  Widget _buildRosterCard(MockFleetController fleet, List<Rider> roster) {
+  Widget _buildRosterCard(FleetController fleet, List<Rider> roster) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -340,7 +340,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
   // --------------------------------------------------------------- table row
 
-  Widget _buildRow(MockFleetController fleet, Rider rider) {
+  Widget _buildRow(FleetController fleet, Rider rider) {
     final inactive = !rider.isActive;
 
     return Container(
@@ -442,7 +442,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
     );
   }
 
-  Widget _buildRowMenu(MockFleetController fleet, Rider rider) {
+  Widget _buildRowMenu(FleetController fleet, Rider rider) {
     return PopupMenuButton<String>(
       tooltip: 'Rider actions',
       color: NovaColors.card,
@@ -496,7 +496,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
   // ----------------------------------------------------------- filter + sort
 
-  List<Rider> _applyFilters(MockFleetController fleet) {
+  List<Rider> _applyFilters(FleetController fleet) {
     final matches = fleet.riders.where((rider) {
       if (_statusFilter.isNotEmpty && !_statusFilter.contains(rider.status)) {
         return false;
@@ -523,7 +523,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
   // ---------------------------------------------------------------- actions
 
   Future<void> _openRiderForm(
-    MockFleetController fleet, {
+    FleetController fleet, {
     Rider? rider,
   }) async {
     final result = await showDialog<Rider>(
@@ -545,7 +545,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
     );
   }
 
-  void _setActive(MockFleetController fleet, Rider rider, bool active) {
+  void _setActive(FleetController fleet, Rider rider, bool active) {
     _run(
       () => fleet.setRiderActive(rider.id, active),
       success: active
@@ -555,17 +555,25 @@ class _UserManagementPageState extends State<UserManagementPage> {
   }
 
   /// Controller mutations reject duplicates with a [StateError]; surface it
-  /// rather than letting the roster silently not change.
-  void _run(VoidCallback action, {required String success}) {
+  /// rather than letting the roster silently not change. The success toast
+  /// waits for the store to accept the write, so it never claims a save that
+  /// the backend then refused.
+  Future<void> _run(
+    Future<void> Function() action, {
+    required String success,
+  }) async {
     try {
-      action();
+      await action();
       _toast(success, NovaColors.green);
     } on StateError catch (error) {
       _toast(error.message, NovaColors.red);
+    } catch (error) {
+      _toast('The change was not saved: $error', NovaColors.red);
     }
   }
 
   void _toast(String message, Color color) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),

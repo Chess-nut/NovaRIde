@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
-import 'package:novaride/admin/state/mock_fleet_controller.dart';
+import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/admin/widgets/alert_feed_tile.dart';
 import 'package:novaride/admin/widgets/filter_controls.dart';
 import 'package:novaride/admin/widgets/fleet_map_view.dart';
@@ -73,7 +73,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
   // ----------------------------------------------------------------- layout
 
   Widget _buildTwoPane(
-    MockFleetController fleet,
+    FleetController fleet,
     List<Rider> roster,
     Rider? selected,
   ) {
@@ -103,7 +103,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
   }
 
   Widget _buildStacked(
-    MockFleetController fleet,
+    FleetController fleet,
     List<Rider> roster,
     Rider? selected,
   ) {
@@ -124,7 +124,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
 
   // -------------------------------------------------------------------- map
 
-  Widget _buildMapCard(MockFleetController fleet) {
+  Widget _buildMapCard(FleetController fleet) {
     final selectedId = fleet.selectedRiderId;
 
     return _Card(
@@ -171,7 +171,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
   // ----------------------------------------------------------------- roster
 
   Widget _buildRosterCard(
-    MockFleetController fleet,
+    FleetController fleet,
     List<Rider> roster, {
     bool scrollable = true,
   }) {
@@ -275,7 +275,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
         borderSide: BorderSide(color: color),
       );
 
-  List<Rider> _filteredRiders(MockFleetController fleet) {
+  List<Rider> _filteredRiders(FleetController fleet) {
     return fleet.riders.where((rider) {
       if (_statusFilter.isNotEmpty && !_statusFilter.contains(rider.status)) {
         return false;
@@ -289,7 +289,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
 
   // ----------------------------------------------------------- detail card
 
-  Widget _buildDetailCard(MockFleetController fleet, Rider? rider) {
+  Widget _buildDetailCard(FleetController fleet, Rider? rider) {
     if (rider == null) {
       return _Card(
         title: 'Rider detail',
@@ -331,7 +331,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
         fleet.alerts.where((a) => a.riderId == rider.id).take(4).toList();
     final district = telemetry == null
         ? null
-        : MockFleetController.nearestDistrict(telemetry.lat, telemetry.lng);
+        : FleetController.nearestDistrict(telemetry.lat, telemetry.lng);
 
     return _Card(
       title: 'Rider detail',
@@ -436,7 +436,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
     );
   }
 
-  Widget _buildLocateButton(MockFleetController fleet, Rider rider) {
+  Widget _buildLocateButton(FleetController fleet, Rider rider) {
     return Tooltip(
       message: 'Highlights this rider on the basemap. The map window is fixed, '
           'so the view does not re-centre.',
@@ -461,7 +461,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
 
   /// Selects the rider — which draws the locator ring and their trail — and,
   /// when the layout is stacked, scrolls the map back into view.
-  void _locateOnMap(MockFleetController fleet, Rider rider) {
+  void _locateOnMap(FleetController fleet, Rider rider) {
     fleet.selectRider(rider.id);
 
     final mapContext = _mapKey.currentContext;

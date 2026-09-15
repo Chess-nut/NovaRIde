@@ -9,6 +9,9 @@ enum AlertType { crash, alcoholWarning, lowBattery, sos }
 
 enum AlertStatus { open, acknowledged, dispatched, resolved }
 
+/// Emergency service an operator can dispatch to an incident.
+enum ResponderType { medical, police, fireRescue, barangay }
+
 class Rider {
   final String id;
   final String fullName;
@@ -16,20 +19,39 @@ class Rider {
   final String phone;
   final RiderStatus status;
 
-  const Rider({
+  /// Deactivated riders are kept, never deleted — alert history references
+  /// rider IDs, so removing the row would orphan past incidents.
+  final bool isActive;
+
+  final DateTime registeredAt;
+
+  Rider({
     required this.id,
     required this.fullName,
     required this.helmetId,
     required this.phone,
     required this.status,
-  });
+    this.isActive = true,
+    DateTime? registeredAt,
+  }) : registeredAt = registeredAt ?? DateTime.now();
 
-  Rider copyWith({RiderStatus? status}) => Rider(
-        id: id,
-        fullName: fullName,
-        helmetId: helmetId,
-        phone: phone,
+  Rider copyWith({
+    String? id,
+    String? fullName,
+    String? helmetId,
+    String? phone,
+    RiderStatus? status,
+    bool? isActive,
+    DateTime? registeredAt,
+  }) =>
+      Rider(
+        id: id ?? this.id,
+        fullName: fullName ?? this.fullName,
+        helmetId: helmetId ?? this.helmetId,
+        phone: phone ?? this.phone,
         status: status ?? this.status,
+        isActive: isActive ?? this.isActive,
+        registeredAt: registeredAt ?? this.registeredAt,
       );
 }
 
@@ -74,6 +96,29 @@ class HelmetTelemetry {
       );
 }
 
+/// One audit entry in an alert's response history.
+///
+/// The thesis question is response time, so every status change records who
+/// made it and when — [AlertEvent.history] is what the timeline and the
+/// average-response metrics are computed from.
+class AlertAction {
+  final AlertStatus toStatus;
+  final String actorName;
+  final String? note;
+
+  /// Only set on a dispatch, where the operator picks a service.
+  final ResponderType? responder;
+  final DateTime at;
+
+  const AlertAction({
+    required this.toStatus,
+    required this.actorName,
+    this.note,
+    this.responder,
+    required this.at,
+  });
+}
+
 class AlertEvent {
   final String id;
   final String riderId;
@@ -88,6 +133,9 @@ class AlertEvent {
   final DateTime timestamp;
   final AlertStatus status;
 
+  /// Append-only audit trail, oldest first. Empty for an untouched alert.
+  final List<AlertAction> history;
+
   const AlertEvent({
     required this.id,
     required this.riderId,
@@ -98,7 +146,41 @@ class AlertEvent {
     required this.address,
     required this.timestamp,
     required this.status,
+    this.history = const [],
   });
+
+  AlertEvent copyWith({
+    String? id,
+    String? riderId,
+    String? riderName,
+    AlertType? type,
+    double? lat,
+    double? lng,
+    String? address,
+    DateTime? timestamp,
+    AlertStatus? status,
+    List<AlertAction>? history,
+  }) =>
+      AlertEvent(
+        id: id ?? this.id,
+        riderId: riderId ?? this.riderId,
+        riderName: riderName ?? this.riderName,
+        type: type ?? this.type,
+        lat: lat ?? this.lat,
+        lng: lng ?? this.lng,
+        address: address ?? this.address,
+        timestamp: timestamp ?? this.timestamp,
+        status: status ?? this.status,
+        history: history ?? this.history,
+      );
+
+  /// When the alert first reached [status], or null if it never did.
+  DateTime? reachedAt(AlertStatus status) {
+    for (final action in history) {
+      if (action.toStatus == status) return action.at;
+    }
+    return null;
+  }
 }
 
 /// Threshold above which a breath alcohol reading is flagged in amber.
@@ -134,4 +216,32 @@ extension AlertStatusLabel on AlertStatus {
       };
 
   bool get isOpen => this == AlertStatus.open || this == AlertStatus.acknowledged;
+
+  /// Still consuming dispatch attention. Unlike [isOpen] this counts
+  /// `dispatched` — responders are rolling but the incident is not closed.
+  bool get isActive => this != AlertStatus.resolved;
+
+  /// The alert lifecycle is strictly linear:
+  ///
+  ///     open → acknowledged → dispatched → resolved
+  ///
+  /// Skipping a step or moving backwards is rejected, so the audit trail can
+  /// never claim a responder was sent to an alert nobody had acknowledged.
+  AlertStatus? get nextStatus => switch (this) {
+        AlertStatus.open => AlertStatus.acknowledged,
+        AlertStatus.acknowledged => AlertStatus.dispatched,
+        AlertStatus.dispatched => AlertStatus.resolved,
+        AlertStatus.resolved => null,
+      };
+
+  bool canTransitionTo(AlertStatus target) => nextStatus == target;
+}
+
+extension ResponderTypeLabel on ResponderType {
+  String get label => switch (this) {
+        ResponderType.medical => 'Medical / EMS',
+        ResponderType.police => 'Police',
+        ResponderType.fireRescue => 'Fire & Rescue',
+        ResponderType.barangay => 'Barangay Response',
+      };
 }

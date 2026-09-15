@@ -10,75 +10,85 @@ class MockData {
   static final DateTime _now = DateTime.now();
 
   static final List<Rider> riders = [
-    const Rider(
+    Rider(
       id: 'R-001',
       fullName: 'Renato Villanueva',
       helmetId: 'NR-H1-001',
       phone: '+63 917 402 8813',
       status: RiderStatus.riding,
+      registeredAt: _now.subtract(const Duration(days: 412)),
     ),
-    const Rider(
+    Rider(
       id: 'R-002',
       fullName: 'Maricel Bautista',
       helmetId: 'NR-H1-002',
       phone: '+63 918 336 7420',
       status: RiderStatus.riding,
+      registeredAt: _now.subtract(const Duration(days: 388)),
     ),
-    const Rider(
+    Rider(
       id: 'R-003',
       fullName: 'Joselito Ramos',
       helmetId: 'NR-H1-003',
       phone: '+63 906 771 2094',
       status: RiderStatus.emergency,
+      registeredAt: _now.subtract(const Duration(days: 341)),
     ),
-    const Rider(
+    Rider(
       id: 'R-004',
       fullName: 'Divina Salazar',
       helmetId: 'NR-H1-004',
       phone: '+63 995 218 6647',
       status: RiderStatus.riding,
+      registeredAt: _now.subtract(const Duration(days: 297)),
     ),
-    const Rider(
+    Rider(
       id: 'R-005',
       fullName: 'Arnel Dela Cruz',
       helmetId: 'NR-H1-005',
       phone: '+63 927 553 1180',
       status: RiderStatus.idle,
+      registeredAt: _now.subtract(const Duration(days: 265)),
     ),
-    const Rider(
+    Rider(
       id: 'R-006',
       fullName: 'Rowena Manalo',
       helmetId: 'NR-H1-006',
       phone: '+63 939 807 4426',
       status: RiderStatus.riding,
+      registeredAt: _now.subtract(const Duration(days: 233)),
     ),
-    const Rider(
+    Rider(
       id: 'R-007',
       fullName: 'Edgardo Mercado',
       helmetId: 'NR-H1-007',
       phone: '+63 916 649 9037',
       status: RiderStatus.offline,
+      registeredAt: _now.subtract(const Duration(days: 190)),
     ),
-    const Rider(
+    Rider(
       id: 'R-008',
       fullName: 'Lorna Gatchalian',
       helmetId: 'NR-H1-008',
       phone: '+63 908 274 5561',
       status: RiderStatus.riding,
+      registeredAt: _now.subtract(const Duration(days: 154)),
     ),
-    const Rider(
+    Rider(
       id: 'R-009',
       fullName: 'Antonio Sarmiento',
       helmetId: 'NR-H1-009',
       phone: '+63 947 118 3392',
       status: RiderStatus.idle,
+      registeredAt: _now.subtract(const Duration(days: 121)),
     ),
-    const Rider(
+    Rider(
       id: 'R-010',
       fullName: 'Melinda Corpuz',
       helmetId: 'NR-H1-010',
       phone: '+63 922 960 7715',
       status: RiderStatus.offline,
+      registeredAt: _now.subtract(const Duration(days: 78)),
     ),
   ];
 

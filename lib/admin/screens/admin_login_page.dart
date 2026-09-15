@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/admin/screens/admin_shell.dart';
+import 'package:novaride/admin/state/admin_session.dart';
 import 'package:novaride/shared/theme.dart';
 
 /// Operations console sign-in. Styled to match the rider login screen.
@@ -12,9 +13,6 @@ class AdminLoginPage extends StatefulWidget {
 }
 
 class _AdminLoginPageState extends State<AdminLoginPage> {
-  static const _validEmail = 'admin@novaride.ph';
-  static const _validPassword = 'admin123';
-
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -32,17 +30,27 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
   void _handleLogin() {
     if (!_formKey.currentState!.validate()) return;
 
-    final email = _emailController.text.trim().toLowerCase();
-    final password = _passwordController.text;
+    final user = authenticate(_emailController.text, _passwordController.text);
 
-    if (email == _validEmail && password == _validPassword) {
-      setState(() => _errorText = null);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const AdminShell()),
-      );
-    } else {
+    if (user == null) {
       setState(() => _errorText = 'Invalid email or password');
+      return;
     }
+
+    setState(() => _errorText = null);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => AdminShell(user: user)),
+    );
+  }
+
+  /// One-tap fill for the demo card — the defence runs on a projector, and
+  /// typing three sets of credentials live is a waste of everyone's time.
+  void _useAccount(AdminAccount account) {
+    setState(() {
+      _emailController.text = account.user.email;
+      _passwordController.text = account.password;
+      _errorText = null;
+    });
   }
 
   @override
@@ -98,16 +106,119 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                     _buildPasswordField(),
                     const SizedBox(height: 26),
                     _buildSignInButton(),
-                    const SizedBox(height: 18),
-                    const Text(
-                      'Demo credentials — admin@novaride.ph / admin123',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: NovaColors.secondaryText, fontSize: 11),
-                    ),
+                    const SizedBox(height: 20),
+                    _buildDemoAccountsCard(),
                   ],
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// All three demo roles, on the login screen itself. Tapping one fills the
+  /// form, which makes switching roles during a defence a single click.
+  Widget _buildDemoAccountsCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: NovaColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: NovaColors.cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'DEMO CREDENTIALS',
+            style: TextStyle(
+              color: NovaColors.secondaryText,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.9,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Tap a role to fill the form.',
+            style: TextStyle(color: NovaColors.secondaryText, fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          for (final account in demoAccounts) ...[
+            _buildDemoAccountRow(account),
+            if (account != demoAccounts.last) const SizedBox(height: 7),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDemoAccountRow(AdminAccount account) {
+    final role = account.user.role;
+    final color = switch (role) {
+      AdminRole.superAdmin => NovaColors.green,
+      AdminRole.dispatcher => NovaColors.cyan,
+      AdminRole.viewer => NovaColors.secondaryText,
+    };
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _useAccount(account),
+        borderRadius: BorderRadius.circular(9),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: NovaColors.card,
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: NovaColors.cardBorder),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: color.withValues(alpha: 0.45)),
+                ),
+                child: Text(
+                  role.label.toUpperCase(),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      account.user.email,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: NovaColors.primaryText,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                    Text(
+                      account.password,
+                      style: const TextStyle(
+                        color: NovaColors.secondaryText,
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),

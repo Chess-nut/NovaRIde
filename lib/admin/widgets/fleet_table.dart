@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:novaride/admin/mock/mock_data.dart';
 import 'package:novaride/admin/widgets/status_pill.dart';
 import 'package:novaride/shared/models/models.dart';
 import 'package:novaride/shared/theme.dart';
@@ -8,12 +7,25 @@ import 'package:novaride/shared/theme.dart';
 ///
 /// Emergency rows are tinted red with a NovaColors.red border, and any
 /// alcohol reading above the warning threshold is shown in amber.
+///
+/// Telemetry is passed in rather than read from the mock statics, so the
+/// table shows the same live values as the map beside it.
 class FleetTable extends StatelessWidget {
   final List<Rider> riders;
+  final List<HelmetTelemetry> telemetry;
 
-  const FleetTable({super.key, required this.riders});
+  /// Shared with the map through the controller — clicking a row and clicking
+  /// a dot are the same action.
+  final String? selectedRiderId;
+  final ValueChanged<String>? onSelect;
 
-  static const _amber = Color(0xFFFFB020);
+  const FleetTable({
+    super.key,
+    required this.riders,
+    required this.telemetry,
+    this.selectedRiderId,
+    this.onSelect,
+  });
 
   static const _columns = <_Col>[
     _Col('RIDER', 3),
@@ -60,21 +72,44 @@ class FleetTable extends StatelessWidget {
     );
   }
 
+  HelmetTelemetry? _telemetryFor(String riderId) {
+    for (final t in telemetry) {
+      if (t.riderId == riderId) return t;
+    }
+    return null;
+  }
+
   Widget _buildRow(Rider rider) {
-    final t = MockData.telemetryFor(rider.id);
+    final t = _telemetryFor(rider.id);
     final isEmergency = rider.status == RiderStatus.emergency;
+    final selected = rider.id == selectedRiderId;
     final overLimit = (t?.alcoholLevel ?? 0) > kAlcoholWarningLevel;
     final lowBattery = (t?.batteryPct ?? 100) < 20;
 
-    return Container(
+    // Selection outranks the emergency tint so the operator never loses track
+    // of which row they drilled into.
+    final Border border;
+    if (selected) {
+      border = Border.all(color: NovaColors.cyan, width: 1.5);
+    } else if (isEmergency) {
+      border = Border.all(color: NovaColors.red.withValues(alpha: 0.55));
+    } else {
+      border = const Border(
+        bottom: BorderSide(color: NovaColors.cardBorder, width: 0.5),
+      );
+    }
+
+    final row = Container(
       margin: const EdgeInsets.only(bottom: 1),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
-        color: isEmergency ? NovaColors.red.withValues(alpha: 0.10) : Colors.transparent,
-        border: isEmergency
-            ? Border.all(color: NovaColors.red.withValues(alpha: 0.55))
-            : const Border(bottom: BorderSide(color: NovaColors.cardBorder, width: 0.5)),
-        borderRadius: isEmergency ? BorderRadius.circular(8) : null,
+        color: selected
+            ? NovaColors.cyan.withValues(alpha: 0.10)
+            : isEmergency
+                ? NovaColors.red.withValues(alpha: 0.10)
+                : Colors.transparent,
+        border: border,
+        borderRadius: (isEmergency || selected) ? BorderRadius.circular(8) : null,
       ),
       child: Row(
         children: [
@@ -102,7 +137,7 @@ class FleetTable extends StatelessWidget {
             flex: _columns[3].flex,
             child: _cell(
               (t?.alcoholLevel ?? 0).toStringAsFixed(2),
-              color: overLimit ? _amber : NovaColors.primaryText,
+              color: overLimit ? NovaColors.amber : NovaColors.primaryText,
               bold: overLimit,
             ),
           ),
@@ -110,7 +145,7 @@ class FleetTable extends StatelessWidget {
             flex: _columns[4].flex,
             child: _cell(
               '${t?.batteryPct ?? 0}%',
-              color: lowBattery ? _amber : NovaColors.primaryText,
+              color: lowBattery ? NovaColors.amber : NovaColors.primaryText,
             ),
           ),
           Expanded(
@@ -129,6 +164,17 @@ class FleetTable extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+
+    if (onSelect == null) return row;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onSelect!(rider.id),
+        borderRadius: BorderRadius.circular(8),
+        child: row,
       ),
     );
   }

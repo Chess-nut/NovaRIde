@@ -5,10 +5,21 @@ import 'package:novaride/shared/theme.dart';
 
 /// One row in the emergency alert feed.
 /// Crash and SOS tiles get a red-tinted background so they read first.
+///
+/// Tappable on the alerts page, where selecting a tile opens the response
+/// detail panel; the selected tile keeps a cyan outline so the panel and the
+/// list never disagree about what is being worked on.
 class AlertFeedTile extends StatelessWidget {
   final AlertEvent alert;
+  final VoidCallback? onTap;
+  final bool selected;
 
-  const AlertFeedTile({super.key, required this.alert});
+  const AlertFeedTile({
+    super.key,
+    required this.alert,
+    this.onTap,
+    this.selected = false,
+  });
 
   static IconData iconFor(AlertType type) => switch (type) {
         AlertType.crash => Icons.car_crash,
@@ -38,7 +49,7 @@ class AlertFeedTile extends StatelessWidget {
     final color = colorFor(alert.type);
     final critical = alert.type.isCritical;
 
-    return Container(
+    final tile = Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       decoration: BoxDecoration(
@@ -47,9 +58,12 @@ class AlertFeedTile extends StatelessWidget {
             : NovaColors.background.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: critical
-              ? NovaColors.red.withValues(alpha: 0.45)
-              : NovaColors.cardBorder,
+          color: selected
+              ? NovaColors.cyan
+              : critical
+                  ? NovaColors.red.withValues(alpha: 0.45)
+                  : NovaColors.cardBorder,
+          width: selected ? 1.5 : 1,
         ),
       ),
       child: Row(
@@ -105,6 +119,17 @@ class AlertFeedTile extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+
+    if (onTap == null) return tile;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: tile,
       ),
     );
   }

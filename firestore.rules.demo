@@ -1,0 +1,36 @@
+rules_version = '2';
+
+// NovaRide — DEMO rules. Not the default; firebase.json points at
+// firestore.rules (deny-all). Deploy this file only for a supervised demo:
+//
+//   firebase deploy --only firestore:rules --config firebase.demo.json
+//
+// It opens exactly the collections the TNVS Operator console reads and
+// writes, and only until the expiry below. The database holds seeded, fake
+// riders during this window; re-deploy firestore.rules before any real
+// helmet writes real positions.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function demoWindowOpen() {
+      return request.time < timestamp.date(2026, 9, 22);
+    }
+
+    match /riders/{riderId} {
+      allow read, write: if demoWindowOpen();
+    }
+    match /devices/{deviceId} {
+      allow read, write: if demoWindowOpen();
+    }
+    match /alerts/{alertId} {
+      allow read, write: if demoWindowOpen();
+      match /history/{entryId} {
+        allow read, create: if demoWindowOpen();
+        allow update, delete: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

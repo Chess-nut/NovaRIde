@@ -4,11 +4,18 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:novaride/admin/state/mock_fleet_controller.dart';
+import 'package:novaride/admin/data/mock_fleet_repository.dart';
+import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/shared/models/models.dart';
 
-MockFleetController _controller() {
-  final fleet = MockFleetController();
+/// A controller over a fresh simulation. Disposing the controller cancels
+/// the repository's timers, so a test never leaks the simulation into the
+/// next one. The repository is kept so tests can drive the simulation by hand.
+late MockFleetRepository _repo;
+
+FleetController _controller() {
+  _repo = MockFleetRepository();
+  final fleet = FleetController(_repo);
   addTearDown(fleet.dispose);
   return fleet;
 }
@@ -63,7 +70,7 @@ void main() {
       final fleet = _controller();
 
       for (var i = 0; i < 25; i++) {
-        fleet.debugEmitAlert();
+        _repo.debugEmitAlert();
       }
       expect(_sum(fleet.alertsByArea.values), fleet.alerts.length);
     });
@@ -71,11 +78,11 @@ void main() {
     test('nearestDistrict picks the closest centre', () {
       // Exactly on the Makati centroid.
       final makati =
-          MockFleetController.nearestDistrict(14.5547, 121.0244);
+          FleetController.nearestDistrict(14.5547, 121.0244);
       expect(makati.name, 'Makati');
 
       final fairview =
-          MockFleetController.nearestDistrict(14.7297, 121.0644);
+          FleetController.nearestDistrict(14.7297, 121.0644);
       expect(fairview.name, 'Fairview');
     });
   });
@@ -116,21 +123,21 @@ void main() {
           );
 
       expect(
-        MockFleetController.priorityOf(alert(AlertType.crash, AlertStatus.open)),
+        FleetController.priorityOf(alert(AlertType.crash, AlertStatus.open)),
         AlertPriority.critical,
       );
       expect(
-        MockFleetController.priorityOf(alert(AlertType.sos, AlertStatus.open)),
+        FleetController.priorityOf(alert(AlertType.sos, AlertStatus.open)),
         AlertPriority.high,
       );
       expect(
-        MockFleetController.priorityOf(
+        FleetController.priorityOf(
             alert(AlertType.lowBattery, AlertStatus.open)),
         AlertPriority.low,
       );
       // Resolved stops competing for attention whatever the type.
       expect(
-        MockFleetController.priorityOf(
+        FleetController.priorityOf(
             alert(AlertType.crash, AlertStatus.resolved)),
         AlertPriority.none,
       );
@@ -145,7 +152,7 @@ void main() {
       expect(fleet.alertsByType.keys.toSet(), AlertType.values.toSet());
 
       for (var i = 0; i < 15; i++) {
-        fleet.debugEmitAlert();
+        _repo.debugEmitAlert();
       }
       expect(_sum(fleet.alertsByType.values), fleet.alerts.length);
     });
@@ -156,7 +163,7 @@ void main() {
       final fleet = _controller();
 
       for (var i = 0; i < 120; i++) {
-        fleet.debugEmitAlert();
+        _repo.debugEmitAlert();
       }
 
       expect(fleet.alerts.length, lessThanOrEqualTo(40));
@@ -185,7 +192,7 @@ void main() {
       final fleet = _controller();
 
       for (var i = 0; i < 60; i++) {
-        fleet.debugEmitAlert();
+        _repo.debugEmitAlert();
       }
 
       final ids = fleet.alerts.map((a) => a.id).toList();

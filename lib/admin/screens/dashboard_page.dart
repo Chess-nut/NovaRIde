@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
-import 'package:novaride/admin/state/mock_fleet_controller.dart';
+import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/admin/widgets/dashboard/alert_priority_bar_panel.dart';
 import 'package:novaride/admin/widgets/dashboard/alert_types_bar_panel.dart';
 import 'package:novaride/admin/widgets/dashboard/alerts_by_area_bar_panel.dart';
@@ -13,7 +13,7 @@ import 'package:novaride/admin/widgets/dashboard/recent_alerts_feed_panel.dart';
 /// A dense panel grid around one large map, sized to the viewport rather than
 /// scrolled: an operator watches this all shift, so nothing important is
 /// allowed below the fold. Every panel reads the app-scoped
-/// [MockFleetController], which is what lets a simulated crash land in all
+/// [FleetController], which is what lets a simulated crash land in all
 /// six at once — and in the other pages at the same time.
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
@@ -48,7 +48,7 @@ class DashboardPage extends StatelessWidget {
 
   // ------------------------------------------------------------ desktop grid
 
-  Widget _buildGrid(MockFleetController fleet) {
+  Widget _buildGrid(FleetController fleet) {
     return Column(
       children: [
         Expanded(
@@ -90,7 +90,7 @@ class DashboardPage extends StatelessWidget {
   // --------------------------------------------------------- narrow fallback
 
   /// Fixed heights because a scrolling column has no viewport to divide up.
-  Widget _buildStacked(MockFleetController fleet) {
+  Widget _buildStacked(FleetController fleet) {
     return SingleChildScrollView(
       child: Column(
         children: [
@@ -112,24 +112,24 @@ class DashboardPage extends StatelessWidget {
 
   // ---------------------------------------------------------------- panels
 
-  Widget _donutPanel(MockFleetController fleet) =>
+  Widget _donutPanel(FleetController fleet) =>
       FleetStatusDonutPanel(counts: fleet.statusCounts);
 
-  Widget _areaPanel(MockFleetController fleet) =>
+  Widget _areaPanel(FleetController fleet) =>
       AlertsByAreaBarPanel(countsByArea: fleet.alertsByArea);
 
-  Widget _mapPanel(MockFleetController fleet) => LiveFleetMapPanel(
+  Widget _mapPanel(FleetController fleet) => LiveFleetMapPanel(
         riders: fleet.riders,
         telemetry: fleet.telemetry,
         lastSync: fleet.lastSync,
       );
 
-  Widget _feedPanel(MockFleetController fleet) =>
+  Widget _feedPanel(FleetController fleet) =>
       RecentAlertsFeedPanel(alerts: fleet.alerts);
 
-  Widget _priorityPanel(MockFleetController fleet) =>
+  Widget _priorityPanel(FleetController fleet) =>
       AlertPriorityBarPanel(countsByPriority: fleet.alertsByPriority);
 
-  Widget _typesPanel(MockFleetController fleet) =>
+  Widget _typesPanel(FleetController fleet) =>
       AlertTypesBarPanel(countsByType: fleet.alertsByType);
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/admin/console_format.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
-import 'package:novaride/admin/state/mock_fleet_controller.dart';
+import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/admin/widgets/alert_feed_tile.dart';
 import 'package:novaride/admin/widgets/dashboard/dash_panel.dart';
 import 'package:novaride/admin/widgets/dashboard/simple_bar_chart.dart';
@@ -110,7 +110,7 @@ class _ReportsPageState extends State<ReportsPage> {
 
   // ----------------------------------------------------------------- header
 
-  Widget _buildHeader(MockFleetController fleet, List<AlertEvent> alerts) {
+  Widget _buildHeader(FleetController fleet, List<AlertEvent> alerts) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -290,7 +290,7 @@ class _ReportsPageState extends State<ReportsPage> {
   Widget _buildDistrictPanel(List<AlertEvent> alerts) {
     final counts = <String, int>{};
     for (final alert in alerts) {
-      final name = MockFleetController.nearestDistrict(alert.lat, alert.lng).name;
+      final name = FleetController.nearestDistrict(alert.lat, alert.lng).name;
       counts[name] = (counts[name] ?? 0) + 1;
     }
 
@@ -429,15 +429,15 @@ class _ReportsPageState extends State<ReportsPage> {
   // --------------------------------------------------------- incident table
 
   Widget _buildIncidentTable(
-    MockFleetController fleet,
+    FleetController fleet,
     List<AlertEvent> alerts,
   ) {
     // Severity first, then newest — the table reads as a triage list.
     final sorted = List.of(alerts)
       ..sort((a, b) {
-        final byPriority = MockFleetController.priorityOf(a)
+        final byPriority = FleetController.priorityOf(a)
             .index
-            .compareTo(MockFleetController.priorityOf(b).index);
+            .compareTo(FleetController.priorityOf(b).index);
         if (byPriority != 0) return byPriority;
         return b.timestamp.compareTo(a.timestamp);
       });
@@ -519,8 +519,8 @@ class _ReportsPageState extends State<ReportsPage> {
     );
   }
 
-  Widget _incidentRow(MockFleetController fleet, AlertEvent alert) {
-    final district = MockFleetController.nearestDistrict(alert.lat, alert.lng);
+  Widget _incidentRow(FleetController fleet, AlertEvent alert) {
+    final district = FleetController.nearestDistrict(alert.lat, alert.lng);
     final ack = alert.reachedAt(AlertStatus.acknowledged);
     final resolved = alert.reachedAt(AlertStatus.resolved);
 
@@ -586,7 +586,7 @@ class _ReportsPageState extends State<ReportsPage> {
   /// Deliberately not a file save or share sheet — both need a plugin, and
   /// the project stays dependency-free. Select-all and copy is enough to get
   /// the data into a spreadsheet for the written report.
-  void _showExport(MockFleetController fleet, List<AlertEvent> alerts) {
+  void _showExport(FleetController fleet, List<AlertEvent> alerts) {
     final csv = buildIncidentCsv(fleet, alerts);
 
     showDialog<void>(
@@ -660,7 +660,7 @@ class _ReportsPageState extends State<ReportsPage> {
 
 /// One CSV row per alert, including the response times the report is about.
 /// Top-level so it can be unit-tested without a widget tree.
-String buildIncidentCsv(MockFleetController fleet, List<AlertEvent> alerts) {
+String buildIncidentCsv(FleetController fleet, List<AlertEvent> alerts) {
   const header = [
     'alert_id',
     'type',
@@ -681,7 +681,7 @@ String buildIncidentCsv(MockFleetController fleet, List<AlertEvent> alerts) {
   final rows = <String>[header.join(',')];
 
   for (final alert in alerts) {
-    final district = MockFleetController.nearestDistrict(alert.lat, alert.lng);
+    final district = FleetController.nearestDistrict(alert.lat, alert.lng);
     final ack = alert.reachedAt(AlertStatus.acknowledged);
     final dispatched = alert.reachedAt(AlertStatus.dispatched);
     final resolved = alert.reachedAt(AlertStatus.resolved);

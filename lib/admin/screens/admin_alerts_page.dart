@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:novaride/admin/console_format.dart';
 import 'package:novaride/admin/state/admin_session.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
-import 'package:novaride/admin/state/mock_fleet_controller.dart';
+import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/admin/widgets/alert_feed_tile.dart';
 import 'package:novaride/admin/widgets/filter_controls.dart';
 import 'package:novaride/admin/widgets/kpi_card.dart';
@@ -126,7 +126,7 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   // ----------------------------------------------------------------- layout
 
   Widget _buildWide(
-    MockFleetController fleet,
+    FleetController fleet,
     List<AlertEvent> visible,
     AlertEvent? selected,
     double width,
@@ -168,7 +168,7 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   }
 
   Widget _buildStacked(
-    MockFleetController fleet,
+    FleetController fleet,
     List<AlertEvent> visible,
     AlertEvent? selected,
     double width,
@@ -201,7 +201,7 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
 
   // -------------------------------------------------------------------- KPIs
 
-  Widget _buildKpiRow(MockFleetController fleet, double width) {
+  Widget _buildKpiRow(FleetController fleet, double width) {
     final counts = {for (final s in AlertStatus.values) s: 0};
     for (final a in fleet.alerts) {
       counts[a.status] = counts[a.status]! + 1;
@@ -493,7 +493,7 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
 
   // ----------------------------------------------------------- filter + sort
 
-  List<AlertEvent> _applyFilters(MockFleetController fleet) {
+  List<AlertEvent> _applyFilters(FleetController fleet) {
     final matches = fleet.alerts.where((alert) {
       if (_statusFilter.isNotEmpty && !_statusFilter.contains(alert.status)) {
         return false;
@@ -518,9 +518,9 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
       _AlertSort.oldest => (a, b) => a.timestamp.compareTo(b.timestamp),
       // Critical first; ties keep newest-first so the freshest crash leads.
       _AlertSort.priority => (a, b) {
-          final byPriority = MockFleetController.priorityOf(a)
+          final byPriority = FleetController.priorityOf(a)
               .index
-              .compareTo(MockFleetController.priorityOf(b).index);
+              .compareTo(FleetController.priorityOf(b).index);
           if (byPriority != 0) return byPriority;
           return b.timestamp.compareTo(a.timestamp);
         },
@@ -533,32 +533,40 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
 
   /// Every mutation goes through here: the controller rejects an illegal
   /// transition with a descriptive [StateError], and the operator sees why
-  /// instead of watching a button do nothing.
-  void _run(VoidCallback action) {
+  /// instead of watching a button do nothing. A store that refuses the write
+  /// after the rule check passed is surfaced the same way.
+  Future<void> _run(Future<void> Function() action) async {
     try {
-      action();
+      await action();
     } on StateError catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.message),
-          backgroundColor: NovaColors.red,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      _toast(error.message);
+    } catch (error) {
+      _toast('The change was not saved: $error');
     }
   }
 
-  void _acknowledge(MockFleetController fleet, AlertEvent alert) {
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: NovaColors.red,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _acknowledge(FleetController fleet, AlertEvent alert) {
     _run(() => fleet.acknowledgeAlert(alert.id, actor: AdminSessionScope.of(context).name));
   }
 
-  void _resolve(MockFleetController fleet, AlertEvent alert) {
+  void _resolve(FleetController fleet, AlertEvent alert) {
     _run(() => fleet.resolveAlert(alert.id, actor: AdminSessionScope.of(context).name));
   }
 
   Future<void> _promptDispatch(
-    MockFleetController fleet,
+    FleetController fleet,
     AlertEvent alert,
   ) async {
     final result = await showDialog<_DispatchChoice>(
@@ -584,7 +592,7 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
 /// helmet was reporting, what has been done so far, and what can be done next.
 class _AlertDetailPanel extends StatelessWidget {
   final AlertEvent alert;
-  final MockFleetController fleet;
+  final FleetController fleet;
 
   /// Decides whether the lifecycle actions are live or read-only.
   final AdminRole role;
@@ -608,7 +616,7 @@ class _AlertDetailPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final rider = fleet.riderFor(alert.riderId);
     final telemetry = fleet.telemetryFor(alert.riderId);
-    final district = MockFleetController.nearestDistrict(alert.lat, alert.lng);
+    final district = FleetController.nearestDistrict(alert.lat, alert.lng);
 
     return Container(
       padding: const EdgeInsets.all(16),

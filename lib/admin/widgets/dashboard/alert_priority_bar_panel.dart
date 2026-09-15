@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:novaride/admin/state/mock_fleet_controller.dart';
+import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/admin/widgets/dashboard/dash_panel.dart';
 import 'package:novaride/admin/widgets/dashboard/simple_bar_chart.dart';
 

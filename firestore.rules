@@ -19,7 +19,7 @@ rules_version = '2';
 //   HELMET SERVICE — the identity the ESP32 firmware will authenticate as:
 //   a Firebase Auth user carrying the claim `role: helmetService`. It is
 //   never a console role (the console rejects it as unprovisioned), and it
-//   is the only client that may update telemetry. No such account exists
+//   is the only client that may write telemetry. No such account exists
 //   yet; the firmware's auth story is an open item in
 //   docs/FIRESTORE_SCHEMA.md §7. A bridge using the Admin SDK bypasses these
 //   rules entirely and needs nothing here.
@@ -32,9 +32,12 @@ rules_version = '2';
 // What is enforced beyond "who": the alert lifecycle is linear
 // (open → acknowledged → dispatched → resolved) and each step stamps its
 // own server timestamp; history/ is append-only and its `at` must be the
-// server clock; a dispatcher's only write to a rider is its status. Rider
-// validation (helmet-id uniqueness, phone format) stays in the console —
-// uniqueness needs a lookup index rules cannot express.
+// server clock; a dispatcher's only write to a rider is its status; a Super
+// Admin's only write to an existing device is its pairing. Rider validation
+// (helmet-id uniqueness, phone format) stays in the console — uniqueness is
+// enforced by a transaction over devices/{helmetId}, which rules cannot
+// express — and a Super Admin is the only principal who can write the
+// fields it governs.
 //
 // The seed (--dart-define=SEED_FIRESTORE=true) writes riders/, devices/ and
 // alerts/ through the client SDK as a signed-in Super Admin; the `create`
@@ -131,13 +134,19 @@ service cloud.firestore {
       allow delete: if false;   // deactivate instead; alert history references riders
     }
 
-    // Telemetry. Firmware-owned, snake_case. Operators read; only the helmet
-    // service updates readings. A Super Admin may create a device document
-    // (registering a helmet, and the seed) but never overwrite telemetry.
+    // Telemetry and pairing. Firmware-owned, snake_case, except for the two
+    // pairing fields the console owns: `assigned_rider_id` and `paired_at`,
+    // written when a Super Admin registers or edits a rider (the same
+    // transaction that writes riders/). Operators read; the helmet service
+    // writes readings; a Super Admin may create a device document
+    // (registering a helmet before it first reports, and the seed) and may
+    // update an existing one only to change the pairing — never a reading.
     match /devices/{deviceId} {
       allow read: if isOperator();
       allow create: if isHelmetService() || hasRole(['superAdmin']);
-      allow update: if isHelmetService();
+      allow update: if isHelmetService()
+                    || (hasRole(['superAdmin'])
+                        && onlyChanges(['assigned_rider_id', 'paired_at']));
       allow delete: if false;
     }
 

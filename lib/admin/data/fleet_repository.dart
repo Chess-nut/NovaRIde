@@ -31,6 +31,22 @@ class FleetConnection {
   bool get isConnected => state == FleetConnectionState.connected;
 }
 
+/// A write the store refused or could not complete, carrying a message
+/// written for the operator at the keyboard.
+///
+/// Provider codes (`permission-denied`, `unavailable`) mean nothing on a
+/// dispatch floor, so the repository translates before throwing and the
+/// roster page shows [message] verbatim. `FleetController` adds one case of
+/// its own — a write that produced no answer within its deadline.
+class FleetWriteException implements Exception {
+  final String message;
+
+  const FleetWriteException(this.message);
+
+  @override
+  String toString() => 'FleetWriteException: $message';
+}
+
 /// Persistence contract for the fleet.
 ///
 /// The repository knows nothing about workflow rules — legal alert
@@ -60,13 +76,27 @@ abstract class FleetRepository {
 
   Stream<FleetConnection> watchConnection();
 
-  /// Registers a rider. The implementation decides what, if any, helmet
-  /// record to create alongside — the simulation places a dot on the map
-  /// immediately; a real store waits for the helmet to report in.
-  Future<void> addRider(Rider rider);
+  /// Registers a rider and pairs their helmet, returning the record as
+  /// saved. The id may differ from `rider.id`: the controller suggests the
+  /// next sequential one, and a store shared between operators claims the
+  /// first free id at or after it, so two consoles adding at once get two
+  /// riders, not one overwritten. The helmet must not already be paired to
+  /// somebody else; the store checks that at write time, not from a list.
+  ///
+  /// Every write here either lands or throws a [FleetWriteException] — it
+  /// never queues silently for a network that may not come back.
+  Future<Rider> addRider(Rider rider);
 
-  /// Replaces a rider's editable fields.
+  /// Replaces a rider's editable fields with explicit field paths, and moves
+  /// the helmet pairing if the serial changed. Never a bare set: the helmet
+  /// writes its own fields into the same documents.
   Future<void> updateRider(Rider rider);
+
+  /// Narrow write for deactivation and reactivation: `isActive` and the
+  /// matching status (offline / idle), nothing else, so it can never carry a
+  /// stale name or phone over another operator's concurrent edit. The rider
+  /// is kept — alert history references rider ids.
+  Future<void> setRiderActive(String riderId, bool active);
 
   /// Narrow write for the status alone, so an automatic status change never
   /// carries a stale copy of the rider's other fields over a concurrent edit.

@@ -35,9 +35,11 @@ class _EmptyRepository implements FleetRepository {
       Stream.value(FleetConnection.connected);
 
   @override
-  Future<void> addRider(Rider rider) async {}
+  Future<Rider> addRider(Rider rider) async => rider;
   @override
   Future<void> updateRider(Rider rider) async {}
+  @override
+  Future<void> setRiderActive(String riderId, bool active) async {}
   @override
   Future<void> setRiderStatus(String riderId, RiderStatus status) async {}
   @override

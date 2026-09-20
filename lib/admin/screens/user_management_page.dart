@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:novaride/admin/data/fleet_repository.dart';
 import 'package:novaride/admin/screens/admin_shell.dart';
 import 'package:novaride/admin/state/admin_session.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
@@ -21,6 +22,12 @@ enum _RosterSort { name, helmetId, registered }
 /// taking somebody off the road flags them inactive and parks them offline
 /// instead. Past incidents stay readable and the dashboard counts stay
 /// internally consistent.
+///
+/// Every change shows on the roster the moment it is saved and is confirmed
+/// or withdrawn when the store answers (`FleetController`). A refused or
+/// unanswered write is reported in a sentence that stays on screen until
+/// dismissed — a rider the operator believes is saved and is not would be
+/// worse than any error.
 class UserManagementPage extends StatefulWidget {
   const UserManagementPage({super.key});
 
@@ -533,49 +540,83 @@ class _UserManagementPageState extends State<UserManagementPage> {
     );
     if (result == null || !mounted) return;
 
-    _run(
-      () => rider == null ? fleet.addRider(result) : fleet.updateRider(result),
-      success: rider == null
-          ? '${result.fullName} added to the roster'
-          : '${result.fullName} updated',
-    );
+    if (rider == null) {
+      // The saved id can move forward if another operator claimed the
+      // suggested one first, so the confirmation names the id that stuck.
+      _run(
+        () => fleet.addRider(result),
+        success: (saved) =>
+            '${saved.fullName} registered as ${saved.id} — helmet '
+            '${saved.helmetId} paired',
+      );
+    } else {
+      _run(
+        () => fleet.updateRider(result),
+        success: (_) => '${result.fullName} updated',
+      );
+    }
   }
 
   void _setActive(FleetController fleet, Rider rider, bool active) {
     _run(
       () => fleet.setRiderActive(rider.id, active),
-      success: active
+      success: (_) => active
           ? '${rider.fullName} is back on active duty'
           : '${rider.fullName} deactivated — alert history kept',
     );
   }
 
-  /// Controller mutations reject duplicates with a [StateError]; surface it
-  /// rather than letting the roster silently not change. The success toast
-  /// waits for the store to accept the write, so it never claims a save that
-  /// the backend then refused.
-  Future<void> _run(
-    Future<void> Function() action, {
-    required String success,
+  /// Runs one roster write and reports the outcome.
+  ///
+  /// The controller rejects a rule violation with a [StateError] before
+  /// anything is written, and the store's refusal (or silence) arrives as a
+  /// [FleetWriteException] after the roster has already been rolled back;
+  /// both carry a sentence for the operator and are shown as written. The
+  /// success message waits for the store to accept the write, so it never
+  /// claims a save the backend then refused. Anything else is a bug: logged
+  /// for the developer, one sentence for the operator, never the exception.
+  Future<void> _run<T>(
+    Future<T> Function() action, {
+    required String Function(T result) success,
   }) async {
     try {
-      await action();
-      _toast(success, NovaColors.green);
+      final result = await action();
+      _toast(success(result), NovaColors.green);
     } on StateError catch (error) {
-      _toast(error.message, NovaColors.red);
-    } catch (error) {
-      _toast('The change was not saved: $error', NovaColors.red);
+      _toast(error.message, NovaColors.red, sticky: true);
+    } on FleetWriteException catch (error) {
+      _toast(error.message, NovaColors.red, sticky: true);
+    } catch (error, stack) {
+      debugPrint('UserManagementPage: roster write threw $error\n$stack');
+      _toast(
+        'The change was not saved. Try again, and tell a Super Admin if it '
+        'keeps happening.',
+        NovaColors.red,
+        sticky: true,
+      );
     }
   }
 
-  void _toast(String message, Color color) {
+  /// A confirmation clears itself; a failure stays until dismissed, so a
+  /// write that did not land cannot be missed by an operator who looked
+  /// away for three seconds.
+  void _toast(String message, Color color, {bool sticky = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
+        duration: sticky ? const Duration(days: 1) : const Duration(seconds: 3),
+        action: sticky
+            ? SnackBarAction(
+                label: 'DISMISS',
+                textColor: NovaColors.primaryText,
+                onPressed: messenger.hideCurrentSnackBar,
+              )
+            : null,
       ),
     );
   }

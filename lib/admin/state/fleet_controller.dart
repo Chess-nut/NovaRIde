@@ -47,6 +47,12 @@ extension AlertPriorityLabel on AlertPriority {
 /// Mutations throw [StateError] synchronously when the rule check fails and
 /// return the persistence future otherwise, so a page can catch a rejected
 /// action in the same call and still learn if the store refused the write.
+///
+/// Roster writes are optimistic: the rider appears (or changes) the moment
+/// the operator saves, ahead of the store's answer, and is withdrawn if the
+/// store refuses or does not answer within [writeTimeout]. The pending copy
+/// is an overlay on the store's list, never a mutation of it, so the
+/// stream stays the source of truth and a rejected write leaves no trace.
 class FleetController extends ChangeNotifier {
   FleetController(this._repository) {
     _ridersSub = _repository.watchRiders().listen(
@@ -76,7 +82,24 @@ class FleetController extends ChangeNotifier {
   StreamSubscription<List<AlertEvent>>? _alertsSub;
   StreamSubscription<FleetConnection>? _connectionSub;
 
+  /// How long a roster write may go unanswered before it is treated as
+  /// failed and rolled back. Firestore transactions fail within seconds when
+  /// the client is offline; this catches the connection that hangs instead.
+  static const writeTimeout = Duration(seconds: 20);
+
+  /// The roster as the store last delivered it.
+  List<Rider> _storeRiders = const [];
+
+  /// [_storeRiders] with the pending writes laid over it — what pages read.
   List<Rider> _riders = const [];
+
+  /// Writes shown ahead of the store's confirmation, by rider id. An entry
+  /// is added when the write is issued, marked confirmed when the store
+  /// accepts it, and dropped once the store's stream reflects it — or at
+  /// once if the write fails.
+  final Map<String, _PendingWrite> _pending = {};
+  int _nextWriteToken = 0;
+
   List<HelmetTelemetry> _telemetry = const [];
   List<AlertEvent> _alerts = const [];
   final Map<String, List<TrailPoint>> _trails = {};
@@ -137,9 +160,25 @@ class FleetController extends ChangeNotifier {
   // ---------------------------------------------------------------- inbound
 
   void _onRiders(List<Rider> riders) {
-    _riders = riders;
+    _storeRiders = riders;
     _ridersLoaded = true;
+    // A snapshot delivered after the store accepted a write reflects it, so
+    // the overlay for that write has done its job. Unconfirmed ones stay:
+    // this snapshot may predate their commit.
+    _pending.removeWhere((_, write) => write.confirmed);
+    _composeRiders();
     notifyListeners();
+  }
+
+  /// Rebuilds [_riders]: the store's order, each rider replaced by its
+  /// pending edit if one exists, then pending additions appended.
+  void _composeRiders() {
+    final storeIds = {for (final r in _storeRiders) r.id};
+    _riders = [
+      for (final r in _storeRiders) _pending[r.id]?.rider ?? r,
+      for (final write in _pending.values)
+        if (!storeIds.contains(write.rider.id)) write.rider,
+    ];
   }
 
   /// Every telemetry push extends the breadcrumb of any helmet that moved.
@@ -264,12 +303,17 @@ class FleetController extends ChangeNotifier {
 
   // ------------------------------------------------------------- roster CRUD
 
-  /// Registers a new rider.
+  /// Registers a new rider and resolves to the record as the store saved it
+  /// — the id may have moved forward if another operator claimed the
+  /// suggested one first.
   ///
-  /// Throws [StateError] if the id or helmet serial is already taken —
-  /// uniqueness is enforced here as well as in the form, so a caller cannot
-  /// bypass it.
-  Future<void> addRider(Rider rider) {
+  /// Throws [StateError] synchronously if the id or helmet serial is already
+  /// taken on this console's copy of the roster — uniqueness is enforced
+  /// here as well as in the form, so a caller cannot bypass it — and a
+  /// [FleetWriteException] later if the store refuses or does not answer.
+  /// The rider is on the roster from the moment this is called and gone
+  /// again the moment it fails.
+  Future<Rider> addRider(Rider rider) {
     if (_riders.any((r) => r.id == rider.id)) {
       throw StateError('Rider ${rider.id} already exists.');
     }
@@ -278,7 +322,7 @@ class FleetController extends ChangeNotifier {
     )) {
       throw StateError('Helmet ${rider.helmetId} is already assigned.');
     }
-    return _repository.addRider(rider);
+    return _writeOptimistically(rider, () => _repository.addRider(rider));
   }
 
   /// Replaces a rider's editable fields. Throws if the id is unknown or the
@@ -294,24 +338,103 @@ class FleetController extends ChangeNotifier {
     )) {
       throw StateError('Helmet ${rider.helmetId} is already assigned.');
     }
-    return _repository.updateRider(rider);
+    return _writeOptimistically(
+      rider,
+      () => _repository.updateRider(rider).then((_) => rider),
+    );
   }
 
   /// Takes a rider off active duty without deleting them. Their alerts keep
   /// resolving against a real rider record, and reactivating puts them back
-  /// as idle rather than guessing at their previous status.
+  /// as idle rather than guessing at their previous status. A narrow write:
+  /// only `isActive` and `status` travel, so nothing stale rides along.
   Future<void> setRiderActive(String riderId, bool active) {
     final rider = riderFor(riderId);
     if (rider == null) {
       throw StateError('Rider $riderId is not on the roster.');
     }
-    return _repository.updateRider(
-      rider.copyWith(
-        isActive: active,
-        status: active ? RiderStatus.idle : RiderStatus.offline,
-      ),
+    final expected = rider.copyWith(
+      isActive: active,
+      status: active ? RiderStatus.idle : RiderStatus.offline,
+    );
+    return _writeOptimistically(
+      expected,
+      () => _repository.setRiderActive(riderId, active).then((_) => expected),
     );
   }
+
+  /// Shows [expected] on the roster now, runs [write], and reconciles:
+  ///
+  /// - the store accepts → the entry is marked confirmed and dropped as
+  ///   soon as the stream shows the saved record (immediately, if it
+  ///   already does — the simulation echoes synchronously);
+  /// - the store refuses, or [writeTimeout] passes → the entry is withdrawn
+  ///   and the error rethrown as a [FleetWriteException] for the page.
+  ///
+  /// [write] resolves to the record as saved, which may carry a different
+  /// id than [expected] (an add whose suggested id was taken); the overlay
+  /// follows the saved id so the roster never shows both.
+  Future<Rider> _writeOptimistically(
+    Rider expected,
+    Future<Rider> Function() write,
+  ) async {
+    final token = _nextWriteToken++;
+    _stage(expected, token);
+
+    final Rider saved;
+    try {
+      saved = await write().timeout(writeTimeout);
+    } on TimeoutException {
+      _withdraw(expected.id, token);
+      throw const FleetWriteException(
+        'No answer from the store in 20 seconds. The change may not have '
+        'been saved — check the connection, then check the roster before '
+        'trying again.',
+      );
+    } catch (_) {
+      _withdraw(expected.id, token);
+      rethrow;
+    }
+
+    if (saved.id != expected.id) {
+      _withdraw(expected.id, token);
+      _stage(saved, token);
+    }
+    final entry = _pending[saved.id];
+    if (entry != null && entry.token == token) {
+      if (_storeRiders.any((r) => _sameRecord(r, saved))) {
+        _pending.remove(saved.id);
+      } else {
+        entry.confirmed = true;
+      }
+      _composeRiders();
+      notifyListeners();
+    }
+    return saved;
+  }
+
+  void _stage(Rider rider, int token) {
+    _pending[rider.id] = _PendingWrite(rider, token);
+    _composeRiders();
+    notifyListeners();
+  }
+
+  /// Drops the overlay entry for [id] if it still belongs to this write —
+  /// a newer write to the same rider owns the entry otherwise.
+  void _withdraw(String id, int token) {
+    if (_pending[id]?.token != token) return;
+    _pending.remove(id);
+    _composeRiders();
+    notifyListeners();
+  }
+
+  static bool _sameRecord(Rider a, Rider b) =>
+      a.id == b.id &&
+      a.fullName == b.fullName &&
+      a.helmetId == b.helmetId &&
+      a.phone == b.phone &&
+      a.status == b.status &&
+      a.isActive == b.isActive;
 
   // -------------------------------------------------------------- workflow
 
@@ -424,4 +547,20 @@ class FleetController extends ChangeNotifier {
     _repository.dispose();
     super.dispose();
   }
+}
+
+/// One roster write shown ahead of the store. See
+/// `FleetController._writeOptimistically`.
+class _PendingWrite {
+  final Rider rider;
+
+  /// Identifies the write, so a failure cannot withdraw a newer write to the
+  /// same rider that has since replaced this entry.
+  final int token;
+
+  /// Set once the store accepted the write; the entry then goes with the
+  /// next snapshot, which reflects it.
+  bool confirmed = false;
+
+  _PendingWrite(this.rider, this.token);
 }

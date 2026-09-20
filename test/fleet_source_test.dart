@@ -37,10 +37,17 @@ class _CloudLikeRepository implements FleetRepository {
   Stream<FleetConnection> watchConnection() => connection.stream;
 
   @override
-  Future<void> addRider(Rider rider) async => writes.add('add ${rider.id}');
+  Future<Rider> addRider(Rider rider) async {
+    writes.add('add ${rider.id}');
+    return rider;
+  }
+
   @override
   Future<void> updateRider(Rider rider) async =>
       writes.add('update ${rider.id}');
+  @override
+  Future<void> setRiderActive(String riderId, bool active) async =>
+      writes.add('active $riderId $active');
   @override
   Future<void> setRiderStatus(String riderId, RiderStatus status) async =>
       writes.add('status $riderId ${status.name}');

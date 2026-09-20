@@ -150,6 +150,7 @@ Division of labour:
 |---|---|
 | Legal alert transitions, roster uniqueness, when a rider comes off emergency | Carrying a validated write to the store |
 | Validates against its **local copy**, throws `StateError` synchronously | Echoes the resulting state back through `watchRiders / watchTelemetry / watchAlerts` |
+| Shows a roster write **optimistically** — an overlay on the store's list, withdrawn if the store refuses or does not answer in 20 s (`FleetWriteException`) | Re-checks what the local copy cannot: claims the rider id and the helmet pairing in a **transaction**, so two consoles cannot collide |
 | Trails, selection, `lastSync`, `statusCounts`, response-time averages | `FleetSource` (simulation / firestore) and `FleetConnection` for the top-bar chips |
 
 The streams are the source of truth: a write is only "done" once it comes
@@ -456,7 +457,7 @@ matches the visible page for all three roles.
 | Dashboard | `dashboard_page.dart` | ✅ Complete — six live panels |
 | Rider Monitoring | `rider_monitoring_page.dart` | ✅ Complete — map + roster + telemetry detail + breadcrumb trail |
 | Alerts | `admin_alerts_page.dart` | ✅ Complete — KPIs, filters, sort, detail panel, full workflow |
-| User Management | `user_management_page.dart` | ✅ Complete — CRUD, validation, sortable roster |
+| User Management | `user_management_page.dart` | ✅ Complete — register / edit / deactivate persisted to `riders/` with helmet pairing written to `devices/` in one transaction; optimistic roster with rollback; write failures shown as sentences that stay until dismissed; validation; sortable roster |
 | Reports | `reports_page.dart` | ✅ Complete — response times, district/type breakdowns, incident log, CSV export |
 
 Supporting widgets: `fleet_map_view.dart` (shared by the dashboard panel and
@@ -490,7 +491,7 @@ to treat the whole module with suspicion.
 | **Street addresses** | Hardcoded per district in `kFleetDistricts`; an alert borrows its district's address string. | Reverse geocode of the real coordinates. |
 | **Authentication** | Simulation only: `LocalAdminAuth` compares against three demo accounts in `admin_session.dart`, labelled as such. **Firestore: real** — Firebase Auth email/password, role from a custom claim or `admins/{uid}`, unprovisioned accounts denied (§4). | Done on the Firestore path. Remaining: MFA, and rider/firmware identities. |
 | **Responder dispatch** | Choosing a `ResponderType` records an audit entry. **Nobody is contacted.** | Integration with emergency services / the rider's emergency contacts. |
-| **Persistence** | Simulation: none — state is in memory and lost on refresh or logout. Firestore: riders, alerts and the acknowledge → dispatch → resolve audit trail persist across refresh and between operators, behind Auth-backed rules (FIRESTORE_SCHEMA.md §4). | Done on the Firestore path. |
+| **Persistence** | Simulation: none — state is in memory and lost on refresh or logout. Firestore: riders (register, edit, deactivate) and their helmet pairing, alerts and the acknowledge → dispatch → resolve audit trail persist across refresh and between operators, behind Auth-backed rules (FIRESTORE_SCHEMA.md §4). Roster writes are transactions: a refused or offline write is rolled back on screen and reported, never left looking saved. | Done on the Firestore path. |
 | **"Resolved Today" / date ranges** | Operate on real data, but the seeded alerts are only minutes-to-hours old and the board caps at 40, so nearly everything falls inside "Today". The ranges filter correctly; they just have little history to separate. | Meaningful once real history accumulates. |
 | **Weekly alerts chart** | Real counts bucketed from actual alert timestamps over the last 7 calendar days — but see the point above about how little history exists. | Same code, real history. |
 
@@ -519,6 +520,11 @@ to treat the whole module with suspicion.
   plugin dependency.
 - Rider deactivation is reversible from the roster but there is no audit
   trail for roster changes (only alerts carry history).
+- A deactivated rider keeps their helmet pairing, so the helmet cannot be
+  given to a new rider until the old record is edited to a different
+  serial. Releasing the helmet on deactivation is a one-line change in
+  `FirestoreFleetRepository.setRiderActive`; it was left as is because it
+  is a fleet-policy question (is a deactivation temporary?), not a code one.
 
 ---
 
@@ -534,7 +540,9 @@ flutter test
 | `test/fleet_controller_test.dart` | `statusCounts` / `alertsByArea` / `alertsByPriority` / `alertsByType` consistency after mutations, the 40-alert cap, ID uniqueness, roster CRUD guards, unmodifiable collections |
 | `test/rider_validation_test.dart` | Helmet ID format and uniqueness, PH phone normalization, sequential IDs |
 | `test/admin_shell_test.dart` | Boot, login, every tab renders, narrow layout, role gating, top-bar/page agreement, shared live feed |
-| `test/admin_auth_test.dart` | `parseAdminRole` (verbatim, aliases, never defaults), `LocalAdminAuth`, error-message mapping never leaks a code, and — via a scripted `AdminAuth` — the in-flight button guard, deny-on-unprovisioned, no raw exception text, and the shell leaving on a null or foreign auth event |
+| `test/admin_auth_test.dart` | `parseAdminRole` (verbatim, aliases, never defaults), `LocalAdminAuth`, error-message mapping never leaks a code, and — via a scripted `AdminAuth` — the login page's keyboard paths, validation, in-flight guard, remembered email, deny-on-unprovisioned, no raw exception text, and the shell leaving on a null or foreign auth event |
+| `test/admin_layout_test.dart` | Every page's empty state and the simulation at 1280–1440 × 500–657 (projector, laptop, browser chrome) without a RenderFlex overflow, with the real font loaded |
+| `test/roster_persistence_test.dart` | Optimistic roster writes against a scripted store: shown at once, kept through an older snapshot, withdrawn on refusal or after the 20 s deadline, following a store-assigned id; the narrow deactivation write; write-error messages never leak a code; the page's dismissable failure toast and inline duplicate-helmet refusal |
 | `test/widget_test.dart` | Rider app still boots (guards the two-entrypoint split) |
 
 The controller exposes `debugEmitAlert()` (`@visibleForTesting`) so tests can

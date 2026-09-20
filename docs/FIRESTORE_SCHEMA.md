@@ -59,23 +59,35 @@ the new project, something outside this document wrote it.
 
 ### `riders/{riderId}` — dashboard-owned, camelCase
 
-Document id is the rider id shown in the console (`R-001`).
+Document id is the rider id shown in the console (`R-001`). The console
+suggests the next sequential id from its copy of the roster and **claims it
+inside a transaction**: if another operator registered `R-011` a moment
+earlier, the transaction reads it as taken and claims `R-012` instead.
+Sequential ids are kept on purpose — they appear on the map, in every alert
+tile and in the paper's figures, where a random auto-id would be noise — and
+the transaction is what makes them safe with more than one console open.
 
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `fullName` | string | yes | A document without it is skipped. |
-| `helmetId` | string | yes | Helmet serial; **this is the join key to `devices/`** (see §3). Unique across riders — enforced by the console; cannot become a rule (§4). |
-| `phone` | string | | E.164 or local format, displayed as written. |
-| `status` | string | | `riding` \| `idle` \| `offline` \| `emergency`. Default `idle`. |
-| `isActive` | bool | | Default `true`. Deactivated riders are kept, never deleted — alert history references them. |
-| `registeredAt` | timestamp | | Default: now, if missing. |
+| Field | Type | Required | Owner | Notes |
+|---|---|---|---|---|
+| `fullName` | string | yes | console | A document without it is skipped. |
+| `helmetId` | string | yes | console | Helmet serial; **this is the join key to `devices/`** (see §3). Unique across riders: the console checks its roster in the form and the store re-checks `devices/{helmetId}.assigned_rider_id` inside the write transaction, so two operators cannot pair the same helmet. Cannot become a rule (§4). |
+| `phone` | string | | console | Normalised to `+63 9XX XXX XXXX` by the form. |
+| `status` | string | | shared | `riding` \| `idle` \| `offline` \| `emergency`. Default `idle`. The console sets it on register/edit, on deactivate (`offline`) and on the stand-down after a critical alert resolves (`idle`); the helmet service may set `emergency` (§4). |
+| `isActive` | bool | | console | Default `true`. Deactivated riders are kept, never deleted — alert history references them. |
+| `registeredAt` | timestamp | | console | Written once at registration. |
 
-Written by the console (`set` with merge on create, `update` on edit).
+Written only by the console, always with explicit field paths: `set` on
+create (the id was just proven free), `update` on edit, and a two-field
+`update` (`isActive`, `status`) on deactivate/reactivate so a stale name or
+phone can never ride along over another operator's edit. Every roster write
+is a Firestore transaction — it either lands or fails, and it fails within
+seconds when the client is offline rather than queueing silently.
 
 ### `devices/{deviceId}` — **firmware-owned, snake_case**
 
 Document id is the helmet serial (`NR-H1-001`). This is the document the
-ESP32 writes; the console only reads it (and the seed writes it once).
+ESP32 writes its readings into. The console reads it, and writes exactly two
+fields — the pairing — when a Super Admin registers or edits a rider.
 
 | Field | Type | Owner | Notes |
 |---|---|---|---|
@@ -88,8 +100,17 @@ ESP32 writes; the console only reads it (and the seed writes it once).
 | `battery_pct` | number | **firmware — to add** | 0–100. Defaults to 0 when absent. |
 | `gps_fix` | bool | **firmware — to add** | Defaults to `true` if lat/lng are non-zero, else `false`. |
 | `last_update` | timestamp | **firmware — to add** | Use a server timestamp. Defaults to the moment the snapshot arrived, which overstates freshness — add this field. |
-| `assigned_rider_id` | string | rider app / console | Optional. If absent, the console joins by `riders.helmetId == deviceId`. |
-| `state`, `firmware_version`, `paired_at` | string, string, timestamp | rider app | Pairing metadata; informational. |
+| `assigned_rider_id` | string | **console** | The pairing. Written in the same transaction as the rider (`riders.helmetId` and this field always agree), removed from the old device when a rider's helmet is changed. One rider per device: a register or edit that names a helmet paired to someone else is refused at the store. If absent (a helmet that reported before it was paired), the console joins by `riders.helmetId == deviceId`. |
+| `paired_at` | timestamp | **console** | Server timestamp of the pairing; removed with it. |
+| `state`, `firmware_version` | string, string | rider app | Informational; not written by the console. |
+
+**Who writes what, so the console and the helmet never conflict:** the
+console creates a `devices/{helmetId}` document if the helmet has never
+reported (pairing fields only — no readings), and on an existing document
+touches nothing but `assigned_rider_id` and `paired_at`, by field path. The
+firmware writes readings and never the pairing. The rules enforce the
+console's side (§4). A helmet that starts reporting into a document the
+console created simply adds its fields alongside.
 
 The reader also accepts camelCase spellings of every field above, so a
 firmware or app that writes `speedKmh` still renders. Pick one and stay on it.
@@ -239,7 +260,7 @@ places. Keep them in step.
 | Path | read | create | update | delete |
 |---|---|---|---|---|
 | `riders/{id}` | operator | superAdmin | superAdmin; dispatcher **or** helmet service if only `status` changes | never (deactivate instead) |
-| `devices/{id}` | operator | helmet service; superAdmin (registering a helmet; the seed) | helmet service only | never |
+| `devices/{id}` | operator | helmet service; superAdmin (registering a helmet; the seed) | helmet service; superAdmin **only if nothing but `assigned_rider_id` / `paired_at` changes** (the pairing) | never |
 | `alerts/{id}` | operator | helmet service; superAdmin (the seed) | superAdmin / dispatcher, **one lifecycle step forward**, touching only `status` + the matching `<status>At`, which must be the server clock | never |
 | `alerts/{id}/history/{e}` | operator (single alert and collection group) | superAdmin / dispatcher, `at` must be the server clock | never | never |
 | `admins/{uid}` | own document: any signed-in user; all: superAdmin | never from a client | never | never |
@@ -257,10 +278,15 @@ live only in Dart:
   machine clock is not admissible.
 - **A dispatcher's only write to a rider is its status** — the automatic
   stand-down when a critical alert is resolved.
+- **A Super Admin's only write to an existing device is its pairing.** A
+  reading can only ever come from the helmet service.
 
 What the rules do **not** enforce: `helmetId` uniqueness and phone format.
-Uniqueness needs a lookup index the rules language cannot express; both stay
-in `RiderValidation` on the client, and a Super Admin is the only principal
+Uniqueness needs a lookup the rules language cannot express, so it is
+enforced by the console's write transaction reading
+`devices/{helmetId}.assigned_rider_id` under Firestore's serialisation —
+which holds across consoles, unlike the form's check of the local roster.
+Phone format stays in `RiderValidation`. A Super Admin is the only principal
 who can write those fields anyway.
 
 ### Three things worth knowing before you debug a `permission-denied`
@@ -347,6 +373,17 @@ firebase apps:sdkconfig WEB 1:885956155129:web:21670e7270e1ccc7dc3428 > assets/c
 #    from a signed-in Super Admin. Watch the terminal for
 #    "seedFirestore: wrote 10 riders, …". It refuses if riders/ already has
 #    a document, and a Dispatcher or Viewer sign-in skips it with a message.
+#
+#    SEED BEFORE REGISTERING ANY RIDER BY HAND. The seed refuses a non-empty
+#    riders/ (so a hand-registered rider makes it impossible to run), and
+#    it creates devices/ documents with readings, which a Super Admin may
+#    only do on documents that do not exist yet — a console-paired device
+#    already present would make the whole seed batch fail. Riders
+#    registered in the console after the seed coexist with it: the seed
+#    uses R-001…R-010 and NR-H1-001…010, and the console suggests the next
+#    free id. There is deliberately no "merge" flag: the seed is fixture
+#    data for an empty project, not a reset, and merging it over real
+#    riders would raise the question of which record wins on R-001.
 flutter run -t lib/main_admin.dart -d chrome --web-port 5173 --dart-define=SEED_FIRESTORE=true
 
 # Day to day. With the config present the top bar shows FIRESTORE; sign in
@@ -394,8 +431,11 @@ Still open:
    or a Cloud Function on `alerts` create? (The rules already let the helmet
    service make that one write; a Cloud Function would use the Admin SDK and
    need nothing.)
-3. Rider ↔ device pairing: does the rider app write `assigned_rider_id`, or is
-   `riders.helmetId` the only link?
+3. ~~Rider ↔ device pairing: does the rider app write `assigned_rider_id`, or
+   is `riders.helmetId` the only link?~~ **Settled:** the console writes
+   `assigned_rider_id` and `paired_at` in the same transaction as the rider
+   (§2). The rider app has no part in pairing; a helmet that reports before
+   it is paired is joined by `riders.helmetId` until a Super Admin pairs it.
 4. **How does the ESP32 authenticate?** The rules reserve a Firebase Auth
    identity carrying the claim `role: helmetService` (one account for the
    fleet, or one per helmet — the rules do not care). The alternative is a

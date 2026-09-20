@@ -23,11 +23,10 @@ class RiderLocation {
   });
 
   factory RiderLocation.fromMap(String riderId, Map<String, dynamic> data) {
-    final timestampValue = data['timestamp'];
-    final timestamp = timestampValue is DateTime
-        ? timestampValue
-        : DateTime.tryParse(timestampValue?.toString() ?? '') ?? DateTime.now();
-
+    final rawTimestamp = data['timestamp'];
+    final timestamp = rawTimestamp is DateTime
+        ? rawTimestamp
+        : DateTime.tryParse(rawTimestamp?.toString() ?? '') ?? DateTime.now();
     return RiderLocation(
       riderId: riderId,
       latitude: _number(data['latitude']),
@@ -40,8 +39,7 @@ class RiderLocation {
     );
   }
 
-  static double _number(Object? value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
+  static double _number(Object? value) => value is num
+      ? value.toDouble()
+      : double.tryParse(value?.toString() ?? '') ?? 0;
 }

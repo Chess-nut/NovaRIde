@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:novaride/family/data/family_repository.dart';
-import 'package:novaride/family/models/rider_location.dart';
+import 'package:novaride/emergency_contact/data/emergency_contact_repository.dart';
+import 'package:novaride/emergency_contact/models/rider_location.dart';
 
 void main() {
   test('parses Firebase-style rider location data', () {
@@ -22,7 +22,7 @@ void main() {
   });
 
   test('repository exposes only a permission-gated location stream', () async {
-    final repository = FamilyRepository();
+    final repository = EmergencyContactRepository();
     expect(repository.canMonitorLocation, isTrue);
     expect(await repository.watchRiderLocation().first, isA<RiderLocation>());
   });

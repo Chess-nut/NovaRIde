@@ -106,14 +106,12 @@ and the security rules.
  - **Backend & Cloud Database:** Firebase Realtime Database & Firebase Authentication
  - **Mapping Integration:** Google Maps Platform API
 
-## Family Live Location
+## Emergency Contact Live Location
 
-The Family Map route is `/family-map`. It currently consumes the existing
-`FamilyRepository` mock stream, which is permission-gated by the connected
-rider's `liveLocation` permission. The location payload shape is represented by
-`RiderLocation` and is ready to be populated by a Firebase Realtime Database
-listener at `riderTelemetry/{riderId}/location` when Firebase is added to the
-project.
+The Emergency Contact map route is `/emergency-map`. It consumes the shared
+`EmergencyContactRepository` stream, permission-gated by the connected rider's
+`liveLocation` permission. The location payload shape is represented by
+`RiderLocation` and can be connected to the existing Firebase telemetry source.
 
 Google Maps keys are intentionally supplied through native build settings and
 are not stored in this repository. For Android, provide the Gradle property

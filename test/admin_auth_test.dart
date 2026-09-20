@@ -7,7 +7,6 @@
 // of the seam.
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,6 +18,8 @@ import 'package:novaride/admin/data/browser_storage.dart';
 import 'package:novaride/admin/data/firebase_admin_auth.dart';
 import 'package:novaride/admin/state/admin_session.dart';
 import 'package:novaride/main_admin.dart';
+
+import 'support/roboto.dart';
 
 /// Stands in for FirebaseAdminAuth: async, scriptable, and not a
 /// LocalAdminAuth — so the login page treats it as the Firestore path.
@@ -98,32 +99,6 @@ Iterable<String> _renderedAddresses(WidgetTester tester) {
 }
 
 FocusNode? get _focused => FocusManager.instance.primaryFocus;
-
-/// The test binding renders every glyph as a wide square, which wraps
-/// single-line copy onto two or three lines and makes any height check
-/// meaningless. For the projector test the console's real face — the SDK's
-/// own Roboto — is loaded under the family name the app asks for.
-final _robotoDir = Platform.environment['FLUTTER_ROOT'] == null
-    ? null
-    : Directory(
-        '${Platform.environment['FLUTTER_ROOT']}/bin/cache/artifacts/'
-        'material_fonts',
-      );
-
-bool get _hasRoboto =>
-    _robotoDir != null &&
-    File('${_robotoDir!.path}/roboto-regular.ttf').existsSync();
-
-Future<void> _loadRoboto() async {
-  final loader = FontLoader('Roboto');
-  for (final weight in ['regular', 'medium', 'bold']) {
-    final file = File('${_robotoDir!.path}/roboto-$weight.ttf');
-    loader.addFont(
-      file.readAsBytes().then((bytes) => ByteData.sublistView(bytes)),
-    );
-  }
-  await loader.load();
-}
 
 /// Presses Enter in whichever field currently holds the text input
 /// connection — what the web engine does with a keyboard's Enter key.
@@ -557,11 +532,8 @@ void main() {
 
     testWidgets('fits a 1280×720 projector without scrolling, error banner '
         'and simulation line included', (tester) async {
-      await tester.runAsync(_loadRoboto);
-      // 720 minus a browser's tab strip and address bar.
-      tester.view.physicalSize = const Size(1280, 633);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
+      // 720 minus a browser's tab strip and address bar, in the real font.
+      await useProjectorSurface(tester, projectorSize);
       await tester.pumpWidget(const AdminApp());
 
       await tester.enterText(
@@ -581,7 +553,7 @@ void main() {
       final position = tester.state<ScrollableState>(page.first).position;
       expect(position.maxScrollExtent, 0, reason: 'nothing to scroll to');
       expect(tester.takeException(), isNull, reason: 'no overflow');
-    }, skip: !_hasRoboto); // needs the SDK's Roboto, see _loadRoboto
+    }, skip: !hasRoboto);
 
     testWidgets('does not stretch on a wide monitor', (tester) async {
       tester.view.physicalSize = const Size(2560, 1440);

@@ -50,6 +50,12 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   /// sitting beside the list and reflows above it in one scrolling column.
   static const _stackBreakpoint = 1100.0;
 
+  /// Below this page height the wide layout's fixed parts — KPI row, filter
+  /// bar, list-card header — leave no room for the queue itself, so the
+  /// page scrolls as a whole instead. A 720p projector minus browser chrome
+  /// is about 570 and stays on the wide layout.
+  static const _minWideHeight = 480.0;
+
   final TextEditingController _searchController = TextEditingController();
 
   /// Empty means "no filter" rather than "match nothing" — an empty set is
@@ -110,12 +116,20 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
 
         return LayoutBuilder(
           builder: (context, constraints) {
-            final stacked = constraints.maxWidth < _stackBreakpoint;
+            // Too narrow for two panes, or too short for a fixed-height
+            // column: either way the whole page scrolls.
+            final stacked = constraints.maxWidth < _stackBreakpoint ||
+                constraints.maxHeight < _minWideHeight;
+            // The KPI row is sized to the width the cards actually get —
+            // inside this padding. Sizing them to the outer width left the
+            // fifth card 32px short of fitting, so it wrapped onto a second
+            // row at every width and took 170px from the queue below.
+            final contentWidth = constraints.maxWidth - 32;
             return Padding(
               padding: const EdgeInsets.all(16),
               child: stacked
-                  ? _buildStacked(fleet, visible, selected, constraints.maxWidth)
-                  : _buildWide(fleet, visible, selected, constraints.maxWidth),
+                  ? _buildStacked(fleet, visible, selected, contentWidth)
+                  : _buildWide(fleet, visible, selected, contentWidth),
             );
           },
         );
@@ -255,11 +269,7 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
       ),
     ];
 
-    final perRow = width >= 1100
-        ? 5
-        : width >= 760
-            ? 3
-            : 2;
+    final perRow = kpiCardsPerRow(width);
     const spacing = 10.0;
     final cardWidth = (width - spacing * (perRow - 1)) / perRow;
 
@@ -1194,14 +1204,37 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
+/// "No alerts match these filters."
+///
+/// In the wide layout this sits in an [Expanded] slot whose height is
+/// whatever the KPI row and filter bar left over — on a short viewport that
+/// can be less than the message needs. Given a bounded height it centres
+/// itself when there is room and scrolls when there is not, so it never
+/// overflows; in the stacked layout, where the whole page scrolls and the
+/// height is unbounded, it simply takes its natural size.
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedHeight) return _content();
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(child: _content()),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _content() {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 48),
+      padding: const EdgeInsets.symmetric(vertical: 24),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
             width: 52,

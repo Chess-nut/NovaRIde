@@ -123,11 +123,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
       ),
     ];
 
-    final perRow = width >= 1100
-        ? 5
-        : width >= 760
-            ? 3
-            : 2;
+    final perRow = kpiCardsPerRow(width);
     const spacing = 10.0;
     final cardWidth = (width - spacing * (perRow - 1)) / perRow;
 

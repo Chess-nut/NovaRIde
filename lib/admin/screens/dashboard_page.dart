@@ -22,6 +22,12 @@ class DashboardPage extends StatelessWidget {
   /// stack into a single scrolling column.
   static const _stackBreakpoint = 1100.0;
 
+  /// Below this page height the six-panel grid cannot give its shortest
+  /// panel the room its content needs — the donut's legend is the first to
+  /// go, at about 485px — so the panels stack and scroll instead. A 720p
+  /// projector minus browser chrome is about 570 and keeps the grid.
+  static const _minGridHeight = 500.0;
+
   static const _gap = 8.0;
   static const _outerPadding = 10.0;
 
@@ -35,7 +41,8 @@ class DashboardPage extends StatelessWidget {
       builder: (context, _) {
         return LayoutBuilder(
           builder: (context, constraints) {
-            final stacked = constraints.maxWidth < _stackBreakpoint;
+            final stacked = constraints.maxWidth < _stackBreakpoint ||
+                constraints.maxHeight < _minGridHeight;
             return Padding(
               padding: const EdgeInsets.all(_outerPadding),
               child: stacked ? _buildStacked(fleet) : _buildGrid(fleet),

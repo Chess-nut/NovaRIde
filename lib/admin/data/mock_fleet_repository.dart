@@ -92,8 +92,10 @@ class MockFleetRepository implements FleetRepository {
 
   /// Drops the new rider near a random district so the dot is not stacked
   /// on an existing one, and gives them a fix so they are plottable at once.
+  /// The suggested id is always free here — one console, no races — so the
+  /// rider is saved exactly as given.
   @override
-  Future<void> addRider(Rider rider) async {
+  Future<Rider> addRider(Rider rider) async {
     _riders.add(rider);
 
     final district = kFleetDistricts[_rng.nextInt(kFleetDistricts.length)];
@@ -114,6 +116,7 @@ class MockFleetRepository implements FleetRepository {
 
     _publishRiders();
     _publishTelemetry();
+    return rider;
   }
 
   @override
@@ -121,6 +124,17 @@ class MockFleetRepository implements FleetRepository {
     final index = _riders.indexWhere((r) => r.id == rider.id);
     if (index == -1) return;
     _riders[index] = rider;
+    _publishRiders();
+  }
+
+  @override
+  Future<void> setRiderActive(String riderId, bool active) async {
+    final index = _riders.indexWhere((r) => r.id == riderId);
+    if (index == -1) return;
+    _riders[index] = _riders[index].copyWith(
+      isActive: active,
+      status: active ? RiderStatus.idle : RiderStatus.offline,
+    );
     _publishRiders();
   }
 

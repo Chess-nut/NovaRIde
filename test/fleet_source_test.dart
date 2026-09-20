@@ -37,10 +37,17 @@ class _CloudLikeRepository implements FleetRepository {
   Stream<FleetConnection> watchConnection() => connection.stream;
 
   @override
-  Future<void> addRider(Rider rider) async => writes.add('add ${rider.id}');
+  Future<Rider> addRider(Rider rider) async {
+    writes.add('add ${rider.id}');
+    return rider;
+  }
+
   @override
   Future<void> updateRider(Rider rider) async =>
       writes.add('update ${rider.id}');
+  @override
+  Future<void> setRiderActive(String riderId, bool active) async =>
+      writes.add('active $riderId $active');
   @override
   Future<void> setRiderStatus(String riderId, RiderStatus status) async =>
       writes.add('status $riderId ${status.name}');
@@ -67,6 +74,8 @@ Future<void> _signIn(WidgetTester tester) async {
   await tester.enterText(
       find.byType(TextFormField).first, 'admin@novaride.ph');
   await tester.enterText(find.byType(TextFormField).last, 'admin123');
+  // The button enables on the frame after both fields are filled.
+  await tester.pump();
   await tester.tap(find.text('SIGN IN'));
   await tester.pump();
   await tester.pump(const Duration(seconds: 1));

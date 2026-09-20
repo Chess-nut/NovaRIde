@@ -1,6 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/shared/theme.dart';
 
+/// How many [KpiCard]s fit across [width] — the width the cards actually
+/// get, after the page's own padding — without the value, label or caption
+/// wrapping. Five from 990px (each card ≥ 190px wide), three from 760px,
+/// else two.
+///
+/// One rule for every page, so a page that switches to a fixed-height layout
+/// at some width cannot pair it with a KPI row that still wraps to two rows:
+/// that combination is what pushed the Alerts empty state off the bottom of
+/// a 1366-wide laptop. 990 sits comfortably below the 1100 content width at
+/// which the Alerts page stops scrolling.
+int kpiCardsPerRow(double width) => width >= 990
+    ? 5
+    : width >= 760
+        ? 3
+        : 2;
+
 /// One headline metric on the dashboard KPI row.
 class KpiCard extends StatelessWidget {
   final String label;

@@ -10,27 +10,85 @@ The operations console is a second Flutter entrypoint in the same repository,
 used by dispatchers to monitor the helmet fleet and respond to accident alerts.
 
 ```bash
-flutter run -t lib/main_admin.dart -d chrome   # admin console
-flutter run -t lib/main.dart                   # rider app
+flutter run -t lib/main_admin.dart -d chrome --web-port 5173   # admin console
+flutter run -t lib/main.dart                                   # rider app
 ```
-
-**Demo credentials** (also listed on the login screen, click a row to fill the form):
-
-| Email | Password | Role |
-|---|---|---|
-| `admin@novaride.ph` | `admin123` | Super Admin — everything |
-| `dispatch@novaride.ph` | `dispatch123` | Dispatcher — alert workflow, no rider management |
-| `viewer@novaride.ph` | `viewer123` | Viewer — read-only |
 
 Five tabs: **Dashboard** (live fleet grid), **Rider Monitoring** (map + telemetry
 drill-down), **User Management** (rider CRUD), **Alerts** (the
 open → acknowledged → dispatched → resolved response workflow with an audit
 trail), and **Reports** (response-time analytics and CSV export).
 
-The console currently runs on an in-memory simulation — no hardware, network or
-database. See **[docs/ADMIN_MODULE.md](docs/ADMIN_MODULE.md)** for the
-architecture, the alert state machine, the role matrix, and a full
-"simulated vs. real" disclosure.
+### Two ways to run it
+
+The console decides at startup, from one file, whether it is real or simulated,
+and says which in its top bar:
+
+| `assets/config/firebase.json` | Data | Sign-in | Top-bar chip |
+|---|---|---|---|
+| present | Cloud Firestore, project `novaride-7a68c` | **Firebase Auth** — the operator accounts below | `FIRESTORE` |
+| absent (a fresh clone) | in-memory simulation | local demo accounts | `SIMULATION` |
+
+A fresh clone is a simulation build with no extra steps; nothing about Firebase
+can break a teammate who has never touched it.
+
+**Operator accounts (Firestore path).** Passwords are held by their owners and
+are not in this repository, and the login page names no account. Tick
+*Remember my email on this browser* to skip retyping the address next time —
+the address only is kept, in that browser's local storage.
+
+| Email | Role |
+|---|---|
+| `qrlunatal@tip.edu.ph` | Super Admin — everything |
+| `qhjcagbayani@tip.edu.ph` | Dispatcher — alert workflow, no rider management |
+| `qdplegarde@tip.edu.ph` | Viewer — read-only |
+
+**Demo accounts (simulation path).** Not real credentials, and not shown on
+the login screen either — it looks the same on both paths, apart from a
+*Simulation mode* line in its footer.
+
+| Email | Password | Role |
+|---|---|---|
+| `admin@novaride.ph` | `admin123` | Super Admin |
+| `dispatch@novaride.ph` | `dispatch123` | Dispatcher |
+| `viewer@novaride.ph` | `viewer123` | Viewer |
+
+### First-time setup against Firebase
+
+Once per project, from the repo root, with the Firebase CLI signed in
+(`firebase use` should print `novaride-7a68c`). PowerShell:
+
+```powershell
+# 1. Security rules, then indexes. Rules first: without them every read is
+#    refused, including the admins/{uid} lookup sign-in depends on.
+firebase deploy --only firestore:rules
+firebase deploy --only firestore:indexes
+
+# 2. Web config — gitignored, never committed. Trim the CLI preamble so the
+#    file is just the JSON object (assets/config/firebase.example.json shows the shape).
+firebase apps:sdkconfig WEB 1:885956155129:web:21670e7270e1ccc7dc3428 > assets/config/firebase.json
+
+# 3. Seed the empty database with the simulation's fleet, ONCE. Start with the
+#    flag, then sign in as the Super Admin — the seed runs at that moment,
+#    because the rules only accept its writes from a signed-in Super Admin.
+#    The terminal prints "seedFirestore: wrote 10 riders, …" when it lands.
+flutter run -t lib/main_admin.dart -d chrome --web-port 5173 --dart-define=SEED_FIRESTORE=true
+```
+
+Adding an operator: create the account under Authentication → Users, then
+create `admins/{uid}` with `name`, `email` and `role` (`superAdmin` |
+`dispatcher` | `viewer`). An authenticated account with no such document is
+refused at the console, not given a default role. Optionally,
+`tool/set_admin_claims.mjs` puts the role in the ID token as a custom claim —
+it needs a service-account key, which **grants full admin access to the whole
+project, bypasses every security rule, and lives outside the repository**.
+The script header has the PowerShell steps and the warnings.
+
+See **[docs/ADMIN_MODULE.md](docs/ADMIN_MODULE.md)** for the architecture, the
+authentication design, the alert state machine, the role matrix, and a full
+"simulated vs. real" disclosure, and
+**[docs/FIRESTORE_SCHEMA.md](docs/FIRESTORE_SCHEMA.md)** for the collections
+and the security rules.
 
 ## 🛠️ Tools & Technologies Used
 

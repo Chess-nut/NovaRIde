@@ -19,9 +19,12 @@ import 'package:novaride/shared/models/models.dart';
 /// all is skipped with a `debugPrint`. One malformed write from a helmet must
 /// never blank an operator's board mid-shift.
 ///
-/// Writes use `update()` with explicit field paths (or `set` with merge) so
-/// the console never erases a field it does not know about — the helmet
-/// writes its own into the same documents.
+/// Roster writes run as transactions (see [addRider]) so that two operators
+/// working at once cannot claim the same rider id or the same helmet, and
+/// so that a console with no network fails fast instead of queueing a write
+/// that the operator would see as saved. They use explicit field paths — the
+/// helmet writes its own fields into the same documents, and the console
+/// never erases one it does not know about.
 class FirestoreFleetRepository implements FleetRepository {
   FirestoreFleetRepository({FirebaseFirestore? firestore})
       : _db = firestore ?? FirebaseFirestore.instance {
@@ -540,27 +543,224 @@ class FirestoreFleetRepository implements FleetRepository {
 
   // ---------------------------------------------------------------- writes
 
+  /// How many consecutive rider ids one add will try before giving up.
+  /// Each try is one read inside the transaction; ten covers ten operators
+  /// registering at the same instant, which is nine more than the fleet has.
+  static const idClaimAttempts = 10;
+
+  /// Registers the rider in one transaction:
+  ///
+  /// 1. Claims a rider id. The controller suggests the next sequential
+  ///    `R-###` from its copy of the roster; the transaction reads that
+  ///    document and, if another operator got there first, walks forward to
+  ///    the first free one. Sequential ids are kept on purpose — they appear
+  ///    on the map, in every alert tile and in the paper's figures, where a
+  ///    twenty-character auto-id would be noise. A transaction makes them
+  ///    safe: if two consoles race for `R-011`, Firestore retries the loser,
+  ///    which then reads `R-011` as taken and claims `R-012`.
+  /// 2. Reads `devices/{helmetId}`. If it is paired to a different rider the
+  ///    add is refused with a message. The document is the uniqueness anchor
+  ///    — one document per helmet, read under the transaction — so a clash
+  ///    is caught at the store even when the other operator's rider has not
+  ///    reached this console's listener yet.
+  /// 3. Writes the rider and the pairing (`assigned_rider_id`, `paired_at`)
+  ///    on the device document, creating it if the helmet has never reported.
+  ///
+  /// Transactions have no local echo and fail when the client is offline,
+  /// which is exactly what the roster wants: the controller shows the rider
+  /// at once and withdraws them if this throws.
   @override
-  Future<void> addRider(Rider rider) {
-    return _db.collection('riders').doc(rider.id).set({
-      'fullName': rider.fullName,
-      'helmetId': rider.helmetId,
-      'phone': rider.phone,
-      'status': rider.status.name,
-      'isActive': rider.isActive,
-      'registeredAt': Timestamp.fromDate(rider.registeredAt),
-    }, SetOptions(merge: true));
-  }
+  Future<Rider> addRider(Rider rider) => _guard(() async {
+        final outcome = await _db.runTransaction<_Outcome<Rider>>((tx) async {
+          final riders = _db.collection('riders');
+
+          // Reads first — a Firestore transaction refuses a read after a
+          // write. The id walk and the pairing check are both reads.
+          var id = rider.id;
+          var claimed = false;
+          for (var attempt = 0; attempt < idClaimAttempts; attempt++) {
+            final taken = (await tx.get(riders.doc(id))).exists;
+            if (!taken) {
+              claimed = true;
+              break;
+            }
+            final next = _nextRiderId(id);
+            if (next == null) break;
+            id = next;
+          }
+          if (!claimed) {
+            return _refuse(
+              'Could not find a free rider id near ${rider.id} — the roster '
+              'is changing quickly. Try again.',
+            );
+          }
+
+          final pairing = await _readPairing(tx, rider.helmetId);
+          if (pairing.holder != null && pairing.holder != id) {
+            return _refuse(
+              'Helmet ${rider.helmetId} was assigned to ${pairing.holder} by '
+              'another operator. Choose a different helmet.',
+            );
+          }
+
+          tx.set(riders.doc(id), {
+            'fullName': rider.fullName,
+            'helmetId': rider.helmetId,
+            'phone': rider.phone,
+            'status': rider.status.name,
+            'isActive': rider.isActive,
+            'registeredAt': Timestamp.fromDate(rider.registeredAt),
+          });
+          _writePairing(tx, rider.helmetId, id);
+          return _saved(rider.copyWith(id: id));
+        });
+        return _settle(outcome);
+      });
+
+  /// Edits the rider's own fields by path and moves the helmet pairing if the
+  /// serial changed: the new device gains `assigned_rider_id`, the old one
+  /// loses it, all in the same transaction as the rider update. A helmet
+  /// already paired to somebody else is refused at the store.
+  @override
+  Future<void> updateRider(Rider rider) => _guard(() async {
+        final outcome = await _db.runTransaction<_Outcome<bool>>((tx) async {
+          final ref = _db.collection('riders').doc(rider.id);
+          final current = await tx.get(ref);
+          if (!current.exists) {
+            return _refuse(
+              '${rider.id} is no longer on the roster — another operator may '
+              'have removed it. Refresh and try again.',
+            );
+          }
+          final previousHelmet =
+              _str(current.data() ?? const {}, ['helmetId', 'helmet_id']) ??
+                  '';
+
+          final pairing = await _readPairing(tx, rider.helmetId);
+          if (pairing.holder != null && pairing.holder != rider.id) {
+            return _refuse(
+              'Helmet ${rider.helmetId} is assigned to ${pairing.holder}. '
+              'Choose a different helmet.',
+            );
+          }
+          final releasing = previousHelmet.isNotEmpty &&
+                  previousHelmet.toUpperCase() != rider.helmetId.toUpperCase()
+              ? await _readPairing(tx, previousHelmet)
+              : null;
+
+          tx.update(ref, {
+            'fullName': rider.fullName,
+            'helmetId': rider.helmetId,
+            'phone': rider.phone,
+            'status': rider.status.name,
+            'isActive': rider.isActive,
+          });
+          if (pairing.holder != rider.id) {
+            _writePairing(tx, rider.helmetId, rider.id);
+          }
+          // Only unpair a device this rider actually held; a device the
+          // helmet service has since re-pointed elsewhere is left alone.
+          if (releasing != null && releasing.holder == rider.id) {
+            tx.update(releasing.ref, {
+              'assigned_rider_id': FieldValue.delete(),
+              'paired_at': FieldValue.delete(),
+            });
+          }
+          return _saved(true);
+        });
+        _settle(outcome);
+      });
 
   @override
-  Future<void> updateRider(Rider rider) {
-    return _db.collection('riders').doc(rider.id).update({
-      'fullName': rider.fullName,
-      'helmetId': rider.helmetId,
-      'phone': rider.phone,
-      'status': rider.status.name,
-      'isActive': rider.isActive,
-    });
+  Future<void> setRiderActive(String riderId, bool active) => _guard(() async {
+        final outcome = await _db.runTransaction<_Outcome<bool>>((tx) async {
+          final ref = _db.collection('riders').doc(riderId);
+          if (!(await tx.get(ref)).exists) {
+            return _refuse(
+              '$riderId is no longer on the roster — another operator may '
+              'have removed it. Refresh and try again.',
+            );
+          }
+          tx.update(ref, {
+            'isActive': active,
+            'status': (active ? RiderStatus.idle : RiderStatus.offline).name,
+          });
+          return _saved(true);
+        });
+        _settle(outcome);
+      });
+
+  /// A transaction handler's verdict. Refusals travel back as a value, not
+  /// an exception: every refusal above is decided before the first write, so
+  /// returning normally commits nothing — and the handler runs inside the
+  /// web SDK's promise machinery, across which a thrown Dart object is not
+  /// guaranteed to come back as itself. [_settle] turns a refusal into the
+  /// [FleetWriteException] the controller expects.
+  static _Outcome<T> _refuse<T>(String message) =>
+      (value: null, refusal: message);
+
+  static _Outcome<T> _saved<T>(T value) => (value: value, refusal: null);
+
+  static T _settle<T>(_Outcome<T> outcome) {
+    final refusal = outcome.refusal;
+    if (refusal != null) throw FleetWriteException(refusal);
+    return outcome.value as T;
+  }
+
+  /// The device document and who it is paired to, read under [tx].
+  Future<({DocumentReference<Map<String, dynamic>> ref, String? holder})>
+      _readPairing(Transaction tx, String helmetId) async {
+    final ref = _db.collection('devices').doc(helmetId);
+    final snapshot = await tx.get(ref);
+    final holder = snapshot.exists
+        ? _str(snapshot.data() ?? const {},
+            ['assigned_rider_id', 'assignedRiderId'])
+        : null;
+    return (ref: ref, holder: holder);
+  }
+
+  /// The console's side of `devices/`: the pairing fields and nothing else.
+  /// Merge, because the document may already hold the helmet's telemetry —
+  /// or may not exist yet, when a rider is registered before their helmet
+  /// first reports in.
+  void _writePairing(Transaction tx, String helmetId, String riderId) {
+    tx.set(
+      _db.collection('devices').doc(helmetId),
+      {
+        'assigned_rider_id': riderId,
+        'paired_at': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  /// `R-011` → `R-012`; null for an id outside the sequential scheme, which
+  /// the id walk treats as "give up" rather than invent a scheme.
+  static String? _nextRiderId(String id) {
+    final match = RegExp(r'^R-(\d+)$').firstMatch(id.toUpperCase());
+    if (match == null) return null;
+    final number = int.parse(match.group(1)!) + 1;
+    return 'R-${number.toString().padLeft(3, '0')}';
+  }
+
+  /// Runs one write, turning whatever it throws into a [FleetWriteException]
+  /// the operator can read. Messages the write raised itself pass through.
+  Future<T> _guard<T>(Future<T> Function() write) async {
+    try {
+      return await write();
+    } on FleetWriteException {
+      rethrow;
+    } on FirebaseException catch (error) {
+      debugPrint('FirestoreFleetRepository: write refused — '
+          '${error.plugin}/${error.code}: ${error.message}');
+      throw FleetWriteException(messageForWriteCode(error.code));
+    } catch (error, stack) {
+      debugPrint('FirestoreFleetRepository: write threw $error\n$stack');
+      throw const FleetWriteException(
+        'The change was not saved. Try again, and tell a Super Admin if it '
+        'keeps happening.',
+      );
+    }
   }
 
   @override
@@ -608,4 +808,34 @@ class FirestoreFleetRepository implements FleetRepository {
     _alertsCtrl.close();
     _connectionCtrl.close();
   }
+}
+
+/// What a roster transaction decided: the saved value, or why it declined.
+typedef _Outcome<T> = ({T? value, String? refusal});
+
+/// Turns a `cloud_firestore` error code from a roster write into a sentence
+/// for the person at the keyboard. Never returns the code itself.
+String messageForWriteCode(String code) {
+  return switch (code) {
+    'permission-denied' =>
+      'Firestore refused the change. Only a Super Admin may edit the '
+          'roster, and the security rules must be deployed.',
+    'unavailable' || 'deadline-exceeded' || 'network-request-failed' =>
+      'Cannot reach Firestore — the change was not saved. Check the '
+          'connection and try again.',
+    'aborted' =>
+      'Another operator changed the roster at the same moment. Nothing was '
+          'saved — check the roster and try again.',
+    'not-found' =>
+      'That rider is no longer on the roster. Refresh and try again.',
+    'failed-precondition' =>
+      'Firestore could not complete the change. Nothing was saved — try '
+          'again.',
+    'resource-exhausted' =>
+      'Firestore is over its quota for today. The change was not saved.',
+    'unauthenticated' =>
+      'Your session has expired. Sign in again, then retry the change.',
+    _ => 'The change was not saved. Try again, and tell a Super Admin if it '
+        'keeps happening.',
+  };
 }

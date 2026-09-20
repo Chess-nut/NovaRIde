@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:novaride/admin/data/admin_auth.dart';
 import 'package:novaride/admin/data/fleet_repository.dart';
 import 'package:novaride/admin/data/mock_fleet_repository.dart';
 import 'package:novaride/admin/state/fleet_controller.dart';
@@ -37,27 +38,54 @@ class FleetScope extends InheritedNotifier<FleetController> {
   }
 }
 
-/// Names the data source for every [FleetHost] below it.
+/// Names the backend for everything below it: where fleet data comes from
+/// and who verifies sign-ins.
 ///
-/// `main_admin.dart` resolves the source once, before `runApp`, and mounts
-/// this above the app so the host can pick it up without the login page
-/// having to carry it. Absent — as in the widget tests, which pump
-/// `AdminApp()` bare — the host falls back to the simulation.
+/// `main_admin.dart` resolves both once, before `runApp` (`FleetBootstrap`),
+/// and `AdminApp` mounts this above the `MaterialApp` so the login page can
+/// reach [auth] and every [FleetHost] can reach [createRepository] without
+/// either being threaded through constructors. `AdminApp` always mounts one;
+/// pumped bare, as the widget tests do, it carries the simulation and the
+/// local demo accounts, so no test ever reaches for the network.
 class FleetSourceScope extends InheritedWidget {
   final FleetRepositoryFactory createRepository;
+
+  /// One instance for the life of the app. The login page signs in through
+  /// it and the shell listens to it for the sign-out that ends a session.
+  final AdminAuth auth;
+
+  /// Firebase project the data comes from, read from the loaded config at
+  /// startup. Null on the simulation. Shown in the top bar's source tooltip.
+  final String? projectId;
 
   const FleetSourceScope({
     super.key,
     required this.createRepository,
+    required this.auth,
+    this.projectId,
     required super.child,
   });
 
-  static FleetRepositoryFactory? maybeOf(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<FleetSourceScope>()?.createRepository;
+  /// Does not register a dependency: the backend is fixed for the life of
+  /// the app, so nothing needs to rebuild when it "changes".
+  static FleetSourceScope? maybeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<FleetSourceScope>();
+
+  static FleetSourceScope of(BuildContext context) {
+    final scope = maybeOf(context);
+    assert(
+      scope != null,
+      'FleetSourceScope.of() found no AdminApp ancestor. The login page and '
+      'the shell must be mounted below AdminApp, which owns the backend.',
+    );
+    return scope!;
+  }
 
   @override
   bool updateShouldNotify(FleetSourceScope oldWidget) =>
-      oldWidget.createRepository != createRepository;
+      oldWidget.createRepository != createRepository ||
+      oldWidget.auth != auth ||
+      oldWidget.projectId != projectId;
 }
 
 /// Owns the controller's lifecycle for as long as the console is signed in.
@@ -87,7 +115,7 @@ class _FleetHostState extends State<FleetHost> {
   void initState() {
     super.initState();
     final create = widget.createRepository ??
-        FleetSourceScope.maybeOf(context) ??
+        FleetSourceScope.maybeOf(context)?.createRepository ??
         MockFleetRepository.new;
     _fleet = FleetController(create());
   }

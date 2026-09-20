@@ -19,7 +19,7 @@ class _PersonalInformationPageState extends State<PersonalInformationPage> {
 
   // Pre-filled with the same mock rider used across the app.
   final _fullNameController = TextEditingController(text: 'Deor the great');
-  final _usernameController = TextEditingController(text: 'admin');
+  final _usernameController = TextEditingController(text: 'deor.thegreat');
   final _emailController = TextEditingController(text: 'deor.thegreat@email.com');
   final _phoneController = TextEditingController(text: '+63 917 123 4567');
   final _addressController = TextEditingController(text: 'Makati City, Metro Manila');
@@ -185,7 +185,7 @@ class _PersonalInformationPageState extends State<PersonalInformationPage> {
             radius: 40,
             backgroundColor: NovaColors.pink,
             child: Text(
-              'JD',
+              'DT',
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 26),
             ),
           ),

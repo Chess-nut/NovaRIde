@@ -15,7 +15,6 @@ class _HelmetSettingsPageState extends State<HelmetSettingsPage> {
   bool _autoConnect = true;
   bool _impactDetection = true;
   bool _alcoholDetection = true;
-  bool _ledIndicator = true;
   bool _soundAlerts = false;
   double _sensitivity = 1; // 0 = Low, 1 = Medium, 2 = High
 
@@ -75,15 +74,6 @@ class _HelmetSettingsPageState extends State<HelmetSettingsPage> {
                     _buildSectionTitle('FEEDBACK'),
                     const SizedBox(height: 12),
                     _buildToggleCard([
-                      _ToggleRow(
-                        icon: Icons.lightbulb_outline,
-                        iconColor: NovaColors.green,
-                        title: 'LED Indicator',
-                        subtitle: 'Show status light on the helmet',
-                        value: _ledIndicator,
-                        onChanged: (v) => setState(() => _ledIndicator = v),
-                      ),
-                      const Divider(height: 1, color: NovaColors.cardBorder, indent: 56),
                       _ToggleRow(
                         icon: Icons.volume_up_outlined,
                         iconColor: NovaColors.purple,

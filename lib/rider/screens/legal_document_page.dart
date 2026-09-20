@@ -128,8 +128,6 @@ class LegalDocumentPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildPlaceholderNotice(),
-                    const SizedBox(height: 20),
                     const Text(
                       'Last updated: August 2026',
                       style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
@@ -193,29 +191,4 @@ class LegalDocumentPage extends StatelessWidget {
     );
   }
 
-  Widget _buildPlaceholderNotice() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: NovaColors.amber.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: NovaColors.amber.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.info_outline, color: NovaColors.amber, size: 16),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'Placeholder copy for development. Replace with reviewed legal '
-              'text before release.',
-              style: TextStyle(color: NovaColors.secondaryText, fontSize: 11.5, height: 1.4),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

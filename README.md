@@ -33,8 +33,9 @@ A fresh clone is a simulation build with no extra steps; nothing about Firebase
 can break a teammate who has never touched it.
 
 **Operator accounts (Firestore path).** Passwords are held by their owners and
-are not in this repository. The login page lists these and a tap fills the
-email only.
+are not in this repository, and the login page names no account. Tick
+*Remember my email on this browser* to skip retyping the address next time —
+the address only is kept, in that browser's local storage.
 
 | Email | Role |
 |---|---|
@@ -42,8 +43,9 @@ email only.
 | `qhjcagbayani@tip.edu.ph` | Dispatcher — alert workflow, no rider management |
 | `qdplegarde@tip.edu.ph` | Viewer — read-only |
 
-**Demo accounts (simulation path).** Not real credentials; also listed on the
-login screen, click a row to fill the form.
+**Demo accounts (simulation path).** Not real credentials, and not shown on
+the login screen either — it looks the same on both paths, apart from a
+*Simulation mode* line in its footer.
 
 | Email | Password | Role |
 |---|---|---|

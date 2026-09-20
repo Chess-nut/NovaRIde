@@ -198,21 +198,22 @@ const roleLookupFailedMessage =
 /// Turns a `firebase_auth` or `cloud_firestore` error code into a sentence
 /// for the person at the keyboard. Never returns the code itself.
 ///
-/// With email-enumeration protection on (the default for new projects)
-/// Firebase reports a wrong password and an unknown email with the same
-/// `invalid-credential` code, so both land on one message; the older,
-/// distinct codes are still mapped for projects that have it off.
+/// A wrong password and an unknown email land on the same message whatever
+/// Firebase reports: with email-enumeration protection on (the default for
+/// new projects) both arrive as `invalid-credential` anyway, and the older,
+/// distinct codes are mapped to the same sentence so a project with it off
+/// does not become an account-enumeration oracle.
 String messageForFirebaseCode(String code) {
   return switch (code) {
-    // firebase_auth — credentials
+    // firebase_auth — credentials. One message for a wrong password and an
+    // unknown email, on purpose: a message that differs between the two
+    // tells an unauthenticated visitor which addresses are registered.
     'wrong-password' ||
+    'user-not-found' ||
     'invalid-credential' ||
     'invalid-login-credentials' ||
     'INVALID_LOGIN_CREDENTIALS' =>
       'Incorrect email or password.',
-    'user-not-found' =>
-      'No console account exists for that email. Check the address, or ask '
-          'a Super Admin to create one.',
     'invalid-email' => 'That is not a valid email address.',
     'missing-password' => 'Enter your password.',
     'user-disabled' =>

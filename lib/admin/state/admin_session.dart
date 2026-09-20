@@ -119,20 +119,6 @@ const List<AdminAccount> demoAccounts = [
   ),
 ];
 
-/// The operator accounts provisioned in the Firebase project, for the login
-/// page's one-tap card on the Firestore path.
-///
-/// Emails and roles only. The passwords are real credentials and live
-/// nowhere in this repository; tapping a row fills the email field and
-/// nothing else. The role shown is what `admins/{uid}` says — the console
-/// still resolves the real role at sign-in, this list is a convenience for
-/// the person at the keyboard, not a source of authority.
-const List<({String email, AdminRole role})> provisionedOperators = [
-  (email: 'qrlunatal@tip.edu.ph', role: AdminRole.superAdmin),
-  (email: 'qhjcagbayani@tip.edu.ph', role: AdminRole.dispatcher),
-  (email: 'qdplegarde@tip.edu.ph', role: AdminRole.viewer),
-];
-
 /// Returns the matching user, or null when the credentials do not match.
 /// Email comparison is case-insensitive; the password is not.
 AdminUser? authenticate(String email, String password) {

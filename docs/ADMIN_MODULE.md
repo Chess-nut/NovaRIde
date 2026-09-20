@@ -270,16 +270,28 @@ the next session.
   start two.
 - Provider errors are translated before they reach the page.
   `[firebase_auth/invalid-credential]` means nothing to a dispatcher at
-  2 a.m.; they see *"Incorrect email or password."* Wrong password, unknown
-  account, too many attempts, disabled account, no network, and
-  rules-not-deployed each have a sentence; anything unrecognised gets a
-  generic one and the code goes to the debug log. **Raw exception text is
-  never shown**, and `test/admin_auth_test.dart` asserts it.
-- The credentials card at the bottom differs by path. Simulation: the three
-  demo accounts with their passwords, which are not real credentials.
-  Firestore: the three provisioned operator emails with role badges —
-  tapping one fills the email field only. Real passwords appear nowhere in
-  the UI or the repository.
+  2 a.m.; they see *"Incorrect email or password."* Too many attempts,
+  disabled account, no network, not provisioned, and rules-not-deployed
+  each have a sentence; anything unrecognised gets a generic one and the
+  code goes to the debug log. **Raw exception text is never shown**, and
+  `test/admin_auth_test.dart` asserts it.
+- A wrong password and an unknown email get the **same** sentence. A login
+  page that answers differently tells an unauthenticated visitor which
+  addresses are registered — account enumeration — and the test asserts the
+  two codes map to one string.
+- No account is named on the screen, on either path. The email address is
+  the one thing the page will keep, and only when asked: *Remember my email
+  on this browser* stores the address (never the password) in the browser's
+  local storage, so a returning operator lands on the password field.
+  Unticking forgets it immediately.
+- The form is keyboard-complete: Enter submits from either field, the email
+  is checked for shape on blur and on submit before any round-trip, the
+  button enables once both fields are filled, tab order is email → password
+  → sign in, and the fields carry `AutofillHints` so a browser password
+  manager offers to save and fill.
+- The footer shows the version and build (`console_build.dart`, overridable
+  with `--dart-define=NOVARIDE_BUILD=…`) and, on the simulation only, a
+  *Simulation mode* line so nobody mistakes mock data for live Firestore.
 
 ### ISO/IEC 25010 — Security
 
@@ -439,7 +451,7 @@ matches the visible page for all three roles.
 
 | Screen | File | Status |
 |---|---|---|
-| Login | `admin_login_page.dart` | ✅ Complete — Firebase Auth on Firestore, demo accounts on the simulation; async with in-flight guard, translated errors, per-path credentials card |
+| Login | `admin_login_page.dart` | ✅ Complete — Firebase Auth on Firestore, demo accounts on the simulation; no accounts named, remembered email (address only), inline validation, keyboard-complete, autofill hints, in-flight guard, translated errors, version footer |
 | Shell (sidebar, top bar) | `admin_shell.dart` | ✅ Complete — role-filtered nav, session chip, auth-stream listener that ends the session on sign-out or revocation |
 | Dashboard | `dashboard_page.dart` | ✅ Complete — six live panels |
 | Rider Monitoring | `rider_monitoring_page.dart` | ✅ Complete — map + roster + telemetry detail + breadcrumb trail |

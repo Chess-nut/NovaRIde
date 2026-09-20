@@ -67,6 +67,8 @@ Future<void> _signIn(WidgetTester tester) async {
   await tester.enterText(
       find.byType(TextFormField).first, 'admin@novaride.ph');
   await tester.enterText(find.byType(TextFormField).last, 'admin123');
+  // The button enables on the frame after both fields are filled.
+  await tester.pump();
   await tester.tap(find.text('SIGN IN'));
   await tester.pump();
   await tester.pump(const Duration(seconds: 1));

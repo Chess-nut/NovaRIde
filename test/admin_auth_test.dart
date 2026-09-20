@@ -1,21 +1,27 @@
 // The authentication seam: role parsing, the simulation's sign-in, the
 // operator-facing error messages, and — through a fake AdminAuth injected
-// into AdminApp — the login page's in-flight state, the deny-on-unprovisioned
-// path, and the shell leaving when the auth stream stops naming its user.
-// Nothing here touches Firebase; that is the point of the seam.
+// into AdminApp — the login page itself: what it never shows, what the
+// keyboard can do on it, the in-flight state, the remembered email, the
+// deny-on-unprovisioned path, and the shell leaving when the auth stream
+// stops naming its user. Nothing here touches Firebase; that is the point
+// of the seam.
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:novaride/admin/console_build.dart';
 import 'package:novaride/admin/data/admin_auth.dart';
+import 'package:novaride/admin/data/browser_storage.dart';
 import 'package:novaride/admin/data/firebase_admin_auth.dart';
 import 'package:novaride/admin/state/admin_session.dart';
 import 'package:novaride/main_admin.dart';
 
 /// Stands in for FirebaseAdminAuth: async, scriptable, and not a
-/// LocalAdminAuth — so the login page shows the Firestore-path card.
+/// LocalAdminAuth — so the login page treats it as the Firestore path.
 class _ScriptedAuth implements AdminAuth {
   final _changes = StreamController<AdminUser?>.broadcast();
   final signInCalls = <String>[];
@@ -69,12 +75,60 @@ Future<void> _useDesktopSurface(WidgetTester tester) async {
 Future<void> _fillAndSubmit(WidgetTester tester, String email) async {
   await tester.enterText(find.byType(TextFormField).first, email);
   await tester.enterText(find.byType(TextFormField).last, 'whatever');
+  // The button enables on the frame after both fields are filled.
+  await tester.pump();
   await tester.tap(find.text('SIGN IN'));
   await tester.pump();
 }
 
 Future<void> _tearDownTree(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pump();
+}
+
+/// Every rendered string that looks like an email address. The email
+/// field's own hint is the one address-shaped string the page is allowed
+/// to show, and it is not an account.
+Iterable<String> _renderedAddresses(WidgetTester tester) {
+  final address = RegExp(r'S+@S+.S+');
+  return tester
+      .widgetList<Text>(find.byType(Text))
+      .map((text) => text.data ?? '')
+      .where((data) => address.hasMatch(data) && !data.startsWith('name@'));
+}
+
+FocusNode? get _focused => FocusManager.instance.primaryFocus;
+
+/// The test binding renders every glyph as a wide square, which wraps
+/// single-line copy onto two or three lines and makes any height check
+/// meaningless. For the projector test the console's real face — the SDK's
+/// own Roboto — is loaded under the family name the app asks for.
+final _robotoDir = Platform.environment['FLUTTER_ROOT'] == null
+    ? null
+    : Directory(
+        '${Platform.environment['FLUTTER_ROOT']}/bin/cache/artifacts/'
+        'material_fonts',
+      );
+
+bool get _hasRoboto =>
+    _robotoDir != null &&
+    File('${_robotoDir!.path}/roboto-regular.ttf').existsSync();
+
+Future<void> _loadRoboto() async {
+  final loader = FontLoader('Roboto');
+  for (final weight in ['regular', 'medium', 'bold']) {
+    final file = File('${_robotoDir!.path}/roboto-$weight.ttf');
+    loader.addFont(
+      file.readAsBytes().then((bytes) => ByteData.sublistView(bytes)),
+    );
+  }
+  await loader.load();
+}
+
+/// Presses Enter in whichever field currently holds the text input
+/// connection — what the web engine does with a keyboard's Enter key.
+Future<void> _pressEnter(WidgetTester tester) async {
+  await tester.testTextInput.receiveAction(TextInputAction.done);
   await tester.pump();
 }
 
@@ -140,7 +194,9 @@ void main() {
       expect(messageForFirebaseCode('invalid-credential'),
           'Incorrect email or password.');
       expect(messageForFirebaseCode('user-not-found'),
-          contains('No console account exists'));
+          messageForFirebaseCode('wrong-password'),
+          reason: 'one message for both, or the login page is an '
+              'account-enumeration oracle');
       expect(messageForFirebaseCode('too-many-requests'),
           contains('Too many failed attempts'));
       expect(messageForFirebaseCode('network-request-failed'),
@@ -173,33 +229,25 @@ void main() {
   });
 
   group('login page on the Firestore path', () {
-    testWidgets('lists provisioned operators without passwords and fills '
-        'the email only', (tester) async {
+    testWidgets('names no account: no emails, no role badges, no passwords, '
+        'and no simulation line', (tester) async {
       await _useDesktopSurface(tester);
       final auth = _ScriptedAuth();
       addTearDown(auth.dispose);
       await tester.pumpWidget(AdminApp(auth: auth));
 
-      expect(find.text('OPERATOR ACCOUNTS'), findsOneWidget);
-      expect(find.text('DEMO CREDENTIALS'), findsNothing);
-      for (final operator in provisionedOperators) {
-        expect(find.text(operator.email), findsOneWidget);
+      expect(_renderedAddresses(tester), isEmpty,
+          reason: 'an operations console does not list its operators on '
+              'the front door');
+      for (final role in AdminRole.values) {
+        expect(find.text(role.label.toUpperCase()), findsNothing);
       }
       for (final account in demoAccounts) {
-        expect(find.text(account.password), findsNothing,
-            reason: 'demo passwords belong to the simulation only');
+        expect(find.text(account.password), findsNothing);
       }
-
-      await tester.enterText(find.byType(TextFormField).last, 'typed');
-      await tester.tap(find.text(provisionedOperators.last.email));
-      await tester.pump();
-
-      final fields = tester
-          .widgetList<TextFormField>(find.byType(TextFormField))
-          .toList();
-      expect(fields.first.controller!.text, provisionedOperators.last.email);
-      expect(fields.last.controller!.text, isEmpty,
-          reason: 'tapping an operator never fills a password');
+      expect(find.textContaining('Simulation mode'), findsNothing,
+          reason: 'live is the expected state; only the simulation says so');
+      expect(find.textContaining(consoleVersionLabel), findsOneWidget);
     });
 
     testWidgets('disables the button while a sign-in is in flight, so a '
@@ -263,6 +311,285 @@ void main() {
       expect(find.textContaining('firebase_auth'), findsNothing);
       expect(find.textContaining('boom'), findsNothing);
       expect(find.textContaining('Sign-in failed'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('login page form', () {
+    testWidgets('the button enables only once both fields are filled',
+        (tester) async {
+      await _useDesktopSurface(tester);
+      final auth = _ScriptedAuth();
+      addTearDown(auth.dispose);
+      await tester.pumpWidget(AdminApp(auth: auth));
+
+      ElevatedButton button() =>
+          tester.widget<ElevatedButton>(find.byType(ElevatedButton));
+      expect(button().onPressed, isNull);
+
+      await tester.enterText(find.byType(TextFormField).first, _operator.email);
+      await tester.pump();
+      expect(button().onPressed, isNull, reason: 'password still empty');
+
+      await tester.enterText(find.byType(TextFormField).last, 'secret');
+      await tester.pump();
+      expect(button().onPressed, isNotNull);
+    });
+
+    testWidgets('a malformed email is caught inline, before any round-trip',
+        (tester) async {
+      await _useDesktopSurface(tester);
+      final auth = _ScriptedAuth();
+      addTearDown(auth.dispose);
+      await tester.pumpWidget(AdminApp(auth: auth));
+
+      await tester.enterText(find.byType(TextFormField).first, 'not-an-address');
+      await tester.enterText(find.byType(TextFormField).last, 'secret');
+      // The button enables on the frame after both fields are filled.
+      await tester.pump();
+      await tester.tap(find.text('SIGN IN'));
+      await tester.pump();
+
+      expect(find.text('Enter a valid email address.'), findsOneWidget);
+      expect(auth.signInCalls, isEmpty, reason: 'never reached the provider');
+      expect(_focused?.debugLabel, 'login-email',
+          reason: 'the cursor goes to the field that needs fixing');
+
+      // Typing again re-checks on every keystroke, so the message goes the
+      // moment the address is well-formed.
+      await tester.enterText(find.byType(TextFormField).first, 'a@b.co');
+      await tester.pump();
+      expect(find.text('Enter a valid email address.'), findsNothing);
+    });
+
+    testWidgets('the email is checked on blur, not while it is being typed',
+        (tester) async {
+      await _useDesktopSurface(tester);
+      final auth = _ScriptedAuth();
+      addTearDown(auth.dispose);
+      await tester.pumpWidget(AdminApp(auth: auth));
+
+      await tester.enterText(find.byType(TextFormField).first, 'half@');
+      await tester.pump();
+      expect(find.text('Enter a valid email address.'), findsNothing,
+          reason: 'still typing');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(_focused?.debugLabel, 'login-password');
+      expect(find.text('Enter a valid email address.'), findsOneWidget);
+    });
+
+    testWidgets('Enter submits from the password field, and from the email '
+        'field once there is a password to submit', (tester) async {
+      await _useDesktopSurface(tester);
+      final auth = _ScriptedAuth();
+      addTearDown(auth.dispose);
+      await tester.pumpWidget(AdminApp(auth: auth));
+
+      // From the password field.
+      await tester.enterText(find.byType(TextFormField).first, _operator.email);
+      await tester.enterText(find.byType(TextFormField).last, 'secret');
+      await _pressEnter(tester);
+      expect(auth.signInCalls, hasLength(1));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('TYPE OF RIDER STATUS'), findsOneWidget);
+
+      auth.emit(null);
+      await tester.pumpAndSettle();
+
+      // From the email field with no password yet: Enter moves on to it.
+      await tester.enterText(find.byType(TextFormField).first, _operator.email);
+      await _pressEnter(tester);
+      expect(_focused?.debugLabel, 'login-password');
+      expect(auth.signInCalls, hasLength(1), reason: 'nothing to submit yet');
+
+      // From the email field with a password present — the password
+      // manager's case: Enter submits.
+      await tester.enterText(find.byType(TextFormField).last, 'secret');
+      await tester.enterText(find.byType(TextFormField).first, _operator.email);
+      await _pressEnter(tester);
+      expect(auth.signInCalls, hasLength(2));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('TYPE OF RIDER STATUS'), findsOneWidget);
+
+      await _tearDownTree(tester);
+    });
+
+    testWidgets('the sign-in error clears as soon as the operator types again',
+        (tester) async {
+      await _useDesktopSurface(tester);
+      final auth = _ScriptedAuth()
+        ..failWith = const AdminAuthException('Incorrect email or password.');
+      addTearDown(auth.dispose);
+      await tester.pumpWidget(AdminApp(auth: auth));
+
+      await _fillAndSubmit(tester, _operator.email);
+      await tester.pumpAndSettle();
+      expect(find.text('Incorrect email or password.'), findsOneWidget);
+
+      // The cursor is on the password with the old one selected, so the
+      // retry is just typing.
+      expect(_focused?.debugLabel, 'login-password');
+      final password = tester
+          .widgetList<TextFormField>(find.byType(TextFormField))
+          .last
+          .controller!;
+      expect(password.selection.start, 0);
+      expect(password.selection.end, password.text.length);
+
+      await tester.enterText(find.byType(TextFormField).last, 'another try');
+      await tester.pump();
+      expect(find.text('Incorrect email or password.'), findsNothing);
+    });
+
+    testWidgets('remembering the email keeps the address — only the address '
+        '— for the next sign-in, and unticking forgets it at once',
+        (tester) async {
+      await _useDesktopSurface(tester);
+      addTearDown(RememberedEmail.clear);
+      final auth = _ScriptedAuth();
+      addTearDown(auth.dispose);
+      await tester.pumpWidget(AdminApp(auth: auth));
+      expect(RememberedEmail.load(), isNull);
+      expect(_focused?.debugLabel, 'login-email', reason: 'nothing to skip');
+
+      await tester.tap(find.byType(Checkbox));
+      await tester.pump();
+      await _fillAndSubmit(tester, _operator.email);
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('TYPE OF RIDER STATUS'), findsOneWidget);
+      expect(RememberedEmail.load(), _operator.email);
+
+      auth.emit(null);
+      await tester.pumpAndSettle();
+
+      final fields = tester
+          .widgetList<TextFormField>(find.byType(TextFormField))
+          .toList();
+      expect(fields.first.controller!.text, _operator.email);
+      expect(fields.last.controller!.text, isEmpty,
+          reason: 'the password is never stored');
+      expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+      expect(_focused?.debugLabel, 'login-password',
+          reason: 'the cursor starts where the typing does');
+
+      await tester.tap(find.byType(Checkbox));
+      await tester.pump();
+      expect(RememberedEmail.load(), isNull);
+    });
+
+    testWidgets('tab order is email, password, sign in, then the secondary '
+        'controls', (tester) async {
+      await _useDesktopSurface(tester);
+      final auth = _ScriptedAuth();
+      addTearDown(auth.dispose);
+      await tester.pumpWidget(AdminApp(auth: auth));
+      expect(_focused?.debugLabel, 'login-email', reason: 'autofocus');
+
+      // Filled, so the button is enabled — a disabled button is rightly
+      // skipped by traversal, and the point here is the order when it is
+      // in play.
+      await tester.enterText(find.byType(TextFormField).first, _operator.email);
+      await tester.enterText(find.byType(TextFormField).last, 'secret');
+      await tester.enterText(find.byType(TextFormField).first, _operator.email);
+      await tester.pump();
+      expect(_focused?.debugLabel, 'login-email');
+
+      Future<void> tab() async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+      }
+
+      await tab();
+      expect(_focused?.debugLabel, 'login-password');
+      await tab();
+      expect(_focused?.debugLabel, 'login-submit');
+      await tab();
+      expect(_focused?.context?.findAncestorWidgetOfExactType<IconButton>(),
+          isNotNull, reason: 'show-password toggle is reachable');
+      // Space on the focused toggle reveals the password.
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(find.byTooltip('Hide password'), findsOneWidget);
+      await tab();
+      expect(_focused?.context?.findAncestorWidgetOfExactType<Checkbox>(),
+          isNotNull, reason: 'remember-email checkbox is reachable');
+    });
+
+    testWidgets('fields, toggle and button are labelled for assistive '
+        'technology', (tester) async {
+      await _useDesktopSurface(tester);
+      final handle = tester.ensureSemantics();
+      final auth = _ScriptedAuth();
+      addTearDown(auth.dispose);
+      await tester.pumpWidget(AdminApp(auth: auth));
+
+      final email = tester.getSemantics(find.byType(TextFormField).first);
+      expect(email, isSemantics(isTextField: true));
+      expect(email.label, contains('Email address'));
+
+      final password = tester.getSemantics(find.byType(TextFormField).last);
+      expect(password, isSemantics(isTextField: true, isObscured: true));
+      expect(password.label, contains('Password'));
+
+      expect(find.byTooltip('Show password'), findsOneWidget);
+      expect(
+        tester.getSemantics(find.byType(ElevatedButton)),
+        isSemantics(isButton: true, label: 'SIGN IN'),
+      );
+      handle.dispose();
+    });
+  });
+
+  group('login page layout', () {
+    testWidgets('the simulation says so in the footer', (tester) async {
+      await _useDesktopSurface(tester);
+      await tester.pumpWidget(const AdminApp());
+
+      expect(find.textContaining('Simulation mode'), findsOneWidget);
+      expect(_renderedAddresses(tester), isEmpty,
+          reason: 'the demo accounts are documented, not displayed');
+      for (final account in demoAccounts) {
+        expect(find.text(account.password), findsNothing);
+      }
+    });
+
+    testWidgets('fits a 1280×720 projector without scrolling, error banner '
+        'and simulation line included', (tester) async {
+      await tester.runAsync(_loadRoboto);
+      // 720 minus a browser's tab strip and address bar.
+      tester.view.physicalSize = const Size(1280, 633);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const AdminApp());
+
+      await tester.enterText(
+          find.byType(TextFormField).first, 'nope@novaride.ph');
+      await tester.enterText(find.byType(TextFormField).last, 'wrong');
+      // The button enables on the frame after both fields are filled.
+      await tester.pump();
+      await tester.tap(find.text('SIGN IN'));
+      await tester.pumpAndSettle();
+      expect(find.text('Invalid email or password'), findsOneWidget);
+      expect(find.textContaining('Simulation mode'), findsOneWidget);
+
+      final page = find.descendant(
+        of: find.byType(SingleChildScrollView),
+        matching: find.byType(Scrollable),
+      );
+      final position = tester.state<ScrollableState>(page.first).position;
+      expect(position.maxScrollExtent, 0, reason: 'nothing to scroll to');
+      expect(tester.takeException(), isNull, reason: 'no overflow');
+    }, skip: !_hasRoboto); // needs the SDK's Roboto, see _loadRoboto
+
+    testWidgets('does not stretch on a wide monitor', (tester) async {
+      tester.view.physicalSize = const Size(2560, 1440);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const AdminApp());
+
+      expect(tester.getSize(find.byType(Form)).width, lessThanOrEqualTo(400));
       expect(tester.takeException(), isNull);
     });
   });

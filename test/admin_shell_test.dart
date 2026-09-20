@@ -19,9 +19,8 @@ Future<void> _useDesktopSurface(WidgetTester tester) async {
 /// The dashboard runs a looping pulse animation and two simulation timers, so
 /// it never settles. Every post-login pump is an explicit duration instead.
 ///
-/// The one-second pump also outlasts the route transition — while it is
-/// running the login page is still mounted, and its demo-credentials card
-/// carries the same role labels as the top bar.
+/// The one-second pump also outlasts the route transition, so assertions
+/// about the shell never see the login page still mounted underneath.
 Future<void> _signIn(
   WidgetTester tester, {
   String email = 'admin@novaride.ph',
@@ -29,6 +28,8 @@ Future<void> _signIn(
 }) async {
   await tester.enterText(find.byType(TextFormField).first, email);
   await tester.enterText(find.byType(TextFormField).last, password);
+  // The button enables on the frame after both fields are filled.
+  await tester.pump();
   await tester.tap(find.text('SIGN IN'));
   await tester.pump();
   await tester.pump(const Duration(seconds: 1));
@@ -56,6 +57,8 @@ void main() {
 
     await tester.enterText(find.byType(TextFormField).first, 'nope@novaride.ph');
     await tester.enterText(find.byType(TextFormField).last, 'wrong');
+    // The button enables on the frame after both fields are filled.
+    await tester.pump();
     await tester.tap(find.text('SIGN IN'));
     await tester.pumpAndSettle();
 

@@ -1,7 +1,17 @@
 # NovaRide — Cloud Firestore Schema
 
-Project `novaride-266bc`, Cloud Firestore, location `asia-southeast1`.
-Console: <https://console.firebase.google.com/project/novaride-266bc/firestore>
+Project `novaride-7a68c` (project number `885956155129`, org `tip.edu.ph`,
+Spark plan), Cloud Firestore, location `asia-southeast1`, production mode.
+Console: <https://console.firebase.google.com/project/novaride-7a68c/firestore>
+
+> **History.** The first project, `novaride-266bc`, was abandoned on
+> 20 Sep 2026 and `novaride-7a68c` started empty. Nothing carried over: the
+> phantom `users/*` documents, the `emergencyalerts` scaffold and the
+> hand-made `devices/helmet01` document described in earlier revisions of
+> this file do not exist in the new project. The project id is not written
+> anywhere in `lib/` — the console reads it from the loaded config
+> (`assets/config/firebase.json`) at runtime, and `.firebaserc` is the only
+> other place it appears.
 
 This document is the contract between the three things that touch the
 database: the TNVS Operator console (`lib/admin/`), the rider app, and the
@@ -25,9 +35,11 @@ diagram; the reasons are technical:
    resolve history is `alerts/{id}/history`, appended with `.add()` and read
    with `orderBy('at')`. In Realtime Database it would be a push-keyed list
    sorted by hand, and two operators acting at once could clobber each other.
-3. **Schema work had already begun in Firestore.** `devices/helmet01` carries
-   the firmware-shaped `ax / ay / az / vector_magnitude` fields from the
-   MPU6050 resultant-vector formula A = √(X² + Y² + Z²) in Chapter 2.
+3. **Schema work had already begun in Firestore.** The first project's
+   `devices/helmet01` carried the firmware-shaped `ax / ay / az /
+   vector_magnitude` fields from the MPU6050 resultant-vector formula
+   A = √(X² + Y² + Z²) in Chapter 2. That document is gone with the old
+   project, but the `devices/` shape below still follows it.
 
 For Chapter 3: replace "Firebase Realtime Database" with "Cloud Firestore" in
 the Data Tier description and the framework figure; the flow (helmet → cloud
@@ -37,12 +49,13 @@ database → operator console, "without delay", Objective 2) is unchanged.
 
 ## 2. Collections
 
-Flat top-level collections. The earlier `users/admin/admins/…` nesting used a
-document as a folder: `users/admin` had no fields, so it was a phantom that
-rendered in the console but matched no query and needed a rules block per
-level. Those three phantom documents and the `emergencyalerts` scaffold are
-**left in place, untouched** — nothing reads them, and deleting them is the
-schema owner's call once the rider app is confirmed not to reference them.
+Flat top-level collections. The first project had a `users/admin/admins/…`
+nesting that used a document as a folder: `users/admin` had no fields, so it
+was a phantom that rendered in the console but matched no query and needed a
+rules block per level. **Those phantoms and the `emergencyalerts` scaffold
+are gone** — `novaride-7a68c` started empty and only the collections below
+are ever created. If a `users/` or `emergencyalerts` collection appears in
+the new project, something outside this document wrote it.
 
 ### `riders/{riderId}` — dashboard-owned, camelCase
 
@@ -134,8 +147,11 @@ emergencyContacts/{id}    { riderId, name, phone, relationship }
 
 ## 3. Naming convention
 
-Two conventions, split by owner, chosen because it is not yet known whether
-firmware has been written against `devices/helmet01`:
+Two conventions, split by owner. The split was first chosen because it was
+not known whether firmware had been written against the old project's
+`devices/helmet01`; the fresh project settled that (nothing writes
+`devices/` yet — §7), and the split is kept as the agreed contract because
+snake_case is what the Arduino side naturally produces:
 
 - **`devices/` is snake_case** — the firmware's existing spelling. The
   dashboard-required fields it still lacks (`speed_kmh`, `battery_pct`,
@@ -145,9 +161,9 @@ firmware has been written against `devices/helmet01`:
   `history/`, `admins/`, `emergencyContacts/` — matching the Dart models in
   `lib/shared/models/models.dart` one-to-one.
 
-Translation happens in exactly one place, `FirestoreFleetRepository`. If the
-firmware turns out not to exist yet, collapsing `devices/` to camelCase is a
-one-file change there plus the seed. **Open with the schema owner.**
+Translation happens in exactly one place, `FirestoreFleetRepository`. Should
+the firmware team prefer camelCase after all, collapsing `devices/` is a
+one-file change there plus the seed — a free choice now, not a migration.
 
 ---
 
@@ -219,7 +235,8 @@ functions at the same time.
 ## 5. Indexes
 
 `firestore.indexes.json`, deployed with `firebase deploy --only
-firestore:indexes` (done on 15 Sep 2026):
+firestore:indexes`. The 15 Sep 2026 deployment went to the abandoned project;
+**`novaride-7a68c` has no composite indexes until this is run again** (§6):
 
 | Collection | Fields | Used by |
 |---|---|---|
@@ -238,7 +255,7 @@ index mid-demo.
 
 ```bash
 # 1. Web config (gitignored). Print it with the Firebase CLI:
-firebase apps:sdkconfig WEB 1:36267115370:web:4c47369f3219d428cc9b13 > assets/config/firebase.json
+firebase apps:sdkconfig WEB 1:885956155129:web:21670e7270e1ccc7dc3428 > assets/config/firebase.json
 #    …then trim the CLI's preamble so the file is just the JSON object
 #    (see assets/config/firebase.example.json for the shape).
 
@@ -267,12 +284,18 @@ stray `flutterfire configure` can never commit credentials.
 
 ## 7. Open with the schema owner
 
-1. Is firmware already writing `devices/helmet01`? If not, collapse `devices/`
-   to camelCase (§3).
-2. Firmware to add `speed_kmh`, `battery_pct`, `gps_fix`, `last_update`.
-3. Who sets `riders/{id}.status = "emergency"` on a critical alert — firmware,
+Settled by starting `novaride-7a68c` from empty (20 Sep 2026):
+
+- ~~Is firmware already writing `devices/helmet01`?~~ **No.** Nothing writes
+  `devices/` in the new project. The snake_case convention stays as the
+  firmware contract (§3); there is no legacy document to migrate.
+- ~~Delete the phantom `users/*` documents and the `emergencyalerts`
+  scaffold.~~ **Gone** — they were never created in the new project.
+
+Still open:
+
+1. Firmware to add `speed_kmh`, `battery_pct`, `gps_fix`, `last_update`.
+2. Who sets `riders/{id}.status = "emergency"` on a critical alert — firmware,
    or a Cloud Function on `alerts` create?
-4. Delete the phantom `users/*` documents and the `emergencyalerts` scaffold
-   once the rider app is confirmed not to reference them.
-5. Rider ↔ device pairing: does the rider app write `assigned_rider_id`, or is
+3. Rider ↔ device pairing: does the rider app write `assigned_rider_id`, or is
    `riders.helmetId` the only link?

@@ -304,9 +304,14 @@ class _SourceChip extends StatelessWidget {
       FleetSource.firestore => Icons.cloud_outlined,
       FleetSource.simulation => Icons.science_outlined,
     };
+    // The project id comes from the loaded config, never from a literal here,
+    // so this tooltip cannot drift from the project the console is actually
+    // talking to.
+    final projectId = FleetSourceScope.maybeOf(context)?.projectId;
     final tooltip = switch (source) {
-      FleetSource.firestore =>
-        'Live data from Cloud Firestore (project novaride-266bc)',
+      FleetSource.firestore when projectId != null =>
+        'Live data from Cloud Firestore (project $projectId)',
+      FleetSource.firestore => 'Live data from Cloud Firestore',
       FleetSource.simulation =>
         'In-process simulation — no Firebase config found',
     };

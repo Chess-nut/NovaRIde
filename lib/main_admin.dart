@@ -12,8 +12,11 @@ import 'shared/theme.dart';
 /// initialises, the in-process simulation otherwise. See [FleetBootstrap].
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final createRepository = await FleetBootstrap.resolve();
-  runApp(AdminApp(createRepository: createRepository));
+  final backend = await FleetBootstrap.resolve();
+  runApp(AdminApp(
+    createRepository: backend.createRepository,
+    projectId: backend.projectId,
+  ));
 }
 
 class AdminApp extends StatelessWidget {
@@ -21,7 +24,11 @@ class AdminApp extends StatelessWidget {
   /// simulation, so a test never reaches for the network.
   final FleetRepositoryFactory? createRepository;
 
-  const AdminApp({super.key, this.createRepository});
+  /// Firebase project the data comes from, for the top bar's tooltip. Null on
+  /// the simulation.
+  final String? projectId;
+
+  const AdminApp({super.key, this.createRepository, this.projectId});
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +46,10 @@ class AdminApp extends StatelessWidget {
 
     final create = createRepository;
     if (create == null) return app;
-    return FleetSourceScope(createRepository: create, child: app);
+    return FleetSourceScope(
+      createRepository: create,
+      projectId: projectId,
+      child: app,
+    );
   }
 }

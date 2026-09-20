@@ -46,18 +46,26 @@ class FleetScope extends InheritedNotifier<FleetController> {
 class FleetSourceScope extends InheritedWidget {
   final FleetRepositoryFactory createRepository;
 
+  /// Firebase project the data comes from, read from the loaded config at
+  /// startup. Null on the simulation. Shown in the top bar's source tooltip.
+  final String? projectId;
+
   const FleetSourceScope({
     super.key,
     required this.createRepository,
+    this.projectId,
     required super.child,
   });
 
-  static FleetRepositoryFactory? maybeOf(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<FleetSourceScope>()?.createRepository;
+  /// Does not register a dependency: the backend is fixed for the life of
+  /// the app, so nothing needs to rebuild when it "changes".
+  static FleetSourceScope? maybeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<FleetSourceScope>();
 
   @override
   bool updateShouldNotify(FleetSourceScope oldWidget) =>
-      oldWidget.createRepository != createRepository;
+      oldWidget.createRepository != createRepository ||
+      oldWidget.projectId != projectId;
 }
 
 /// Owns the controller's lifecycle for as long as the console is signed in.
@@ -87,7 +95,7 @@ class _FleetHostState extends State<FleetHost> {
   void initState() {
     super.initState();
     final create = widget.createRepository ??
-        FleetSourceScope.maybeOf(context) ??
+        FleetSourceScope.maybeOf(context)?.createRepository ??
         MockFleetRepository.new;
     _fleet = FleetController(create());
   }

@@ -8,6 +8,24 @@ import 'package:novaride/admin/data/firestore_seed.dart';
 import 'package:novaride/admin/data/fleet_repository.dart';
 import 'package:novaride/admin/data/mock_fleet_repository.dart';
 
+/// What [FleetBootstrap.resolve] decided, handed to `AdminApp` in one piece.
+class ConsoleBackend {
+  /// Source for the fleet data.
+  final FleetRepositoryFactory createRepository;
+
+  /// Firebase project the console initialised against — read from the loaded
+  /// config, never written down elsewhere, so the UI cannot name a project
+  /// other than the one it is talking to. Null on the simulation, which has
+  /// no project.
+  final String? projectId;
+
+  const ConsoleBackend({required this.createRepository, this.projectId});
+
+  /// The in-process simulation, exactly as the console ran before Firebase.
+  const ConsoleBackend.simulation()
+      : this(createRepository: MockFleetRepository.new);
+}
+
 /// Decides, once at startup, where the console's fleet data comes from.
 ///
 /// The rule is simple so it can be trusted during a demo: if
@@ -34,16 +52,16 @@ class FleetBootstrap {
   /// into an empty Firestore. Never automatic; see [seedFirestore].
   static const seedRequested = bool.fromEnvironment('SEED_FIRESTORE');
 
-  /// Returns the factory `FleetHost` should use. Safe to call before
+  /// Returns the backend `AdminApp` should mount. Safe to call before
   /// `runApp`; requires `WidgetsFlutterBinding.ensureInitialized()`.
-  static Future<FleetRepositoryFactory> resolve() async {
+  static Future<ConsoleBackend> resolve() async {
     if (forceSimulation) {
       debugPrint('FleetBootstrap: NOVARIDE_FORCE_SIMULATION set — simulation.');
-      return MockFleetRepository.new;
+      return const ConsoleBackend.simulation();
     }
 
     final options = await _loadOptions();
-    if (options == null) return MockFleetRepository.new;
+    if (options == null) return const ConsoleBackend.simulation();
 
     try {
       if (Firebase.apps.isEmpty) {
@@ -52,7 +70,7 @@ class FleetBootstrap {
     } catch (error) {
       debugPrint('FleetBootstrap: Firebase failed to initialise — $error. '
           'Falling back to the simulation.');
-      return MockFleetRepository.new;
+      return const ConsoleBackend.simulation();
     }
 
     if (seedRequested) {
@@ -64,7 +82,10 @@ class FleetBootstrap {
     }
 
     debugPrint('FleetBootstrap: Cloud Firestore (${options.projectId}).');
-    return FirestoreFleetRepository.new;
+    return ConsoleBackend(
+      createRepository: FirestoreFleetRepository.new,
+      projectId: options.projectId,
+    );
   }
 
   /// Null when the asset is absent or not a usable config. Absence is the

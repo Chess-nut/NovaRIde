@@ -1,10 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:novaride/admin/data/admin_auth.dart';
 import 'package:novaride/admin/screens/admin_shell.dart';
 import 'package:novaride/admin/state/admin_session.dart';
+import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/shared/theme.dart';
 
 /// Operations console sign-in. Styled to match the rider login screen.
-/// Mock credential check only — Firebase Auth arrives in a later phase.
+///
+/// Signs in through whichever [AdminAuth] the enclosing `AdminApp` carries:
+/// Firebase Auth on the Firestore path, the local demo accounts on the
+/// simulation. The page never learns which — it awaits [AdminAuth.signIn],
+/// shows [AdminAuthException.message] verbatim when that throws, and hands
+/// the resulting [AdminUser] to the shell. The one visible difference is the
+/// credentials card at the bottom, which lists passwords only for the demo
+/// accounts, because those are not real credentials.
 class AdminLoginPage extends StatefulWidget {
   const AdminLoginPage({super.key});
 
@@ -20,6 +29,18 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
   bool _obscurePassword = true;
   String? _errorText;
 
+  /// True from the moment the sign-in button is pressed until the provider
+  /// answers. The button is disabled in that window, so a double-click — or
+  /// Enter plus a click — cannot start two sign-ins.
+  bool _busy = false;
+
+  AdminAuth get _auth => FleetSourceScope.of(context).auth;
+
+  /// Whether the credentials card may show passwords: only for the local
+  /// demo accounts, which are not secrets. Real operator passwords never
+  /// appear in the UI or the repository.
+  bool get _onSimulation => _auth is LocalAdminAuth;
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -27,20 +48,37 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
     super.dispose();
   }
 
-  void _handleLogin() {
+  Future<void> _handleLogin() async {
+    if (_busy) return;
     if (!_formKey.currentState!.validate()) return;
 
-    final user = authenticate(_emailController.text, _passwordController.text);
+    setState(() {
+      _busy = true;
+      _errorText = null;
+    });
 
-    if (user == null) {
-      setState(() => _errorText = 'Invalid email or password');
-      return;
+    try {
+      final user = await _auth.signIn(
+        _emailController.text,
+        _passwordController.text,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => AdminShell(user: user)),
+      );
+    } on AdminAuthException catch (error) {
+      if (!mounted) return;
+      setState(() => _errorText = error.message);
+    } catch (error, stack) {
+      // Anything else is a bug in the provider, not the operator's problem.
+      // Log it for the developer; show the operator a sentence.
+      debugPrint('AdminLoginPage: sign-in threw $error\n$stack');
+      if (!mounted) return;
+      setState(() => _errorText = 'Sign-in failed. Try again, and tell a '
+          'Super Admin if it keeps happening.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-
-    setState(() => _errorText = null);
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => AdminShell(user: user)),
-    );
   }
 
   /// One-tap fill for the demo card — the defence runs on a projector, and
@@ -49,6 +87,16 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
     setState(() {
       _emailController.text = account.user.email;
       _passwordController.text = account.password;
+      _errorText = null;
+    });
+  }
+
+  /// Firestore-path counterpart: fills the email only. The operator types
+  /// their own password.
+  void _useOperator(String email) {
+    setState(() {
+      _emailController.text = email;
+      _passwordController.clear();
       _errorText = null;
     });
   }
@@ -118,9 +166,15 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
     );
   }
 
-  /// All three demo roles, on the login screen itself. Tapping one fills the
-  /// form, which makes switching roles during a defence a single click.
+  /// All three roles, on the login screen itself, so switching roles during
+  /// a defence is a single click.
+  ///
+  /// Simulation: the demo accounts with their passwords, which are not real
+  /// credentials. Firestore: the provisioned operator emails with their role
+  /// badges — tapping one fills the email field only.
   Widget _buildDemoAccountsCard() {
+    final onSimulation = _onSimulation;
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -131,9 +185,9 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'DEMO CREDENTIALS',
-            style: TextStyle(
+          Text(
+            onSimulation ? 'DEMO CREDENTIALS' : 'OPERATOR ACCOUNTS',
+            style: const TextStyle(
               color: NovaColors.secondaryText,
               fontSize: 10,
               fontWeight: FontWeight.w700,
@@ -141,22 +195,44 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Tap a role to fill the form.',
-            style: TextStyle(color: NovaColors.secondaryText, fontSize: 11),
+          Text(
+            onSimulation
+                ? 'Tap a role to fill the form.'
+                : 'Tap a role to fill the email. Passwords are never shown.',
+            style: const TextStyle(color: NovaColors.secondaryText, fontSize: 11),
           ),
           const SizedBox(height: 10),
-          for (final account in demoAccounts) ...[
-            _buildDemoAccountRow(account),
-            if (account != demoAccounts.last) const SizedBox(height: 7),
-          ],
+          if (onSimulation)
+            for (final account in demoAccounts) ...[
+              _buildAccountRow(
+                role: account.user.role,
+                email: account.user.email,
+                detail: account.password,
+                onTap: () => _useAccount(account),
+              ),
+              if (account != demoAccounts.last) const SizedBox(height: 7),
+            ]
+          else
+            for (final operator in provisionedOperators) ...[
+              _buildAccountRow(
+                role: operator.role,
+                email: operator.email,
+                onTap: () => _useOperator(operator.email),
+              ),
+              if (operator != provisionedOperators.last)
+                const SizedBox(height: 7),
+            ],
         ],
       ),
     );
   }
 
-  Widget _buildDemoAccountRow(AdminAccount account) {
-    final role = account.user.role;
+  Widget _buildAccountRow({
+    required AdminRole role,
+    required String email,
+    String? detail,
+    required VoidCallback onTap,
+  }) {
     final color = switch (role) {
       AdminRole.superAdmin => NovaColors.green,
       AdminRole.dispatcher => NovaColors.cyan,
@@ -166,7 +242,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _useAccount(account),
+        onTap: onTap,
         borderRadius: BorderRadius.circular(9),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
@@ -201,20 +277,21 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      account.user.email,
+                      email,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: NovaColors.primaryText,
                         fontSize: 11.5,
                       ),
                     ),
-                    Text(
-                      account.password,
-                      style: const TextStyle(
-                        color: NovaColors.secondaryText,
-                        fontSize: 10.5,
+                    if (detail != null)
+                      Text(
+                        detail,
+                        style: const TextStyle(
+                          color: NovaColors.secondaryText,
+                          fontSize: 10.5,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -266,7 +343,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       keyboardType: TextInputType.emailAddress,
       textInputAction: TextInputAction.next,
       decoration: _fieldDecoration(
-        hint: 'admin@novaride.ph',
+        hint: _onSimulation ? 'admin@novaride.ph' : 'operator@tip.edu.ph',
         icon: Icons.alternate_email,
       ),
       validator: (value) {
@@ -353,25 +430,38 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
     );
   }
 
+  /// Disabled while a sign-in is in flight, with a spinner in place of the
+  /// label so the operator can see the console is waiting on the provider
+  /// rather than ignoring them.
   Widget _buildSignInButton() {
     return SizedBox(
       height: 52,
       child: ElevatedButton(
-        onPressed: _handleLogin,
+        onPressed: _busy ? null : _handleLogin,
         style: ElevatedButton.styleFrom(
           backgroundColor: NovaColors.cyan,
+          disabledBackgroundColor: NovaColors.cyan.withValues(alpha: 0.55),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           elevation: 0,
         ),
-        child: const Text(
-          'SIGN IN',
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1,
-          ),
-        ),
+        child: _busy
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.4,
+                  color: Colors.black,
+                ),
+              )
+            : const Text(
+                'SIGN IN',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1,
+                ),
+              ),
       ),
     );
   }

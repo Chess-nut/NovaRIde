@@ -38,6 +38,24 @@ extension AdminRoleCapabilities on AdminRole {
       };
 }
 
+/// Parses a role as stored in a custom claim or an `admins/{uid}` document.
+///
+/// The canonical values are the enum names verbatim (`superAdmin`,
+/// `dispatcher`, `viewer`). `administrator`/`admin` and `operator` are
+/// tolerated on read only, so a claim set by hand with the wrong spelling
+/// degrades to the intended role instead of locking the operator out. They
+/// are never written. Anything else — including null — is unrecognised, and
+/// the caller must treat that as "not provisioned", never as a default role.
+AdminRole? parseAdminRole(Object? raw) {
+  if (raw is! String) return null;
+  return switch (raw.trim()) {
+    'superAdmin' || 'administrator' || 'admin' => AdminRole.superAdmin,
+    'dispatcher' || 'operator' => AdminRole.dispatcher,
+    'viewer' => AdminRole.viewer,
+    _ => null,
+  };
+}
+
 class AdminUser {
   final String name;
   final String email;
@@ -62,9 +80,11 @@ class AdminUser {
 
 /// A demo sign-in, paired with its password.
 ///
-/// Firebase seam: this list is the stand-in for Firebase Auth plus a custom
-/// claim carrying the role. Swapping in real auth replaces [demoAccounts] and
-/// [authenticate]; everything downstream only ever sees an [AdminUser].
+/// Simulation-only. These are the accounts behind `LocalAdminAuth`, the
+/// `AdminAuth` implementation the console runs on when no Firebase config is
+/// present. On the Firestore path the principal comes from Firebase Auth and
+/// the role from a custom claim or `admins/{uid}`; nothing downstream can tell
+/// the difference, because both paths hand the shell an [AdminUser].
 class AdminAccount {
   final AdminUser user;
   final String password;
@@ -99,6 +119,20 @@ const List<AdminAccount> demoAccounts = [
   ),
 ];
 
+/// The operator accounts provisioned in the Firebase project, for the login
+/// page's one-tap card on the Firestore path.
+///
+/// Emails and roles only. The passwords are real credentials and live
+/// nowhere in this repository; tapping a row fills the email field and
+/// nothing else. The role shown is what `admins/{uid}` says — the console
+/// still resolves the real role at sign-in, this list is a convenience for
+/// the person at the keyboard, not a source of authority.
+const List<({String email, AdminRole role})> provisionedOperators = [
+  (email: 'qrlunatal@tip.edu.ph', role: AdminRole.superAdmin),
+  (email: 'qhjcagbayani@tip.edu.ph', role: AdminRole.dispatcher),
+  (email: 'qdplegarde@tip.edu.ph', role: AdminRole.viewer),
+];
+
 /// Returns the matching user, or null when the credentials do not match.
 /// Email comparison is case-insensitive; the password is not.
 AdminUser? authenticate(String email, String password) {
@@ -113,8 +147,14 @@ AdminUser? authenticate(String email, String password) {
 
 /// Makes the signed-in user available to every page below the shell.
 ///
-/// A plain [InheritedWidget] rather than an InheritedNotifier — the session
-/// never changes while signed in. Logging out tears the shell down instead.
+/// A plain [InheritedWidget]: the [user] it carries is fixed for the life of
+/// one shell. The session itself is *not* fixed — a Firebase refresh token
+/// can be revoked mid-session, an account disabled, or another tab can sign
+/// in as someone else — so the shell listens to
+/// `AdminAuth.authStateChanges()` and, the moment that stream stops naming
+/// this [user] (null, or a different operator), replaces itself with the
+/// login page. Pages never see a partially signed-out user; the whole
+/// subtree below this scope goes away instead.
 class AdminSessionScope extends InheritedWidget {
   final AdminUser user;
 

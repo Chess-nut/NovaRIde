@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:novaride/admin/data/fleet_bootstrap.dart';
 import 'package:novaride/admin/screens/admin_alerts_page.dart';
 import 'package:novaride/admin/screens/admin_login_page.dart';
 import 'package:novaride/admin/screens/dashboard_page.dart';
@@ -47,20 +50,93 @@ class _ConsoleTab {
   const _ConsoleTab(this.navItem, this.page);
 }
 
-/// Signed-in console. Owns nothing itself — it mounts the [FleetHost] that
-/// holds the live fleet state for the whole session, so every page below
-/// reads one controller instead of its own copy, and the [AdminSessionScope]
-/// that carries who is signed in.
-class AdminShell extends StatelessWidget {
+/// Signed-in console. Mounts the [FleetHost] that holds the live fleet state
+/// for the whole session, so every page below reads one controller instead
+/// of its own copy, and the [AdminSessionScope] that carries who is signed in.
+///
+/// It also owns the end of the session. The shell subscribes to
+/// `AdminAuth.authStateChanges()` for as long as it is mounted and replaces
+/// itself with the login page the moment the stream stops naming [user] —
+/// on a sign-out from the sidebar, which goes through `signOut()` and comes
+/// back on the same stream, and equally on one the widget tree did not
+/// initiate: a revoked refresh token, a disabled account, or another tab
+/// signing in as somebody else. Every exit path is the same path, so there
+/// is no way to be signed out underneath and still see the board.
+class AdminShell extends StatefulWidget {
   final AdminUser user;
 
   const AdminShell({super.key, required this.user});
 
   @override
+  State<AdminShell> createState() => _AdminShellState();
+}
+
+class _AdminShellState extends State<AdminShell> {
+  StreamSubscription<AdminUser?>? _authSub;
+
+  /// Set once the return to the login page has been pushed, so a stream
+  /// event and the sign-out button cannot both navigate.
+  bool _leaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final auth = FleetSourceScope.maybeOf(context)?.auth;
+    _authSub = auth?.authStateChanges().listen(_onAuthChanged);
+
+    // One-time bootstrap of an empty Firestore, behind a --dart-define.
+    // Lives here rather than before runApp because the rules only accept it
+    // from a signed-in Super Admin. No-op in every other case; never throws.
+    unawaited(FleetBootstrap.seedAfterSignIn(widget.user));
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
+  void _onAuthChanged(AdminUser? user) {
+    // Same operator, still signed in — the normal case, including the
+    // current-state event Firebase emits on subscribe.
+    if (user != null && user.email == widget.user.email) return;
+    _returnToLogin();
+  }
+
+  Future<void> _signOut() async {
+    final auth = FleetSourceScope.maybeOf(context)?.auth;
+    if (auth == null) {
+      _returnToLogin();
+      return;
+    }
+    // The stream's null brings us back to the login page. Fall through to a
+    // direct return as well, in case the provider ends the session without
+    // emitting — belt and braces, guarded by _leaving. A provider that fails
+    // to sign out is logged, and the operator still leaves the board; the
+    // next sign-in replaces whatever session was left behind.
+    try {
+      await auth.signOut();
+    } catch (error) {
+      debugPrint('AdminShell: signOut threw $error');
+    }
+    _returnToLogin();
+  }
+
+  void _returnToLogin() {
+    if (_leaving || !mounted) return;
+    _leaving = true;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const AdminLoginPage()),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AdminSessionScope(
-      user: user,
-      child: FleetHost(child: _AdminShellFrame(user: user)),
+      user: widget.user,
+      child: FleetHost(
+        child: _AdminShellFrame(user: widget.user, onLogout: _signOut),
+      ),
     );
   }
 }
@@ -69,8 +145,9 @@ class AdminShell extends StatelessWidget {
 /// switching tabs never rebuilds them from scratch — no routing package.
 class _AdminShellFrame extends StatefulWidget {
   final AdminUser user;
+  final VoidCallback onLogout;
 
-  const _AdminShellFrame({required this.user});
+  const _AdminShellFrame({required this.user, required this.onLogout});
 
   @override
   State<_AdminShellFrame> createState() => _AdminShellFrameState();
@@ -126,12 +203,6 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
     });
   }
 
-  void _handleLogout() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const AdminLoginPage()),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     /// Below 900px the sidebar drops to an icon rail so content keeps its room.
@@ -151,7 +222,7 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
               items: [for (final tab in tabs) tab.navItem],
               selectedIndex: index,
               onSelect: (i) => setState(() => _selectedIndex = i),
-              onLogout: _handleLogout,
+              onLogout: widget.onLogout,
               collapsed: collapsed,
             ),
             Expanded(

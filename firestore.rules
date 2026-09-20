@@ -2,17 +2,198 @@ rules_version = '2';
 
 // NovaRide — Cloud Firestore security rules.
 //
-// LOCKED BY DEFAULT. The database will hold live GPS positions of the TNVS
-// riders in the study; open rules would expose their real-time location to
-// anyone holding the project id. Firebase Auth is not wired yet (the admin
-// login compares hardcoded strings, which is not authentication), so there
-// is currently no principal these rules can trust — hence deny-all.
+// Deny by default. The database holds live GPS positions of the TNVS riders
+// in the study, so nothing is readable without a signed-in principal whose
+// role this file can establish. Two kinds of principal exist:
 //
-// What changes when Auth lands is written up in docs/FIRESTORE_SCHEMA.md
-// ("Security rules"). For a supervised demo, deploy firestore.rules.demo
-// instead — it is time-boxed and scoped to the three console collections.
+//   OPERATORS — Firebase Auth accounts of the TNVS Operator console, with a
+//   role of superAdmin | dispatcher | viewer. The role is read from the
+//   `role` custom claim on the ID token first; if the claim is missing or
+//   not one of those three, from admins/{uid}.role. No claims are set yet,
+//   so today every operator resolves through admins/{uid}. Once a claim is
+//   set (tool/set_admin_claims.mjs) the document read is skipped. The
+//   console resolves the role the same way, in the same order; if the two
+//   ever disagree the rules win, because the console cannot be trusted to
+//   police itself.
+//
+//   HELMET SERVICE — the identity the ESP32 firmware will authenticate as:
+//   a Firebase Auth user carrying the claim `role: helmetService`. It is
+//   never a console role (the console rejects it as unprovisioned), and it
+//   is the only client that may update telemetry. No such account exists
+//   yet; the firmware's auth story is an open item in
+//   docs/FIRESTORE_SCHEMA.md §7. A bridge using the Admin SDK bypasses these
+//   rules entirely and needs nothing here.
+//
+// Alias tolerance: `administrator`/`admin` read as superAdmin, `operator`
+// as dispatcher, so a claim or document set by hand with the wrong spelling
+// degrades to the intended role instead of locking someone out. The
+// aliases are never written; the tooling refuses them.
+//
+// What is enforced beyond "who": the alert lifecycle is linear
+// (open → acknowledged → dispatched → resolved) and each step stamps its
+// own server timestamp; history/ is append-only and its `at` must be the
+// server clock; a dispatcher's only write to a rider is its status. Rider
+// validation (helmet-id uniqueness, phone format) stays in the console —
+// uniqueness needs a lookup index rules cannot express.
+//
+// The seed (--dart-define=SEED_FIRESTORE=true) writes riders/, devices/ and
+// alerts/ through the client SDK as a signed-in Super Admin; the `create`
+// clauses below admit it. It runs once against an empty database.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ------------------------------------------------------------ identity
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Read-side alias tolerance. Anything unrecognised passes through and
+    // fails the role checks below.
+    function canonicalRole(raw) {
+      return (raw == 'administrator' || raw == 'admin')
+          ? 'superAdmin'
+          : ((raw == 'operator') ? 'dispatcher' : raw);
+    }
+
+    function isConsoleRole(r) {
+      return r == 'superAdmin' || r == 'dispatcher' || r == 'viewer';
+    }
+
+    function claimRole() {
+      return canonicalRole(request.auth.token.get('role', ''));
+    }
+
+    function adminDocPath() {
+      return /databases/$(database)/documents/admins/$(request.auth.uid);
+    }
+
+    // Costs one document read per evaluation, only when no usable claim is
+    // present. Firestore caches the read within a single request.
+    function docRole() {
+      return exists(adminDocPath())
+          ? canonicalRole(get(adminDocPath()).data.get('role', ''))
+          : '';
+    }
+
+    function role() {
+      return isConsoleRole(claimRole()) ? claimRole() : docRole();
+    }
+
+    function isOperator() {
+      return signedIn() && isConsoleRole(role());
+    }
+
+    function hasRole(roles) {
+      return signedIn() && role() in roles;
+    }
+
+    function isHelmetService() {
+      return signedIn() && request.auth.token.get('role', '') == 'helmetService';
+    }
+
+    // ------------------------------------------------------------- helpers
+
+    function onlyChanges(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    function isServerTime(value) {
+      return value == request.time;
+    }
+
+    // The linear alert lifecycle. '' means "no legal next step".
+    function nextAlertStatus(current) {
+      return (current == 'open')
+          ? 'acknowledged'
+          : ((current == 'acknowledged')
+              ? 'dispatched'
+              : ((current == 'dispatched') ? 'resolved' : ''));
+    }
+
+    function isLifecycleStep(status) {
+      return status == 'acknowledged' || status == 'dispatched' || status == 'resolved';
+    }
+
+    // --------------------------------------------------------- collections
+
+    // Roster. Console-owned, camelCase. Read by every operator; created and
+    // edited by Super Admins. Dispatchers touch only `status` — the console
+    // resets a rider to idle when their last critical alert is resolved —
+    // and the helmet service may set it to emergency when it raises a
+    // critical alert (the firmware contract in FIRESTORE_SCHEMA.md §2).
+    match /riders/{riderId} {
+      allow read: if isOperator();
+      allow create: if hasRole(['superAdmin']);
+      allow update: if hasRole(['superAdmin'])
+                    || ((hasRole(['dispatcher']) || isHelmetService())
+                        && onlyChanges(['status']));
+      allow delete: if false;   // deactivate instead; alert history references riders
+    }
+
+    // Telemetry. Firmware-owned, snake_case. Operators read; only the helmet
+    // service updates readings. A Super Admin may create a device document
+    // (registering a helmet, and the seed) but never overwrite telemetry.
+    match /devices/{deviceId} {
+      allow read: if isOperator();
+      allow create: if isHelmetService() || hasRole(['superAdmin']);
+      allow update: if isHelmetService();
+      allow delete: if false;
+    }
+
+    // Alerts. Created by the helmet service (or a Super Admin — the seed),
+    // worked by dispatchers and Super Admins through the linear lifecycle.
+    // Each transition may change only `status` and stamp exactly the
+    // matching `<status>At` with the server clock, which is what the
+    // console's batched write does and what the Reports tab trusts.
+    match /alerts/{alertId} {
+      allow read: if isOperator();
+      allow create: if isHelmetService() || hasRole(['superAdmin']);
+      allow update: if hasRole(['superAdmin', 'dispatcher'])
+                    && onlyChanges(['status', 'acknowledgedAt', 'dispatchedAt', 'resolvedAt'])
+                    && isLifecycleStep(request.resource.data.get('status', ''))
+                    && request.resource.data.status
+                         == nextAlertStatus(resource.data.get('status', 'open'))
+                    && isServerTime(request.resource.data.get(request.resource.data.status + 'At', ''));
+      allow delete: if false;
+
+      // Audit trail. Append-only: nothing edits or deletes a history entry,
+      // and `at` must be the server clock — response-time metrics are the
+      // study's evidence and operator machine clocks are not trusted for
+      // them. Reads of this path come through the collection-group rule
+      // below; this one covers direct reads of a single alert's trail.
+      match /history/{entryId} {
+        allow read: if isOperator();
+        allow create: if hasRole(['superAdmin', 'dispatcher'])
+                      && request.resource.data.get('toStatus', 0) is string
+                      && request.resource.data.get('actorName', 0) is string
+                      && isServerTime(request.resource.data.get('at', ''));
+        allow update, delete: if false;
+      }
+    }
+
+    // The console reads every alert's trail with one collectionGroup
+    // listener, and a collection-group query needs a wildcard-path rule; the
+    // nested match above does not cover it. Only alerts/ has a history
+    // subcollection, so this admits exactly that data.
+    match /{path=**}/history/{entryId} {
+      allow read: if isOperator();
+    }
+
+    // Provisioning. Each operator may read their own document — that is
+    // how the console resolves a role before any claim exists — and Super
+    // Admins may read them all. Nothing writes here from a client:
+    // provisioning happens in the Firebase console or through the Admin
+    // SDK, so a compromised operator session cannot mint operators.
+    match /admins/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || hasRole(['superAdmin']));
+      allow list: if hasRole(['superAdmin']);
+      allow write: if false;
+    }
+
+    // Everything else — including the reserved emergencyContacts/ and any
+    // path the rider app will need once it authenticates — stays closed
+    // until a rule is written for it here first.
     match /{document=**} {
       allow read, write: if false;
     }

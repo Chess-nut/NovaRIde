@@ -10,6 +10,12 @@ import 'package:novaride/admin/mock/mock_data.dart';
 /// empty project, never a reset. Nothing outside `riders/`, `devices/` and
 /// `alerts/` is touched; whatever a teammate has in other collections stays.
 ///
+/// Runs after a Super Admin signs in (`FleetBootstrap.seedAfterSignIn`), not
+/// at startup: the security rules admit these creates only from a signed-in
+/// Super Admin. Every write here is a `create` on an empty collection — a
+/// `set` onto an existing `devices/` document would be an update, which the
+/// rules reserve for the helmet service, and the whole batch would fail.
+///
 /// Field names follow `docs/FIRESTORE_SCHEMA.md`: camelCase on the
 /// dashboard-owned collections, the firmware's snake_case on `devices/`.
 Future<void> seedFirestore({FirebaseFirestore? firestore}) async {

@@ -127,3 +127,10 @@ lib/firebase_options.dart
 **/macos/Runner/GoogleService-Info.plist
 .firebase/
 firebase-debug.log
+# Service-account keys grant full admin access to the entire project and
+# bypass every security rule. They belong OUTSIDE the repository altogether
+# (e.g. $HOME\novaride-admin-key.json); these patterns are a backstop only.
+*serviceAccount*.json
+*service-account*.json
+*-key.json
+*firebase-adminsdk*.json

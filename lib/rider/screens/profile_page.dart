@@ -89,7 +89,7 @@ class ProfilePage extends StatelessWidget {
           ),
         ),
       ),
-      bottomNavigationBar: const NovaBottomNavBar(selectedIndex: 3),
+      bottomNavigationBar: const NovaBottomNavBar(selectedIndex: 2),
     );
   }
 

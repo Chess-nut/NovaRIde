@@ -106,25 +106,49 @@ and the security rules.
  - **Backend & Cloud Database:** Firebase Realtime Database & Firebase Authentication
  - **Mapping Integration:** Google Maps Platform API
 
+## Google Maps keys
+
+The rider and family screens use `google_maps_flutter`. **Keys are supplied at
+build time and no tracked file holds one.** There are three keys, not one,
+because Google Cloud lets a key carry a single application restriction — HTTP
+referrers, *or* an Android package + signing SHA-1, *or* an iOS bundle id — so
+a key locked to one platform cannot serve another.
+
+| Platform | Define / setting | Where it is read |
+|---|---|---|
+| Android | `GOOGLE_MAPS_API_KEY_ANDROID` (`--dart-define`) | `android/app/build.gradle.kts` decodes the build's dart-defines into the manifest placeholder |
+| Web | `GOOGLE_MAPS_API_KEY_WEB` (`--dart-define`) | `lib/shared/maps/` injects the Maps JS `<script>` at startup; `web/index.html` carries no key |
+| iOS | `GOOGLE_MAPS_API_KEY_IOS` (Xcode build setting) | `ios/Flutter/Secrets.xcconfig`, gitignored — copy `Secrets.example.xcconfig` |
+
+Day to day, put the defines in a gitignored file and pass it once:
+
+```powershell
+Copy-Item dart_defines.example.json dart_defines.local.json   # then fill it in
+flutter run -t lib/main.dart --dart-define-from-file=dart_defines.local.json
+```
+
+Rotating a key is a one-line edit of that file. Without a key the build still
+succeeds and the map renders blank tiles, which is the intended state of a
+checkout without credentials.
+
+> **History.** Commit `d9f4ce0` (14 Sep 2026) committed a Maps browser key
+> into `web/index.html`, and replaced the placeholder *names* in the Android
+> and iOS config with the key literal, which broke those two platforms. The
+> key lives in git history, so treat it as compromised: regenerate it in
+> Google Cloud and restrict the replacements as described above.
+
 ## Family Live Location
 
 The Family Map route is `/family-map`. It currently consumes the existing
 `FamilyRepository` mock stream, which is permission-gated by the connected
 rider's `liveLocation` permission. The location payload shape is represented by
-`RiderLocation` and is ready to be populated by a Firebase Realtime Database
-listener at `riderTelemetry/{riderId}/location` when Firebase is added to the
-project.
-
-Google Maps keys are intentionally supplied through native build settings and
-are not stored in this repository. For Android, provide the Gradle property
-`GOOGLE_MAPS_API_KEY` when building. For iOS, set the `GOOGLE_MAPS_API_KEY`
-build setting for the Runner target. The Android manifest and iOS delegate read
-these values at runtime.
+`RiderLocation` and is ready to be populated by a Firestore listener when the
+rider app is connected to Firebase.
 
 Useful checks:
 
 ```text
 flutter pub get
 flutter analyze
-flutter test test/family_module_test.dart test/rider_location_test.dart
+flutter test
 ```

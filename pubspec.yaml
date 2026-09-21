@@ -38,6 +38,8 @@ dependencies:
   firebase_core: ^4.15.0
   cloud_firestore: ^6.10.0
   firebase_auth: ^6.7.0
+  # Direct dependency for the web Maps script loader (lib/shared/maps/).
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:

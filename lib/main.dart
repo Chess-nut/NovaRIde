@@ -5,12 +5,18 @@ import 'family/screens/family_incident_history_page.dart';
 import 'family/screens/family_live_location_page.dart';
 import 'family/screens/family_monitoring_page.dart';
 import 'family/screens/family_profile_page.dart';
+import 'shared/maps/google_maps_key.dart';
+import 'shared/maps/google_maps_script.dart';
 import 'shared/theme.dart';
 import 'rider/screens/welcome_page.dart';
 
 /// Rider mobile app entrypoint.
 /// The TNVS operations dashboard has its own entrypoint: lib/main_admin.dart.
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Web only; a no-op on Android. Android and iOS take their key from
+  // native config at build time (see lib/shared/maps/google_maps_key.dart).
+  await loadGoogleMapsScript(googleMapsApiKeyWeb);
   runApp(const NovaRideApp());
 }
 

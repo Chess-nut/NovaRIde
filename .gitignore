@@ -142,3 +142,9 @@ firebase-debug.log
 *service-account*.json
 *-key.json
 *firebase-adminsdk*.json
+# Google Maps keys. Supplied at build time, never from a tracked file:
+#   flutter run --dart-define-from-file=dart_defines.local.json
+# (copy dart_defines.example.json). iOS reads ios/Flutter/Secrets.xcconfig
+# (copy Secrets.example.xcconfig). See lib/shared/maps/google_maps_key.dart.
+dart_defines.local.json
+**/ios/Flutter/Secrets.xcconfig

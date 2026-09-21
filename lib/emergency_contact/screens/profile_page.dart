@@ -47,7 +47,7 @@ class ProfilePage extends StatelessWidget {
           ),
         ),
       ),
-      bottomNavigationBar: const EmergencyBottomNavBar(selectedIndex: 3),
+      bottomNavigationBar: const EmergencyBottomNavBar(selectedIndex: 4),
     );
   }
 

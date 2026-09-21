@@ -109,7 +109,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ),
       ),
-      bottomNavigationBar: const NovaBottomNavBar(selectedIndex: 3),
+      bottomNavigationBar: const NovaBottomNavBar(selectedIndex: 2),
     );
   }
 

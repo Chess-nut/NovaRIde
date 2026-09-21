@@ -1,411 +1,177 @@
-import 'dart:math' as math;
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:novaride/emergency_contact/data/emergency_contact_repository.dart';
+import 'package:novaride/emergency_contact/models/emergency_contact_models.dart';
+import 'package:novaride/emergency_contact/models/rider_location.dart';
+import 'package:novaride/emergency_contact/widgets/emergency_bottom_nav_bar.dart';
 import 'package:novaride/shared/theme.dart';
-import '../widgets/emergency_bottom_nav_bar.dart';
 
-/// "GPS/Map Page" — also covers "Real-Time Tracking" from the Capstone
-/// scope. Both bullets describe the same capability (an emergency
-/// contact watching a rider's live position on a map), so rather than
-/// build two near-identical screens, this one screen fulfills both —
-/// flagged in the accompanying chat message.
-///
-/// Static/hardcoded for now, same stylized dark map approach as the
-/// rider-side GPS page (no Google Maps API key required to demo).
-class RiderMapPage extends StatelessWidget {
+const _novaRideMapStyle = '''[
+  {"elementType":"geometry","stylers":[{"color":"#101B2D"}]},
+  {"elementType":"labels.text.fill","stylers":[{"color":"#8FA3B8"}]},
+  {"elementType":"labels.text.stroke","stylers":[{"color":"#101B2D"}]},
+  {"featureType":"administrative","elementType":"geometry.stroke","stylers":[{"color":"#26364A"}]},
+  {"featureType":"poi","stylers":[{"visibility":"off"}]},
+  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#123342"},{"visibility":"on"}]},
+  {"featureType":"road","elementType":"geometry","stylers":[{"color":"#26364A"}]},
+  {"featureType":"road.arterial","elementType":"geometry","stylers":[{"color":"#34465B"}]},
+  {"featureType":"road.highway","elementType":"geometry","stylers":[{"color":"#3E5268"}]},
+  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#B7C7D8"}]},
+  {"featureType":"transit","stylers":[{"visibility":"off"}]},
+  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#102B3A"}]},
+  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#6F91A5"}]}
+]''';
+
+class RiderMapPage extends StatefulWidget {
   const RiderMapPage({super.key});
+  @override
+  State<RiderMapPage> createState() => _RiderMapPageState();
+}
 
-  // Mock live telemetry for the monitored rider.
-  static const double _speedKmh = 42;
-  static const double _headingDegrees = 48; // NE
-  static const double _lat = 14.5547;
-  static const double _lng = 121.0244;
-  static const String _address = 'Makati Ave, Makati City';
+class _RiderMapPageState extends State<RiderMapPage> {
+  final _repository = EmergencyContactRepository();
+  GoogleMapController? _mapController;
+  StreamSubscription<RiderLocation>? _locationSubscription;
+  RiderLocation? _location;
+  bool _hasCentered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _locationSubscription = _repository.watchRiderLocation().listen((location) {
+      if (!mounted) return;
+      setState(() => _location = location);
+      if (_hasCentered) _animateToRider(location);
+    });
+  }
+
+  @override
+  void dispose() {
+    _locationSubscription?.cancel();
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
+    final location = _location;
+    if (location != null) {
+      _hasCentered = true;
+      _animateToRider(location);
+    }
+  }
+
+  Future<void> _animateToRider(RiderLocation location) async => _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(LatLng(location.latitude, location.longitude), 16),
+      );
+
+  Set<Marker> _markers(RiderLocation location) => {
+        Marker(
+          markerId: const MarkerId('connected-rider'),
+          position: LatLng(location.latitude, location.longitude),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          rotation: location.heading ?? 0,
+          flat: true,
+          infoWindow: InfoWindow(title: _repository.connectedRider.name, snippet: location.status),
+        ),
+      };
 
   @override
   Widget build(BuildContext context) {
+    final rider = _repository.connectedRider;
+    final location = _location;
+    final emergency = rider.status == RiderStatus.accidentDetected || rider.status == RiderStatus.sosActive;
     return Scaffold(
       backgroundColor: NovaColors.background,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _MapPainter(heading: _headingDegrees),
-            ),
+      body: SafeArea(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Row(children: [
+              IconButton(onPressed: () => Navigator.of(context).pushReplacementNamed('/emergency-dashboard'), icon: const Icon(Icons.arrow_back, color: Colors.white)),
+              const SizedBox(width: 4),
+              const Text('Live Location', style: TextStyle(color: NovaColors.primaryText, fontSize: 24, fontWeight: FontWeight.w800)),
+            ]),
           ),
-          SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(context),
-                const Spacer(),
-                _buildBottomSheet(context),
-              ],
-            ),
+          Expanded(
+            child: Stack(children: [
+              Positioned.fill(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), border: Border.all(color: NovaColors.cardBorder)),
+                  child: location == null
+                      ? const Center(child: CircularProgressIndicator(color: NovaColors.cyan))
+                      : GoogleMap(
+                          initialCameraPosition: CameraPosition(target: LatLng(location.latitude, location.longitude), zoom: 16),
+                          style: _novaRideMapStyle,
+                          onMapCreated: _onMapCreated,
+                          markers: _markers(location),
+                          myLocationButtonEnabled: false,
+                          zoomControlsEnabled: false,
+                          compassEnabled: true,
+                          mapToolbarEnabled: false,
+                        ),
+                ),
+              ),
+              if (emergency) Positioned(top: 20, left: 32, right: 32, child: _EmergencyBanner(status: rider.status.label)),
+              Positioned(
+                right: 20,
+                bottom: 132,
+                child: FloatingActionButton(
+                  heroTag: 'emergency-center-rider',
+                  backgroundColor: emergency ? NovaColors.red : NovaColors.cyan,
+                  onPressed: location == null ? null : () { _hasCentered = true; _animateToRider(location); },
+                  child: const Icon(Icons.my_location, color: Colors.black),
+                ),
+              ),
+              Positioned(bottom: 24, left: 18, right: 18, child: _RiderInfoCard(rider: rider, location: location)),
+            ]),
           ),
-        ],
+        ]),
       ),
       bottomNavigationBar: const EmergencyBottomNavBar(selectedIndex: 1),
     );
   }
+}
 
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 16, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: NovaColors.card.withValues(alpha: 0.92),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: NovaColors.cardBorder),
-              ),
-              child: Row(
-                children: [
-                  const CircleAvatar(
-                    radius: 12,
-                    backgroundColor: NovaColors.pink,
-                    child: Text(
-                      'JD',
-                      style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          "'Deor the great'",
-                          style: TextStyle(
-                            color: NovaColors.primaryText,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        Text(
-                          _address,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: NovaColors.secondaryText, fontSize: 10.5),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: const BoxDecoration(color: NovaColors.green, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 5),
-                  const Text(
-                    'LIVE',
-                    style: TextStyle(
-                      color: NovaColors.green,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+class _RiderInfoCard extends StatelessWidget {
+  final ConnectedRider rider;
+  final RiderLocation? location;
+  const _RiderInfoCard({required this.rider, required this.location});
 
-  Widget _buildBottomSheet(BuildContext context) {
-    final cardinal = _cardinalFromDegrees(_headingDegrees);
-
+  @override
+  Widget build(BuildContext context) {
+    final unavailable = !rider.gpsActive || location == null;
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-      decoration: const BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border(top: BorderSide(color: NovaColors.cardBorder)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(color: NovaColors.cardBorder, borderRadius: BorderRadius.circular(2)),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _HudStat(
-                  icon: Icons.speed,
-                  color: NovaColors.cyan,
-                  value: _speedKmh.toStringAsFixed(0),
-                  unit: 'km/h',
-                  label: 'SPEED',
-                ),
-              ),
-              Expanded(
-                child: _HudStat(
-                  icon: Icons.explore_outlined,
-                  color: NovaColors.green,
-                  value: cardinal,
-                  unit: '${_headingDegrees.toStringAsFixed(0)}°',
-                  label: 'HEADING',
-                ),
-              ),
-              Expanded(
-                child: _HudStat(
-                  icon: Icons.water_drop_outlined,
-                  color: NovaColors.amber,
-                  value: '0.00',
-                  unit: '%',
-                  label: 'ALCOHOL',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: NovaColors.background,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: NovaColors.cardBorder),
-            ),
-            child: Row(
-              children: [
-                Expanded(child: _CoordLabel(label: 'LATITUDE', value: '${_lat.toStringAsFixed(4)}° N')),
-                Container(width: 1, height: 28, color: NovaColors.cardBorder),
-                const SizedBox(width: 12),
-                Expanded(child: _CoordLabel(label: 'LONGITUDE', value: '${_lng.toStringAsFixed(4)}° E')),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 48,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          backgroundColor: NovaColors.card,
-                          behavior: SnackBarBehavior.floating,
-                          content: Text(
-                            'Calling Juan dela Cruz…',
-                            style: TextStyle(color: NovaColors.primaryText),
-                          ),
-                        ),
-                      );
-                    },
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: NovaColors.cardBorder),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                    icon: const Icon(Icons.call_outlined, color: NovaColors.primaryText, size: 17),
-                    label: const Text(
-                      'CALL',
-                      style: TextStyle(
-                        color: NovaColors.primaryText,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.6,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SizedBox(
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: () {},
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: NovaColors.pink,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      elevation: 0,
-                    ),
-                    icon: const Icon(Icons.directions_outlined, color: Colors.white, size: 17),
-                    label: const Text(
-                      'DIRECTIONS',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.6,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _cardinalFromDegrees(double degrees) {
-    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-    final index = ((degrees % 360) / 45).round() % 8;
-    return directions[index];
-  }
-}
-
-class _HudStat extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String value;
-  final String unit;
-  final String label;
-
-  const _HudStat({
-    required this.icon,
-    required this.color,
-    required this.value,
-    required this.unit,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 18),
-        const SizedBox(height: 6),
-        RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: value,
-                style: const TextStyle(
-                  color: NovaColors.primaryText,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              TextSpan(
-                text: ' $unit',
-                style: const TextStyle(color: NovaColors.secondaryText, fontSize: 11, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(label, style: const TextStyle(color: NovaColors.secondaryText, fontSize: 9.5, letterSpacing: 0.6)),
-      ],
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: NovaColors.card, borderRadius: BorderRadius.circular(18), border: Border.all(color: NovaColors.cardBorder), boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 16, offset: Offset(0, 6))]),
+      child: Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(rider.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text('● ${rider.status.label}', style: TextStyle(color: rider.status.color, fontSize: 12, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Text(unavailable ? 'Location unavailable' : '${location!.speedKmh.toStringAsFixed(0)} km/h', style: const TextStyle(color: NovaColors.primaryText, fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text(unavailable ? 'Rider location unavailable' : location!.address, style: const TextStyle(color: NovaColors.secondaryText, fontSize: 12)),
+          const SizedBox(height: 6),
+          Text('Updated ${rider.lastUpdatedSeconds} seconds ago', style: const TextStyle(color: NovaColors.secondaryText, fontSize: 11)),
+        ])),
+        Container(width: 14, height: 14, decoration: BoxDecoration(color: rider.internetConnected ? NovaColors.green : NovaColors.secondaryText, shape: BoxShape.circle)),
+      ]),
     );
   }
 }
 
-class _CoordLabel extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _CoordLabel({required this.label, required this.value});
-
+class _EmergencyBanner extends StatelessWidget {
+  final String status;
+  const _EmergencyBanner({required this.status});
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(color: NovaColors.secondaryText, fontSize: 9.5, letterSpacing: 0.6)),
-        const SizedBox(height: 2),
-        Text(value, style: const TextStyle(color: NovaColors.primaryText, fontSize: 13, fontWeight: FontWeight.w700)),
-      ],
-    );
-  }
-}
-
-/// Same stylized map painter approach as the rider-side GPS page — road
-/// grid, breadcrumb trail, heading-rotated marker — recolored pink to
-/// signal "this is someone else's location," not the viewer's own.
-class _MapPainter extends CustomPainter {
-  final double heading;
-
-  _MapPainter({required this.heading});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    canvas.drawRect(rect, Paint()..color = const Color(0xFF0D1220));
-    _drawRoadGrid(canvas, size);
-    _drawRouteTrail(canvas, size);
-    _drawRiderMarker(canvas, size);
-  }
-
-  void _drawRoadGrid(Canvas canvas, Size size) {
-    final minorPaint = Paint()
-      ..color = NovaColors.cardBorder.withValues(alpha: 0.5)
-      ..strokeWidth = 1;
-    final majorPaint = Paint()
-      ..color = NovaColors.cardBorder
-      ..strokeWidth = 2.5;
-
-    for (double x = 0; x < size.width; x += 46) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), minorPaint);
-    }
-    for (double y = 0; y < size.height; y += 46) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), minorPaint);
-    }
-
-    canvas.drawLine(Offset(0, size.height * 0.38), Offset(size.width, size.height * 0.38), majorPaint);
-    canvas.drawLine(Offset(size.width * 0.62, 0), Offset(size.width * 0.62, size.height), majorPaint);
-    canvas.drawLine(Offset(0, size.height * 0.85), Offset(size.width, size.height * 0.15), majorPaint);
-  }
-
-  void _drawRouteTrail(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final path = Path()
-      ..moveTo(center.dx - 120, center.dy + 160)
-      ..quadraticBezierTo(center.dx - 90, center.dy + 60, center.dx - 30, center.dy + 40)
-      ..quadraticBezierTo(center.dx + 10, center.dy + 20, center.dx, center.dy);
-
-    final trailPaint = Paint()
-      ..color = NovaColors.pink.withValues(alpha: 0.7)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round;
-    canvas.drawPath(path, trailPaint);
-    canvas.drawCircle(Offset(center.dx - 120, center.dy + 160), 5, Paint()..color = NovaColors.secondaryText);
-  }
-
-  void _drawRiderMarker(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-
-    canvas.drawCircle(center, 34, Paint()..color = NovaColors.pink.withValues(alpha: 0.12));
-    canvas.drawCircle(center, 22, Paint()..color = NovaColors.pink.withValues(alpha: 0.15));
-
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(heading * math.pi / 180);
-
-    final arrowPaint = Paint()..color = NovaColors.pink;
-    final arrowPath = Path()
-      ..moveTo(0, -14)
-      ..lineTo(9, 10)
-      ..lineTo(0, 4)
-      ..lineTo(-9, 10)
-      ..close();
-    canvas.drawShadow(arrowPath, Colors.black, 4, false);
-    canvas.drawPath(arrowPath, arrowPaint);
-    canvas.drawPath(
-      arrowPath,
-      Paint()
-        ..color = NovaColors.background
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _MapPainter oldDelegate) => oldDelegate.heading != heading;
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    decoration: BoxDecoration(color: NovaColors.red.withValues(alpha: 0.94), borderRadius: BorderRadius.circular(14)),
+    child: Row(children: [const Icon(Icons.warning_amber_rounded, color: Colors.white), const SizedBox(width: 8), Text(status, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800))]),
+  );
 }

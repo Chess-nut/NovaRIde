@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/shared/theme.dart';
 import '../widgets/nova_bottom_nav_bar.dart';
-import 'alerts_page.dart';
 import 'gps_map_page.dart';
 import 'notification_feed_page.dart';
 
@@ -324,9 +323,7 @@ class HomePage extends StatelessWidget {
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AlertsPage()),
-              );
+              // Intentional no-op: rider alert page removed from the flow.
             },
             child: const Column(
               mainAxisAlignment: MainAxisAlignment.center,

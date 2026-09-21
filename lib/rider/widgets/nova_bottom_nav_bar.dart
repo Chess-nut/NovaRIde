@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:novaride/shared/theme.dart';
 import '../screens/home_page.dart';
 import '../screens/analytics_page.dart';
-import '../screens/alerts_page.dart';
 import '../screens/profile_page.dart';
 
-/// Bottom navigation bar: Home, Analytics, Alerts, Profile.
+/// Bottom navigation bar: Home, Analytics, Profile.
 ///
 /// Lives here rather than inside a screen so every rider screen can reuse it
 /// without importing another screen — it just needs to be told which tab is
@@ -26,9 +25,6 @@ class NovaBottomNavBar extends StatelessWidget {
         Navigator.of(context).pushReplacement(_noAnimationRoute(const AnalyticsPage()));
         break;
       case 2:
-        Navigator.of(context).pushReplacement(_noAnimationRoute(const AlertsPage()));
-        break;
-      case 3:
         Navigator.of(context).pushReplacement(_noAnimationRoute(const ProfilePage()));
         break;
       default:
@@ -72,16 +68,10 @@ class NovaBottomNavBar extends StatelessWidget {
               onTap: () => _onTabTapped(context, 1),
             ),
             _NavItem(
-              icon: Icons.notifications_none,
-              label: 'ALERTS',
-              selected: selectedIndex == 2,
-              onTap: () => _onTabTapped(context, 2),
-            ),
-            _NavItem(
               icon: Icons.person_outline,
               label: 'PROFILE',
-              selected: selectedIndex == 3,
-              onTap: () => _onTabTapped(context, 3),
+              selected: selectedIndex == 2,
+              onTap: () => _onTabTapped(context, 2),
             ),
           ],
         ),

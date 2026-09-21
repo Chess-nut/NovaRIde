@@ -1,6 +1,10 @@
 # Miscellaneous
 *.class
+# Lockfiles, except pubspec.lock. This is an application, not a library:
+# the lockfile is committed so every checkout — and the build on defence
+# day — resolves the same package versions.
 *.lock
+!pubspec.lock
 *.log
 *.pyc
 *.swp

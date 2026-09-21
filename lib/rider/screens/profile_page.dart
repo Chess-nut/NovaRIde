@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:novaride/shared/theme.dart';
+import '../data/avatar_upload_service.dart';
 import '../widgets/nova_bottom_nav_bar.dart';
 import '../widgets/nova_settings_tile.dart';
 import 'settings_page.dart';
@@ -15,8 +17,26 @@ import 'profile/ride_hailing_operator_page.dart';
 /// [SettingsPage] (reached via the gear icon) holds app-level preferences
 /// instead — notifications, account security, help/support, and legal —
 /// per the same system design.
-class ProfilePage extends StatelessWidget {
+///
+/// Now a [StatefulWidget] (it wasn't before) because the avatar photo has
+/// to live somewhere: [_avatarUrl] holds the uploaded photo's download URL
+/// once the rider picks one, and [_isUploadingAvatar] drives the little
+/// spinner while that upload is in flight.
+class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
+
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  // There's no rider login/session yet, so there's no real signed-in rider
+  // ID to key the upload on — see AvatarUploadService's doc comment. Every
+  // rider on a test build currently shares this one demo ID.
+  static const _riderId = 'NV-08567';
+
+  String? _avatarUrl;
+  bool _isUploadingAvatar = false;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +90,7 @@ class ProfilePage extends StatelessWidget {
                   iconColor: const Color(0xFFF5A623),
                   title: 'Ride-Hailing Operator',
                   subtitle: 'Angkas',
-                  onTap: () => _push(context, RideHailingOperatorPage()),
+                  onTap: () => _push(context, const RideHailingOperatorPage()),
                 ),
               ]),
               const SizedBox(height: 24),
@@ -97,6 +117,91 @@ class ProfilePage extends StatelessWidget {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
   }
 
+  // ---- Avatar picking ----
+
+  /// Bottom sheet with the two sources — this is the "gallery or camera"
+  /// choice, shown when the rider taps the little camera badge on their
+  /// avatar. Neither option is functional until Cloudinary is configured
+  /// in [AvatarUploadService].
+  void _showAvatarPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: NovaColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Update profile photo',
+                    style: TextStyle(
+                      color: NovaColors.primaryText,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined, color: NovaColors.cyan),
+                title: const Text('Take Photo', style: TextStyle(color: NovaColors.primaryText)),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _pickAndUpload(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined, color: NovaColors.cyan),
+                title: const Text('Choose from Gallery', style: TextStyle(color: NovaColors.primaryText)),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _pickAndUpload(ImageSource.gallery);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickAndUpload(ImageSource source) async {
+    setState(() => _isUploadingAvatar = true);
+    try {
+      final url = await AvatarUploadService.pickAndUpload(source: source, riderId: _riderId);
+      if (!mounted) return;
+      if (url != null) {
+        setState(() => _avatarUrl = url);
+        _showSnack('Profile photo updated.');
+      }
+      // url == null just means the rider backed out of the picker — no
+      // error, nothing to show.
+    } on AvatarUploadException catch (error) {
+      if (!mounted) return;
+      _showSnack(error.message);
+    } finally {
+      if (mounted) setState(() => _isUploadingAvatar = false);
+    }
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: NovaColors.card,
+        behavior: SnackBarBehavior.floating,
+        content: Text(message, style: const TextStyle(color: NovaColors.primaryText)),
+      ),
+    );
+  }
+
   // ---- Page title + settings entry point ----
   Widget _buildHeader(BuildContext context) {
     return Row(
@@ -111,11 +216,7 @@ class ProfilePage extends StatelessWidget {
           ),
         ),
         GestureDetector(
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsPage()),
-            );
-          },
+          onTap: () => _push(context, const SettingsPage()),
           child: Container(
             width: 38,
             height: 38,
@@ -145,30 +246,48 @@ class ProfilePage extends StatelessWidget {
         children: [
           Stack(
             children: [
-              const CircleAvatar(
+              CircleAvatar(
                 radius: 38,
                 backgroundColor: NovaColors.pink,
-                child: Text(
-                  'DT',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 24,
+                backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
+                child: _avatarUrl == null
+                    ? const Text(
+                        'DT',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 24,
+                        ),
+                      )
+                    : null,
+              ),
+              if (_isUploadingAvatar)
+                const Positioned.fill(
+                  child: CircleAvatar(
+                    radius: 38,
+                    backgroundColor: Colors.black54,
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+                    ),
                   ),
                 ),
-              ),
               Positioned(
                 right: 0,
                 bottom: 0,
-                child: Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: NovaColors.cyan,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: NovaColors.card, width: 2),
+                child: GestureDetector(
+                  onTap: _isUploadingAvatar ? null : _showAvatarPicker,
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: NovaColors.cyan,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: NovaColors.card, width: 2),
+                    ),
+                    child: const Icon(Icons.camera_alt, color: Colors.black, size: 13),
                   ),
-                  child: const Icon(Icons.camera_alt, color: Colors.black, size: 13),
                 ),
               ),
             ],
@@ -215,11 +334,7 @@ class ProfilePage extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PersonalInformationPage()),
-                  );
-                },
+                onTap: () => _push(context, const PersonalInformationPage()),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(

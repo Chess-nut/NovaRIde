@@ -11,6 +11,10 @@
 .buildlog/
 .history
 
+# IntelliJ / Android Studio per-user state. The rest of .idea/ (SDK
+# libraries, modules, run configurations) is shared on purpose.
+.idea/workspace.xml
+
 
 
 # Flutter repo-specific

@@ -1,0 +1,44 @@
+{
+  "riderUid": "uid-mobile-rider",
+  "riderEmail": "rider@example.test",
+  "guardianUid": "uid-mobile-guardian",
+  "guardianEmail": "guardian@example.test",
+  "usernameLower": "riderone",
+  "user": {
+    "email": "rider@example.test",
+    "username": "riderone",
+    "fullName": "Rider One",
+    "role": "rider",
+    "phoneNumber": "09171234567",
+    "createdAt": "__SERVER_TIMESTAMP__",
+    "updatedAt": "__SERVER_TIMESTAMP__",
+    "lastLoginAt": "__SERVER_TIMESTAMP__"
+  },
+  "guardianUser": {
+    "email": "guardian@example.test",
+    "username": "guardianone",
+    "fullName": "Guardian One",
+    "role": "guardian",
+    "createdAt": "__SERVER_TIMESTAMP__",
+    "updatedAt": "__SERVER_TIMESTAMP__",
+    "lastLoginAt": "__SERVER_TIMESTAMP__"
+  },
+  "profile": {
+    "createdAt": "__SERVER_TIMESTAMP__",
+    "updatedAt": "__SERVER_TIMESTAMP__"
+  },
+  "usernameClaim": {
+    "uid": "uid-mobile-rider",
+    "email": "rider@example.test",
+    "createdAt": "__SERVER_TIMESTAMP__"
+  },
+  "loginTouch": {
+    "lastLoginAt": "__SERVER_TIMESTAMP__",
+    "updatedAt": "__SERVER_TIMESTAMP__",
+    "fcmToken": "a-push-token"
+  },
+  "loginTouchNoToken": {
+    "lastLoginAt": "__SERVER_TIMESTAMP__",
+    "updatedAt": "__SERVER_TIMESTAMP__"
+  }
+}

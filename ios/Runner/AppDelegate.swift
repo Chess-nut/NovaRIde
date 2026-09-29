@@ -8,7 +8,7 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    if let apiKey = Bundle.main.object(forInfoDictionaryKey: "AIzaSyDrEp1SJshCZlISfAUK03y1jLHm-yAfw6o") as? String, !apiKey.isEmpty {
+    if let apiKey = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String, !apiKey.isEmpty {
       GMSServices.provideAPIKey(apiKey)
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

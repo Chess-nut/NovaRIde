@@ -7,7 +7,7 @@ why those choices were made, and — explicitly — which parts are simulated.
 **Run it:**
 
 ```bash
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173
+flutter run -t lib/main_admin.dart -d edge --web-port 5173
 ```
 
 **Signing in:** with `assets/config/firebase.json` present the console runs
@@ -56,8 +56,11 @@ lib/
    `AlertEvent` and NovaRide blue actually are. There is no duplication of
    domain logic.
 
-Nothing in `lib/admin/` imports from `lib/rider/`, and nothing in `lib/rider/`
-imports from `lib/admin/`. The only shared surface is `lib/shared/`.
+Nothing in `lib/admin/` imports from `lib/features/`, and nothing in
+`lib/features/` imports from `lib/admin/`. The only shared surface is
+`lib/shared/`. (The mobile app's screens moved from `lib/rider/` and
+`lib/family/` into `lib/features/` in Phase 1 of the mobile redesign; the
+admin console was not touched and keeps this file's architecture.)
 
 ---
 
@@ -67,7 +70,9 @@ imports from `lib/admin/`. The only shared surface is `lib/shared/`.
 packages.**
 
 Apart from `firebase_core`, `cloud_firestore` and `firebase_auth` (the data
-tier and its identity) and the rider app's `google_maps_flutter`,
+tier and its identity), the mobile app's `google_maps_flutter`, and the
+mobile-only `flutter_riverpod`, `go_router` and `logger` (which no file
+under `lib/admin/` imports),
 `pubspec.yaml` has no non-Flutter dependencies. That is deliberate:
 
 - **Defensibility.** Every mechanism in the console can be explained from the

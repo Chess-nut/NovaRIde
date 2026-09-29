@@ -4,7 +4,7 @@ rules_version = '2';
 //
 // Deny by default. The database holds live GPS positions of the TNVS riders
 // in the study, so nothing is readable without a signed-in principal whose
-// role this file can establish. Two kinds of principal exist:
+// role this file can establish. Three kinds of principal exist:
 //
 //   OPERATORS — Firebase Auth accounts of the TNVS Operator console, with a
 //   role of superAdmin | dispatcher | viewer. The role is read from the
@@ -15,6 +15,17 @@ rules_version = '2';
 //   console resolves the role the same way, in the same order; if the two
 //   ever disagree the rules win, because the console cannot be trusted to
 //   police itself.
+//
+//   MOBILE ACCOUNTS — riders and guardians of the phone app, added in
+//   Phase 3. They carry no claim at all and are not operators: an account
+//   is whoever `request.auth.uid` says it is, and it may read and write
+//   its own users/{uid}, its own riderProfiles/ or guardianProfiles/
+//   document, and nothing else in the database. A rider cannot read the
+//   roster, the alerts or another rider's anything. The one exception to
+//   "signed in or nothing" in this whole file is a `get` on
+//   usernames/{usernameLower}, which has to work before sign-in because
+//   logging in by username means resolving it to an email first; the
+//   trade-off is written out above that rule.
 //
 //   HELMET SERVICE — the identity the ESP32 firmware will authenticate as:
 //   a Firebase Auth user carrying the claim `role: helmetService`. It is
@@ -200,9 +211,171 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Everything else — including the reserved emergencyContacts/ and any
-    // path the rider app will need once it authenticates — stays closed
-    // until a rule is written for it here first.
+
+    // ----------------------------------------------- mobile app accounts
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isMobileRole(r) {
+      return r == 'rider' || r == 'guardian';
+    }
+
+    // No credential material is ever stored in Firestore. Firebase Auth
+    // holds the password and nothing else needs to; a document that
+    // carried a hash would be a copy of the thing Auth exists to protect.
+    // `fcmToken` is deliberately not on this list — a push token is an
+    // address, not a secret, and the app writes one.
+    function noCredentialFields() {
+      return !request.resource.data.keys().hasAny([
+        'password', 'passwordHash', 'passwordSalt', 'pwd', 'hash', 'salt',
+        'idToken', 'accessToken', 'refreshToken', 'customToken', 'token',
+        'secret', 'apiKey', 'privateKey'
+      ]);
+    }
+
+    // True when an update leaves `field` exactly as it was, including
+    // leaving it absent. The immutability checks below are all this.
+    function keeps(field) {
+      return request.resource.data.get(field, null)
+          == resource.data.get(field, null);
+    }
+
+    // The address on the document has to be the address on the ID token.
+    // Without this, a signed-in account could write somebody else's email
+    // into its own record — and into the world-readable usernames/ entry.
+    function matchesTokenEmail() {
+      return request.resource.data.get('email', '').lower()
+          == request.auth.token.get('email', '').lower();
+    }
+
+    // A rider may only hold a riderProfiles document and a guardian only a
+    // guardianProfiles one. During the sign-up transaction users/{uid}
+    // does not exist yet — rules see the pre-transaction state — so the
+    // first clause admits the create; afterwards the role decides.
+    function profileRoleIs(uid, expected) {
+      return !exists(/databases/$(database)/documents/users/$(uid))
+          || get(/databases/$(database)/documents/users/$(uid))
+               .data.get('role', '') == expected;
+    }
+
+    // Accounts. Written only by their owner, only through the mobile app's
+    // ensureProfile transaction, and read by nobody else — the console has
+    // no code that reads these and no reason to.
+    //
+    // `role` and `createdAt` can never change once written. The role
+    // decides which home screen and, in later phases, which rider data an
+    // account can reach; createdAt is evidence for the study. `email` and
+    // `username` are immutable too: the email is checked against the ID
+    // token, and the username is claimed under usernames/ where nothing
+    // can be transferred.
+    match /users/{uid} {
+      allow get: if isOwner(uid);
+      allow list: if false;
+
+      allow create: if isOwner(uid)
+                    && noCredentialFields()
+                    && matchesTokenEmail()
+                    && isMobileRole(request.resource.data.get('role', ''))
+                    && request.resource.data.get('username', '') is string
+                    && request.resource.data.get('username', '') != ''
+                    && request.resource.data.get('fullName', 0) is string
+                    && isServerTime(request.resource.data.get('createdAt', ''))
+                    && isServerTime(request.resource.data.get('updatedAt', ''));
+
+      // Every write stamps the server clock. A client that wants to change
+      // anything has to say when, and it does not get to choose when.
+      allow update: if isOwner(uid)
+                    && noCredentialFields()
+                    && keeps('role')
+                    && keeps('createdAt')
+                    && keeps('email')
+                    && keeps('username')
+                    && isServerTime(request.resource.data.get('updatedAt', ''))
+                    && (keeps('lastLoginAt')
+                        || isServerTime(request.resource.data.get('lastLoginAt', '')));
+
+      allow delete: if false;
+    }
+
+    // Role-specific profiles. Same owner-only shape as users/; they exist
+    // so a rider's fields and a guardian's never share a document and
+    // never have to be told apart at read time.
+    match /riderProfiles/{uid} {
+      allow get: if isOwner(uid);
+      allow list: if false;
+      allow create: if isOwner(uid)
+                    && noCredentialFields()
+                    && profileRoleIs(uid, 'rider')
+                    && isServerTime(request.resource.data.get('createdAt', ''))
+                    && isServerTime(request.resource.data.get('updatedAt', ''));
+      allow update: if isOwner(uid)
+                    && noCredentialFields()
+                    && keeps('createdAt')
+                    && isServerTime(request.resource.data.get('updatedAt', ''));
+      allow delete: if false;
+    }
+
+    match /guardianProfiles/{uid} {
+      allow get: if isOwner(uid);
+      allow list: if false;
+      allow create: if isOwner(uid)
+                    && noCredentialFields()
+                    && profileRoleIs(uid, 'guardian')
+                    && isServerTime(request.resource.data.get('createdAt', ''))
+                    && isServerTime(request.resource.data.get('updatedAt', ''));
+      allow update: if isOwner(uid)
+                    && noCredentialFields()
+                    && keeps('createdAt')
+                    && isServerTime(request.resource.data.get('updatedAt', ''));
+      allow delete: if false;
+    }
+
+    // The username index. Document id is the lowercased username.
+    //
+    // ** This is the one path in the database an unauthenticated client
+    // can read, and it is a deliberate trade-off. ** Logging in with a
+    // username means turning that username into an email address before
+    // Firebase Auth will look at it, and the person doing it is by
+    // definition not signed in yet. So `get` is open to anyone.
+    //
+    // What that costs: somebody who guesses an exact username learns the
+    // email address on it. What it does not cost: `list` is denied, so
+    // the collection cannot be enumerated, and `hasOnly` below keeps the
+    // document to three fields so nothing else is ever exposed here.
+    //
+    // The alternative is a Cloud Function doing the lookup server-side,
+    // which needs the Blaze plan. Revisit if this project moves to it.
+    //
+    // Uniqueness is enforced by the rules, not just by the app: a claim
+    // is a `create`, and `set` on a name somebody already holds is an
+    // `update`, which is denied. Two people racing for one username means
+    // the second write fails rather than overwrites.
+    match /usernames/{usernameLower} {
+      allow get: if true;
+      allow list: if false;
+
+      allow create: if signedIn()
+                    && request.resource.data.keys()
+                         .hasOnly(['uid', 'email', 'createdAt'])
+                    && request.resource.data.get('uid', '') == request.auth.uid
+                    && matchesTokenEmail()
+                    && usernameLower == usernameLower.lower()
+                    && usernameLower.size() >= 3
+                    && usernameLower.size() <= 20
+                    && isServerTime(request.resource.data.get('createdAt', ''));
+
+      // A username is never transferred and never freed. Releasing one
+      // would let the next person inherit whatever the last one is
+      // remembered by.
+      allow update, delete: if false;
+    }
+
+    // Everything else — including the reserved emergencyContacts/ — stays
+    // closed until a rule is written for it here first. rules_test/
+    // closed.test.js is what holds that line: it asserts each unopened
+    // path is denied, so opening one means editing that file on purpose.
     match /{document=**} {
       allow read, write: if false;
     }

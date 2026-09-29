@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "885956155129",
+    "project_id": "novaride-7a68c",
+    "storage_bucket": "novaride-7a68c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:885956155129:android:da42ddecde8b1876dc3428",
+        "android_client_info": {
+          "package_name": "ph.edu.tip.novaride"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAhV3ojdmZrujajuj5QqpP4cZM_m_ZkgPM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

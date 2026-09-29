@@ -188,6 +188,67 @@ claim with `tool/set_admin_claims.mjs` (§4). To remove one: disable the Auth
 account (the SDK signs them out at the next token refresh and the shell
 returns to the login page) and delete or re-role the document.
 
+### The mobile app's account collections — camelCase
+
+Added in Phase 3 of the mobile redesign. Four collections, all keyed by the
+**Firebase Auth uid** except the username index, and all written by one
+idempotent transaction (`FirebaseAuthRepository.ensureProfile`) that runs
+after every sign-up *and* every sign-in.
+
+They are deliberately separate from the console's `riders/` roster. The
+roster is an operator's record of a person; these are a person's own
+account. The link between them is `riders/{R-xxx}.authUid`, written
+console-side, and it does not exist yet.
+
+#### `users/{uid}` — one per account, whatever the role
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `email` | string | yes | Must equal the address on the ID token. The rules check it. |
+| `username` | string | yes | Display case. The lowercased form is the id under `usernames/`. |
+| `fullName` | string | yes | |
+| `role` | string | yes | `rider` \| `guardian`. **Immutable.** It decides the home screen and, in later phases, what the account may read. |
+| `phoneNumber` | string | | Optional at sign-up. |
+| `address` | string | | Where the person lives. On `users/` rather than `riderProfiles/` because a guardian has one too, and it belongs beside `phoneNumber` — both are how somebody is reached, whatever their role. Optional: sign-up does not ask for it, Personal Information does. |
+| `photoUrl` | string | | Unused so far. |
+| `fcmToken` | string | | Push address. Refreshed by `ensureProfile`. |
+| `createdAt` | timestamp | yes | Server clock. **Immutable.** |
+| `updatedAt` | timestamp | yes | Server clock, on every write. |
+| `lastLoginAt` | timestamp | | Server clock. Written by `ensureProfile` on sign-in. |
+
+Never written here, and refused by the rules: `password`, `passwordHash`,
+`passwordSalt`, `idToken`, `accessToken`, `refreshToken`, `token`,
+`secret`, `apiKey`, `privateKey`. Firebase Auth holds the credential and
+nothing else needs a copy of it. `fcmToken` is allowed — a push address is
+not a secret.
+
+#### `riderProfiles/{uid}` and `guardianProfiles/{uid}`
+
+Role-specific fields, split so a rider's document and a guardian's never
+share a shape. Both carry `createdAt` and `updatedAt` on the server clock;
+everything else is added by the phase that needs it. A rider may only hold
+a `riderProfiles` document and a guardian only a `guardianProfiles` one —
+the rules read `users/{uid}.role` to enforce it.
+
+#### `usernames/{usernameLower}` — the uniqueness index
+
+Document id is the lowercased username. Exactly three fields, and the
+rules refuse a fourth: `uid`, `email`, `createdAt`.
+
+**This is the only path in the database an unauthenticated client can
+read.** Logging in with a username means turning it into an email address
+before Firebase Auth will accept it, and whoever is doing that is not
+signed in yet. `get` is therefore open; `list` is not, so the collection
+cannot be enumerated. The cost is that somebody who guesses an exact
+username learns the email on it. The alternative — a Cloud Function doing
+the lookup server-side — needs the Blaze plan; revisit if this project
+moves to it.
+
+Uniqueness is enforced by the rules, not only by the app: a claim is a
+`create`, and writing over a name somebody holds is an `update`, which is
+denied. Two people racing for one name means the second write fails rather
+than overwrites. A username is never transferred and never released.
+
 ### `emergencyContacts/{id}` — reserved
 
 Not read or written yet. Intended shape:
@@ -240,11 +301,28 @@ firebase deploy --only firestore:rules
 The CLI compiles the file before releasing it; a syntax error aborts the
 deploy and leaves the live ruleset untouched.
 
+**The Phase 3 account rules in this file are not deployed yet** — the live
+ruleset on `novaride-7a68c` is the one from 29 Sep 2026, before `users/`,
+`riderProfiles/`, `guardianProfiles/` and `usernames/` were opened. Sign-up
+and sign-in return `permission-denied` until the deploy above is run.
+
+### Tested
+
+`rules_test/` holds 117 tests over this file, run against the Firestore
+emulator with no credentials and no reach into the real project
+(`cd rules_test && npm install && npm test`). They cover role resolution,
+each collection's write narrowing, the alert lifecycle and its server-clock
+stamps, the append-only history, what the phone app's four account
+collections permit, and that every path without a rule of its own is still
+closed. Run them before a deploy; see
+[rules_test/README.md](../rules_test/README.md).
+
 ### Principals
 
 | Principal | How it authenticates | How the rules know its role |
 |---|---|---|
 | **Operator** (`superAdmin` \| `dispatcher` \| `viewer`) | Firebase Auth email/password, from the console | `request.auth.token.role` (custom claim) first; if absent or not one of the three, `admins/{uid}.role`. Aliases `administrator`/`admin` → `superAdmin`, `operator` → `dispatcher` are read-tolerated. |
+| **Mobile account** (`rider` \| `guardian`) | Firebase Auth email/password, from the phone app | No claim at all. The account is whoever `request.auth.uid` says it is; `users/{uid}.role` decides what the app shows it, not what the rules let it reach. It may read and write its own `users/`, `riderProfiles/` or `guardianProfiles/` document and claim a `usernames/` entry — and nothing else in the database. |
 | **Helmet service** | A Firebase Auth user the ESP32 will sign in as, carrying the claim `role: helmetService` | The claim only. It is not a console role; the console rejects it as unprovisioned. **No such account exists yet** — how the firmware authenticates is an open item (§7). A bridge using the Admin SDK bypasses these rules and needs nothing here. |
 | Anyone else | — | Denied everywhere. |
 
@@ -322,12 +400,19 @@ ruleset and one deploy command.
 
 ### Still to write
 
-The rider app does not authenticate yet, so the draft's rider-facing clauses
-(`request.auth.uid == resource.data.authUid`, `ownsHelmet(...)`) have nothing
-to bind to — `riders/` has no `authUid` field and the app has no Firebase
-sign-in. They are deliberately absent rather than present-but-dead. When the
-rider app lands: add `authUid` to `riders/`, decide the helmet's identity
-(§7), and extend the `riders/`, `devices/` and `alerts/` reads here first.
+Phase 3 gave the phone app its own four collections (§2), so the rider now
+has an authenticated identity. What is still absent, deliberately:
+
+- **A rider reading their own roster entry, telemetry or alerts.** The
+  draft's `request.auth.uid == resource.data.authUid` and `ownsHelmet(...)`
+  clauses still have nothing to bind to: `riders/` has no `authUid` field
+  and nothing writes one. A mobile account is refused `riders/`, `devices/`
+  and `alerts/` outright, which `accounts.test.js` asserts. Linking the two
+  sides is the next rules change, and it needs `authUid` on `riders/` first.
+- **A guardian reading their rider's anything.** There is no link model yet
+  — `riderLinks/` is named in `closed.test.js` as the path that would carry
+  it, and is denied to everybody.
+- **The helmet's identity** (§7), unchanged.
 
 ---
 
@@ -384,14 +469,14 @@ firebase apps:sdkconfig WEB 1:885956155129:web:21670e7270e1ccc7dc3428 > assets/c
 #    free id. There is deliberately no "merge" flag: the seed is fixture
 #    data for an empty project, not a reset, and merging it over real
 #    riders would raise the question of which record wins on R-001.
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173 --dart-define=SEED_FIRESTORE=true
+flutter run -t lib/main_admin.dart -d edge --web-port 5173 --dart-define=SEED_FIRESTORE=true
 
 # Day to day. With the config present the top bar shows FIRESTORE; sign in
 # with one of the operator accounts (§2, admins/).
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173
+flutter run -t lib/main_admin.dart -d edge --web-port 5173
 
 # Rehearse offline on a configured machine (simulation + local demo login):
-flutter run -t lib/main_admin.dart -d chrome --dart-define=NOVARIDE_FORCE_SIMULATION=true
+flutter run -t lib/main_admin.dart -d edge --dart-define=NOVARIDE_FORCE_SIMULATION=true
 
 # Optional: put the role in the ID token as a custom claim (see §4 and the
 # header of tool/set_admin_claims.mjs — the key lives OUTSIDE the repo).

@@ -10,8 +10,8 @@ The operations console is a second Flutter entrypoint in the same repository,
 used by dispatchers to monitor the helmet fleet and respond to accident alerts.
 
 ```bash
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173   # admin console
-flutter run -t lib/main.dart                                   # rider app
+flutter run -t lib/main_admin.dart -d edge --web-port 5173   # admin console
+flutter run -t lib/main.dart                                   # mobile app
 ```
 
 Five tabs: **Dashboard** (live fleet grid), **Rider Monitoring** (map + telemetry
@@ -72,7 +72,7 @@ firebase apps:sdkconfig WEB 1:885956155129:web:21670e7270e1ccc7dc3428 > assets/c
 #    flag, then sign in as the Super Admin — the seed runs at that moment,
 #    because the rules only accept its writes from a signed-in Super Admin.
 #    The terminal prints "seedFirestore: wrote 10 riders, …" when it lands.
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173 --dart-define=SEED_FIRESTORE=true
+flutter run -t lib/main_admin.dart -d edge --web-port 5173 --dart-define=SEED_FIRESTORE=true
 ```
 
 Adding an operator: create the account under Authentication → Users, then
@@ -84,11 +84,145 @@ it needs a service-account key, which **grants full admin access to the whole
 project, bypasses every security rule, and lives outside the repository**.
 The script header has the PowerShell steps and the warnings.
 
+### Security-rules tests
+
+`firestore.rules` is the only thing standing between the internet and the
+riders' live positions, so it has tests of its own — 56 of them, run against
+the Firestore emulator:
+
+```powershell
+cd rules_test
+npm install     # once
+npm test        # starts the emulator, runs the tests, shuts it down
+```
+
+They need a JDK on the PATH (Temurin 21) and download the emulator jar on
+the first run. Nothing else leaves the machine: the tests use the project id
+`demo-novaride`, which the Firebase tooling treats as non-existent, so they
+can never reach `novaride-7a68c`. Run them before deploying rules.
+See **[rules_test/README.md](rules_test/README.md)**.
+
 See **[docs/ADMIN_MODULE.md](docs/ADMIN_MODULE.md)** for the architecture, the
 authentication design, the alert state machine, the role matrix, and a full
 "simulated vs. real" disclosure, and
 **[docs/FIRESTORE_SCHEMA.md](docs/FIRESTORE_SCHEMA.md)** for the collections
 and the security rules.
+
+## 📱 Mobile app
+
+```bash
+flutter run -t lib/main.dart          # rider + guardian app
+```
+
+Riverpod for state, `go_router` for navigation — **mobile only**. The admin
+console shares none of it (see
+[docs/ADMIN_MODULE.md](docs/ADMIN_MODULE.md#2-state-management)).
+
+```
+lib/
+  app/        app.dart (MaterialApp.router) · router.dart (routes + the auth
+              gate) · di.dart (the composition root)
+  core/       theme/ (colour, type and spacing tokens) · widgets/ (the
+              shared form controls) · errors/ (Failure + the Firebase
+              message mapper) · utils/ (AppLogger, Validators) ·
+              constants/ (collection names, route names)
+  features/   onboarding/ · auth/ · rider/ · guardian/
+              each: domain/ (entities, repository interfaces)
+                    data/   (implementations)
+                    presentation/ (pages, widgets, providers)
+  shared/     models and the admin console's palette
+  admin/      the operations console — a separate entrypoint, untouched
+```
+
+**The auth gate.** One redirect in `app/router.dart` decides everything:
+splash while the session is unknown, the signed-out screens when there is
+no session, the verify-email screen when an account has not confirmed its
+address, and otherwise the home for that account's role. It reads
+`authStateProvider`, which since Phase 3 follows
+`AuthRepository.authStateChanges()` against Firebase Auth.
+
+No screen navigates after signing in or out. It calls the repository, the
+auth stream updates `authStateProvider`, and the gate moves — which is why
+an unverified account cannot walk past the verify-email screen and a
+signed-out one cannot stay on a home screen.
+`test/mobile_router_test.dart` pins the behaviour down.
+
+### Design: direction Signal
+
+Dark, quiet, typographic. Two rules hold it together and both are worth
+keeping when adding a screen:
+
+1. **One action colour.** `AppColors.action` (the green) is the only
+   saturated thing a person is meant to press. Two green things on one
+   screen means one of them is wrong.
+2. **Colour elsewhere always means status.** `safe`, `riding`, `warning`,
+   `critical`, `sos`, `offline`, `resolved`. Nothing is coloured to look
+   nice — an accent spent on decoration is attention taken from the
+   critical states.
+
+Tokens live in [lib/core/theme/](lib/core/theme/): `app_colors.dart`
+(semantic colours), `app_typography.dart` (a seven-step scale),
+`app_spacing.dart` (spacing, radii, sizes, durations).
+
+**Widgets never name a colour.** `AppColors` is a `ThemeExtension`, read
+as `context.colors.action`, so the palette arrives through the theme
+rather than by import. `AppTheme.from(palette)` takes the palette as an
+argument and hardcodes nothing.
+
+**A light theme is not built, and adding one is three steps:** write
+`AppColors.light`, pass `AppTheme.from(AppColors.light, brightness:
+Brightness.light)` as `MaterialApp.theme`, and set `themeMode`. No widget
+changes and no `if (isDark)` anywhere. `themeMode` is already wired
+through `MaterialApp` from `themeModeProvider`.
+
+`test/theme_contract_test.dart` enforces this rather than trusting it: it
+proves a second palette reaches widgets untouched, and it scans
+`core/widgets/`, `features/auth/` and `features/onboarding/` for
+`Color(0x…)` literals, `Colors.*` constants and imports of the admin
+palette. Those tests fail the first time a colour is written into a
+widget.
+
+**Font.** Signal was specified with Inter; this ships on Roboto, the SDK's
+own face, already bundled and already what the layout tests measure
+against. `AppTypography.fontFamily` is the one line that changes if Inter
+is ever added, which would mean committing four font files and a `fonts:`
+block.
+
+**Firebase config is committed.** `lib/firebase_options.dart` and
+`android/app/google-services.json` are in the tree on purpose — neither is
+a credential (both ship inside every APK), and unlike the console's web
+config their absence does not degrade gracefully: the Gradle build fails.
+Regenerate with:
+
+```powershell
+flutterfire configure --project=novaride-7a68c --platforms=android,web `
+  --android-package-name=ph.edu.tip.novaride `
+  --web-app-id=1:885956155129:web:21670e7270e1ccc7dc3428
+```
+
+The `--web-app-id` matters: without it a second web app is registered.
+
+**`ensureProfile` is the piece to understand.**
+[firebase_auth_repository.dart](lib/features/auth/data/firebase_auth_repository.dart)
+runs one idempotent transaction after every sign-up *and* every sign-in.
+Absent documents are created — `users/{uid}`, the matching
+`riderProfiles/` or `guardianProfiles/`, and the `usernames/` claim, all
+keyed by the Auth uid. Present ones get `lastLoginAt`, `fcmToken` and
+`updatedAt` touched and nothing else; `role` and `createdAt` are never
+rewritten, and the security rules refuse those changes too. Every
+timestamp is `FieldValue.serverTimestamp()` — no client clock reaches
+Firestore, and the rules would refuse one anyway.
+
+If it throws, the account is signed out rather than left in the app with
+no profile. `unavailable` and `deadline-exceeded` get one retry, which is
+safe precisely because the transaction is idempotent.
+
+**Two rules worth knowing before adding code here.** No feature file spells
+a Firestore collection name as a string — they are all in
+`core/constants/firestore_collections.dart`. And no feature file shows a
+raw exception: a data source catches once, maps with
+`core/errors/firebase_failure_mapper.dart`, and everything above handles a
+`Failure` whose `message` is already a sentence.
 
 ## 🛠️ Tools & Technologies Used
 
@@ -106,23 +240,50 @@ and the security rules.
  - **Backend & Cloud Database:** Firebase Realtime Database & Firebase Authentication
  - **Mapping Integration:** Google Maps Platform API
 
-## Emergency Contact Live Location
+## Google Maps keys
 
-The Emergency Contact map route is `/emergency-map`. It consumes the shared
-`EmergencyContactRepository` stream, permission-gated by the connected rider's
-`liveLocation` permission. The location payload shape is represented by
-`RiderLocation` and can be connected to the existing Firebase telemetry source.
+The rider and family screens use `google_maps_flutter`. **Keys are supplied at
+build time and no tracked file holds one.** There are three keys, not one,
+because Google Cloud lets a key carry a single application restriction — HTTP
+referrers, *or* an Android package + signing SHA-1, *or* an iOS bundle id — so
+a key locked to one platform cannot serve another.
 
-Google Maps keys are intentionally supplied through native build settings and
-are not stored in this repository. For Android, provide the Gradle property
-`GOOGLE_MAPS_API_KEY` when building. For iOS, set the `GOOGLE_MAPS_API_KEY`
-build setting for the Runner target. The Android manifest and iOS delegate read
-these values at runtime.
+| Platform | Define / setting | Where it is read |
+|---|---|---|
+| Android | `GOOGLE_MAPS_API_KEY_ANDROID` (`--dart-define`) | `android/app/build.gradle.kts` decodes the build's dart-defines into the manifest placeholder |
+| Web | `GOOGLE_MAPS_API_KEY_WEB` (`--dart-define`) | `lib/shared/maps/` injects the Maps JS `<script>` at startup; `web/index.html` carries no key |
+| iOS | `GOOGLE_MAPS_API_KEY_IOS` (Xcode build setting) | `ios/Flutter/Secrets.xcconfig`, gitignored — copy `Secrets.example.xcconfig` |
+
+Day to day, put the defines in a gitignored file and pass it once:
+
+```powershell
+Copy-Item dart_defines.example.json dart_defines.local.json   # then fill it in
+flutter run -t lib/main.dart --dart-define-from-file=dart_defines.local.json
+```
+
+Rotating a key is a one-line edit of that file. Without a key the build still
+succeeds and the map renders blank tiles, which is the intended state of a
+checkout without credentials.
+
+> **History.** Commit `d9f4ce0` (14 Sep 2026) committed a Maps browser key
+> into `web/index.html`, and replaced the placeholder *names* in the Android
+> and iOS config with the key literal, which broke those two platforms. The
+> key lives in git history, so treat it as compromised: regenerate it in
+> Google Cloud and restrict the replacements as described above.
+
+## Family Live Location
+
+The Family Map route is `/guardian/map` (`AppRoutes.guardianMapPath`; it was
+`/family-map` before the router landed). It currently consumes the existing
+`FamilyRepository` mock stream, which is permission-gated by the connected
+rider's `liveLocation` permission. The location payload shape is represented by
+`RiderLocation` and is ready to be populated by a Firestore listener when the
+rider app is connected to Firebase.
 
 Useful checks:
 
 ```text
 flutter pub get
 flutter analyze
-flutter test test/family_module_test.dart test/rider_location_test.dart
+flutter test
 ```

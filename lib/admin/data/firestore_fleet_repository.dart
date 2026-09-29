@@ -764,11 +764,11 @@ class FirestoreFleetRepository implements FleetRepository {
   }
 
   @override
-  Future<void> setRiderStatus(String riderId, RiderStatus status) {
-    return _db.collection('riders').doc(riderId).update({
-      'status': status.name,
-    });
-  }
+  Future<void> setRiderStatus(String riderId, RiderStatus status) => _guard(
+        () => _db.collection('riders').doc(riderId).update({
+          'status': status.name,
+        }),
+      );
 
   /// Status change and audit entry go in one batch so neither can land
   /// without the other. `at` is the server clock: response-time metrics are
@@ -776,22 +776,24 @@ class FirestoreFleetRepository implements FleetRepository {
   /// source for them. The `<status>At` stamp on the alert itself lets the
   /// Reports tab query response times without reading every history entry.
   @override
-  Future<void> transitionAlert(String alertId, AlertAction action) {
-    final alertRef = _db.collection('alerts').doc(alertId);
-    final batch = _db.batch();
-    batch.update(alertRef, {
-      'status': action.toStatus.name,
-      '${action.toStatus.name}At': FieldValue.serverTimestamp(),
-    });
-    batch.set(alertRef.collection('history').doc(), {
-      'toStatus': action.toStatus.name,
-      'actorName': action.actorName,
-      'note': action.note,
-      'responder': action.responder?.name,
-      'at': FieldValue.serverTimestamp(),
-    });
-    return batch.commit();
-  }
+  Future<void> transitionAlert(String alertId, AlertAction action) => _guard(
+        () {
+          final alertRef = _db.collection('alerts').doc(alertId);
+          final batch = _db.batch();
+          batch.update(alertRef, {
+            'status': action.toStatus.name,
+            '${action.toStatus.name}At': FieldValue.serverTimestamp(),
+          });
+          batch.set(alertRef.collection('history').doc(), {
+            'toStatus': action.toStatus.name,
+            'actorName': action.actorName,
+            'note': action.note,
+            'responder': action.responder?.name,
+            'at': FieldValue.serverTimestamp(),
+          });
+          return batch.commit();
+        },
+      );
 
   @override
   void dispose() {

@@ -375,6 +375,42 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<UserProfile> updateProfile({
+    String? fullName,
+    String? phoneNumber,
+    String? address,
+  }) {
+    return _guard(() async {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw const AuthFailure('You are not signed in.');
+      }
+
+      // Only the three the rules allow to move, and only the ones the
+      // caller actually passed. updatedAt is not optional: every write
+      // to users/ has to stamp the server clock or the rules refuse it.
+      final edit = <String, Object?>{
+        if (fullName != null) 'fullName': fullName.trim(),
+        if (phoneNumber != null) 'phoneNumber': phoneNumber.trim(),
+        if (address != null) 'address': address.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      final ref =
+          _firestore.collection(FirestoreCollections.users).doc(user.uid);
+      await ref.update(edit);
+
+      // Re-read rather than patch the cache: the document is the truth,
+      // and the server timestamp is only resolved once it lands.
+      final snapshot = await ref.get();
+      final profile = _profileFromDocument(snapshot.data()!, user);
+      _cached = profile;
+      _cachedUid = user.uid;
+      return profile;
+    });
+  }
+
+  @override
   Future<void> signOut() async {
     _cached = null;
     _cachedUid = null;
@@ -618,8 +654,8 @@ class FirebaseAuthRepository implements AuthRepository {
       'username': username,
       'fullName': fullName,
       'role': role.wireName,
-      if (phoneNumber != null && phoneNumber.isNotEmpty)
-        'phoneNumber': phoneNumber,
+      if (phoneNumber != null && phoneNumber.trim().isNotEmpty)
+        'phoneNumber': phoneNumber.trim(),
       if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
       'createdAt': serverTimestamp,
       'updatedAt': serverTimestamp,

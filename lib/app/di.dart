@@ -10,6 +10,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/data/firebase_auth_repository.dart';
 import '../features/auth/domain/repositories/auth_repository.dart';
+import '../features/rider/data/firestore_rider_profile_repository.dart';
+import '../features/rider/domain/repositories/rider_profile_repository.dart';
 
 /// The identity provider.
 ///
@@ -18,4 +20,13 @@ import '../features/auth/domain/repositories/auth_repository.dart';
 /// fake — nothing above this line knows Firebase exists.
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return FirebaseAuthRepository();
+});
+
+/// The rider half of a signed-in account, `riderProfiles/{uid}`.
+///
+/// Here rather than beside the feature because a test has to be able to
+/// override it at the ProviderScope: without that, pumping any rider
+/// screen constructs Firestore and fails on "no Firebase app".
+final riderProfileRepositoryProvider = Provider<RiderProfileRepository>((ref) {
+  return FirestoreRiderProfileRepository();
 });

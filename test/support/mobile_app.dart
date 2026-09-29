@@ -17,7 +17,10 @@ import 'package:novaride/features/auth/domain/entities/user_profile.dart';
 import 'package:novaride/features/auth/domain/entities/user_role.dart';
 import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
 
+import 'package:novaride/features/rider/domain/repositories/rider_profile_repository.dart';
+
 import 'fake_auth_repository.dart';
+import 'fake_rider_profile_repository.dart';
 
 /// An AuthController pinned to one state, for overriding the real one.
 class FixedAuthController extends AuthController {
@@ -43,6 +46,7 @@ Future<void> pumpMobileApp(
   WidgetTester tester, {
   AuthState? auth,
   AuthRepository? repository,
+  RiderProfileRepository? riderProfiles,
   bool settle = true,
 }) async {
   await tester.pumpWidget(
@@ -55,6 +59,8 @@ Future<void> pumpMobileApp(
         // still gets a harmless empty one.
         authRepositoryProvider
             .overrideWithValue(repository ?? FakeAuthRepository()),
+        riderProfileRepositoryProvider.overrideWithValue(
+            riderProfiles ?? FakeRiderProfileRepository()),
         if (auth != null)
           authStateProvider.overrideWith(() => FixedAuthController(auth)),
       ],

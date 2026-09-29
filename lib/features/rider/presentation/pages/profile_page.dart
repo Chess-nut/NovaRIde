@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:novaride/core/utils/initials.dart';
+import 'package:novaride/core/widgets/unavailable.dart';
+import 'package:novaride/features/auth/domain/entities/user_profile.dart';
+import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
+
 import 'package:novaride/app/di.dart';
 import 'package:novaride/shared/theme.dart';
 
@@ -13,11 +18,11 @@ import 'profile/personal_information.dart';
 
 /// "Profile" screen — rider info, quick stats, account settings, and
 /// logout. Opened from the bottom nav bar's PROFILE tab.
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: NovaColors.background,
       body: SafeArea(
@@ -28,7 +33,7 @@ class ProfilePage extends StatelessWidget {
             children: [
               _buildHeader(),
               const SizedBox(height: 20),
-              _buildProfileCard(),
+              _buildProfileCard(ref.watch(authStateProvider).profile),
               const SizedBox(height: 16),
               _buildStatsRow(),
               const SizedBox(height: 24),
@@ -69,7 +74,7 @@ class ProfilePage extends StatelessWidget {
   }
 
   // ---- Avatar, name, rider ID, edit button ----
-  Widget _buildProfileCard() {
+  Widget _buildProfileCard(UserProfile? profile) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -82,17 +87,20 @@ class ProfilePage extends StatelessWidget {
         children: [
           Stack(
             children: [
-              const CircleAvatar(
+              CircleAvatar(
                 radius: 38,
                 backgroundColor: NovaColors.pink,
-                child: Text(
-                  'JD',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 24,
-                  ),
-                ),
+                child: initialsFrom(profile?.displayName).isEmpty
+                    ? const Icon(Icons.person_outline,
+                        color: Colors.white, size: 32)
+                    : Text(
+                        initialsFrom(profile?.displayName),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 24,
+                        ),
+                      ),
               ),
               Positioned(
                 right: 0,
@@ -111,35 +119,40 @@ class ProfilePage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          const Text(
-            'Deor the great',
-            style: TextStyle(
+          Text(
+            profile?.displayName ?? 'Loading…',
+            style: const TextStyle(
               color: NovaColors.primaryText,
               fontSize: 18,
               fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Rider #NV-08567',
-            style: TextStyle(color: NovaColors.secondaryText, fontSize: 13),
+          // Was 'Rider #NV-08567'. A rider number belongs to the console's
+          // roster (riders/{R-001}); a mobile account cannot read that
+          // collection and nothing links the two yet, so there is no
+          // number to show. The username is real and is what they signed
+          // in with.
+          Text(
+            profile == null ? '' : '@${profile.username}',
+            style: const TextStyle(color: NovaColors.secondaryText, fontSize: 13),
           ),
           const SizedBox(height: 6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: NovaColors.green.withValues(alpha: 0.15),
+              color: NovaColors.secondaryText.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: const [
-                Icon(Icons.circle, color: NovaColors.green, size: 7),
+                Icon(Icons.circle, color: NovaColors.secondaryText, size: 7),
                 SizedBox(width: 5),
                 Text(
-                  'Helmet Connected',
+                  'No helmet paired',
                   style: TextStyle(
-                    color: NovaColors.green,
+                    color: NovaColors.secondaryText,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
@@ -153,19 +166,30 @@ class ProfilePage extends StatelessWidget {
   }
 
   // ---- Trips / Distance / Safety score summary ----
+  //
+  // 142 trips, 1,204 km and a safety score of 92 were invented. None of
+  // the three is computed anywhere: there is no trips collection, no
+  // helmet feed to build one from, and no scoring rule. Em dashes until
+  // something measures them.
   Widget _buildStatsRow() {
     return Row(
       children: const [
         Expanded(
-          child: _StatCard(value: '142', label: 'TOTAL TRIPS'),
+          child: _StatCard(value: Unavailable.dash, label: 'TOTAL TRIPS'),
         ),
         SizedBox(width: 10),
         Expanded(
-          child: _StatCard(value: '1,204', label: 'KM RIDDEN', valueColor: NovaColors.cyan),
+          child: _StatCard(
+              value: Unavailable.dash,
+              label: 'KM RIDDEN',
+              valueColor: NovaColors.secondaryText),
         ),
         SizedBox(width: 10),
         Expanded(
-          child: _StatCard(value: '92', label: 'SAFETY SCORE', valueColor: NovaColors.green),
+          child: _StatCard(
+              value: Unavailable.dash,
+              label: 'SAFETY SCORE',
+              valueColor: NovaColors.secondaryText),
         ),
       ],
     );

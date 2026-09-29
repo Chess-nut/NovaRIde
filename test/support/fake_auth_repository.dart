@@ -163,6 +163,28 @@ class FakeAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<UserProfile> updateProfile({
+    String? fullName,
+    String? phoneNumber,
+    String? address,
+  }) async {
+    calls.add('updateProfile:${fullName ?? ''}|${phoneNumber ?? ''}|'
+        '${address ?? ''}');
+    if (failWith != null) _fail();
+    final current = _current;
+    if (current == null) throw const AuthFailure('You are not signed in.');
+    // The real one cannot move email, username or role, and the rules
+    // refuse them; copyWith is not even offered those here.
+    final updated = current.copyWith(
+      fullName: fullName?.trim(),
+      phoneNumber: phoneNumber?.trim(),
+      address: address?.trim(),
+    );
+    emit(updated);
+    return updated;
+  }
+
+  @override
   Future<void> signOut() async {
     calls.add('signOut');
     emit(null);

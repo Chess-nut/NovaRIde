@@ -25,6 +25,7 @@ class UserProfile {
     required this.role,
     this.emailVerified = false,
     this.phoneNumber,
+    this.address,
     this.photoUrl,
     this.createdAt,
   });
@@ -45,6 +46,11 @@ class UserProfile {
   /// screen.
   final bool emailVerified;
   final String? phoneNumber;
+
+  /// Where the rider lives. On `users/` rather than `riderProfiles/`
+  /// because a guardian has one too and it sits beside [phoneNumber] —
+  /// both are how somebody is reached, for either role.
+  final String? address;
   final String? photoUrl;
   final DateTime? createdAt;
 
@@ -66,6 +72,7 @@ class UserProfile {
     UserRole? role,
     bool? emailVerified,
     String? phoneNumber,
+    String? address,
     String? photoUrl,
     DateTime? createdAt,
   }) {
@@ -77,6 +84,7 @@ class UserProfile {
       role: role ?? this.role,
       emailVerified: emailVerified ?? this.emailVerified,
       phoneNumber: phoneNumber ?? this.phoneNumber,
+      address: address ?? this.address,
       photoUrl: photoUrl ?? this.photoUrl,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -100,6 +108,7 @@ class UserProfile {
       role: role,
       emailVerified: (map['emailVerified'] as bool?) ?? false,
       phoneNumber: map['phoneNumber'] as String?,
+      address: map['address'] as String?,
       photoUrl: map['photoUrl'] as String?,
       createdAt: _dateFrom(map['createdAt']),
     );
@@ -116,6 +125,7 @@ class UserProfile {
         'fullName': fullName,
         'role': role.wireName,
         if (phoneNumber != null) 'phoneNumber': phoneNumber,
+        if (address != null) 'address': address,
         if (photoUrl != null) 'photoUrl': photoUrl,
       };
 
@@ -144,12 +154,13 @@ class UserProfile {
           other.role == role &&
           other.emailVerified == emailVerified &&
           other.phoneNumber == phoneNumber &&
+          other.address == address &&
           other.photoUrl == photoUrl &&
           other.createdAt == createdAt;
 
   @override
   int get hashCode => Object.hash(uid, email, username, fullName, role,
-      emailVerified, phoneNumber, photoUrl, createdAt);
+      emailVerified, phoneNumber, address, photoUrl, createdAt);
 
   @override
   String toString() => 'UserProfile($uid, $username, ${role.wireName})';

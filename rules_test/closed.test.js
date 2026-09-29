@@ -1,9 +1,16 @@
 // The catch-all. Everything without a rule of its own is denied to
-// everybody, and that includes the collections the mobile auth work is
-// about to introduce. These tests are deliberately written to FAIL-to-write
-// today: when a phase opens one of these paths, the matching case here is
-// the thing that must be rewritten, so no collection can quietly become
-// readable without someone editing this file.
+// everybody.
+//
+// **Phase 3 rewrote this file.** It used to assert that users/,
+// riderProfiles/, guardianProfiles/ and usernames/ were closed, with a
+// note saying whichever phase opened one had to come here and change it
+// on purpose. Phase 3 is that phase, so those four moved out — their real
+// permissions are pinned down in accounts.test.js — and what is left is
+// the paths that genuinely have no rule.
+//
+// The discipline is the point, not this particular list: a collection
+// should never become readable without someone editing a test that says
+// it was not.
 
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { assertFails } from '@firebase/rules-unit-testing';
@@ -12,13 +19,13 @@ import {
   asAnonymous, asSuperAdmin, asUnprovisioned, newTestEnv, reset, SUPER_ADMIN,
 } from './helpers.js';
 
-// The Option A collections, plus the one the schema doc reserves.
 const closedPaths = [
-  ['users', 'some-uid'],
-  ['riderProfiles', 'some-uid'],
-  ['guardianProfiles', 'some-uid'],
-  ['usernames', 'somerider'],
+  // Reserved in docs/FIRESTORE_SCHEMA.md §2 and still unbuilt. The rider
+  // app's emergency contacts live on riderProfiles/ for now.
   ['emergencyContacts', 'some-id'],
+  // The guardian-to-rider link Phase 7 will need. Named here so the day
+  // it is added, this line is what has to change.
+  ['riderLinks', 'some-id'],
   ['anythingElse', 'some-id'],
 ];
 
@@ -37,16 +44,21 @@ describe('paths with no rule of their own', () => {
     });
   }
 
-  // A rider signing in on the mobile app lands here until Phase 1 opens
-  // users/{uid}. Worth naming explicitly: it is the first permission-denied
-  // anyone will hit, and it is correct.
-  it('denies a signed-in rider their own users/{uid} document', async () => {
-    await assertFails(getDoc(doc(asUnprovisioned(env), 'users', 'uid-no-admin-doc')));
-  });
-
   it('denies a Super Admin a path that merely looks official', async () => {
     await assertFails(getDoc(doc(asSuperAdmin(env), 'admin', SUPER_ADMIN)));
     await assertFails(getDoc(doc(asSuperAdmin(env), 'alert', 'alerttest')));
     await assertFails(getDoc(doc(asSuperAdmin(env), 'rider', 'ridertest')));
+  });
+
+  // The four paths Phase 3 opened are open to their owner and to nobody
+  // else. The operator console has no code that reads them and no reason
+  // to, so a Super Admin is refused exactly like anyone else — which is
+  // worth asserting here rather than only in accounts.test.js, because
+  // this is the file people read to find out what is closed.
+  it('still denies an operator another account holder\'s documents', async () => {
+    for (const path of ['users', 'riderProfiles', 'guardianProfiles']) {
+      await assertFails(getDoc(doc(asSuperAdmin(env), path, 'uid-someone-else')));
+      await assertFails(setDoc(doc(asSuperAdmin(env), path, 'uid-someone-else'), { x: 1 }));
+    }
   });
 });

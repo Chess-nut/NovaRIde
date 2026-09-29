@@ -93,3 +93,27 @@ export const asHelmetService = (env) =>
   env.authenticatedContext('uid-helmet', { role: 'helmetService' }).firestore();
 
 export const asAnonymous = (env) => env.unauthenticatedContext().firestore();
+
+// ---------------------------------------------------- mobile accounts
+
+/// A rider and a guardian of the phone app. No claim, no admins/{uid}
+/// document — an account is whoever its uid says it is.
+///
+/// The email matters: the rules check the document's `email` against the
+/// one on the ID token, so a test that writes a different address is
+/// testing the rejection path, not the happy one.
+export const RIDER_UID = 'uid-mobile-rider';
+export const RIDER_EMAIL = 'rider@example.test';
+export const GUARDIAN_UID = 'uid-mobile-guardian';
+export const GUARDIAN_EMAIL = 'guardian@example.test';
+
+export const asRider = (env) =>
+  env.authenticatedContext(RIDER_UID, { email: RIDER_EMAIL }).firestore();
+
+export const asGuardian = (env) =>
+  env.authenticatedContext(GUARDIAN_UID, { email: GUARDIAN_EMAIL }).firestore();
+
+/// A second rider, for "someone else's document" cases.
+export const OTHER_UID = 'uid-mobile-other';
+export const asOtherRider = (env) =>
+  env.authenticatedContext(OTHER_UID, { email: 'other@example.test' }).firestore();

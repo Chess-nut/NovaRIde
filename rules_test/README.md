@@ -1,6 +1,6 @@
 # Security-rules tests
 
-56 tests over `firestore.rules`, run against the Firestore emulator.
+108 tests over `firestore.rules`, run against the Firestore emulator.
 
 ```bash
 cd rules_test
@@ -27,20 +27,25 @@ read and a stray call can never reach `novaride-7a68c`.
 | `alerts.test.js` | who creates; the linear lifecycle; server-clock stamps |
 | `history.test.js` | append-only; required fields; the `collectionGroup('history')` read |
 | `admins.test.js` | own-document reads, Super Admin lists, no client writes at all |
+| `accounts.test.js` | the phone app's four collections: who may create, read and update `users/`, `riderProfiles/`, `guardianProfiles/`, and how a `usernames/` claim works |
 | `closed.test.js` | the catch-all: every path without a rule is denied to everyone |
 
-`closed.test.js` is the one to watch. It asserts that `users/`,
-`riderProfiles/`, `guardianProfiles/` and `usernames/` are closed **today**,
-which they must be until the mobile auth work opens them. When a phase adds
-a rule for one of those, the matching case there is what has to be rewritten
-— so no collection can quietly become readable without someone editing that
-file on purpose.
+`closed.test.js` is the one to watch. It asserts that every path without a
+rule of its own is denied to everybody — today `emergencyContacts/`,
+`riderLinks/` and anything unnamed. When a phase opens one, the matching
+case there is what has to be rewritten, so no collection can quietly
+become readable without someone editing that file on purpose. Phase 3 is
+what that looks like in practice: it moved `users/`, `riderProfiles/`,
+`guardianProfiles/` and `usernames/` out of that list and into
+`accounts.test.js`, where what each one permits is spelled out.
 
 ## Writing a test
 
 `helpers.js` exports one Firestore per principal — `asSuperAdmin(env)`,
 `asDispatcher(env)`, `asViewer(env)`, `asHelmetService(env)`,
-`asUnprovisioned(env)`, `asAnonymous(env)`, and two claim-carrying ones —
+`asUnprovisioned(env)`, `asAnonymous(env)`, two claim-carrying ones, and
+the phone app's `asRider(env)`, `asGuardian(env)` and `asOtherRider(env)`,
+which carry an email on the ID token because the account rules check it —
 plus `reset(env, seed)`, which clears the database and re-seeds `admins/`
 with rules disabled. Fixture data a test needs to read or update goes in
 that `seed` callback; anything a test asserts about goes through

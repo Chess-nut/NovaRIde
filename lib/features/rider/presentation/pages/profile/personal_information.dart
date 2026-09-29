@@ -32,9 +32,18 @@ class _PersonalInformationPageState
     extends ConsumerState<PersonalInformationPage> {
   final _formKey = GlobalKey<FormState>();
 
+<<<<<<< HEAD:lib/features/rider/presentation/pages/profile/personal_information.dart
   final _fullNameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
+=======
+  // Pre-filled with the same mock rider used across the app.
+  final _fullNameController = TextEditingController(text: 'Deor the great');
+  final _usernameController = TextEditingController(text: 'deor.thegreat');
+  final _emailController = TextEditingController(text: 'deor.thegreat@email.com');
+  final _phoneController = TextEditingController(text: '+63 917 123 4567');
+  final _addressController = TextEditingController(text: 'Makati City, Metro Manila');
+>>>>>>> origin/main:lib/rider/screens/profile/personal_information.dart
 
   bool _isSaving = false;
   String? _saveError;
@@ -217,6 +226,7 @@ class _PersonalInformationPageState
           CircleAvatar(
             radius: 40,
             backgroundColor: NovaColors.pink,
+<<<<<<< HEAD:lib/features/rider/presentation/pages/profile/personal_information.dart
             child: initialsFrom(profile?.displayName).isEmpty
                 ? const Icon(Icons.person_outline,
                     color: Colors.white, size: 34)
@@ -227,6 +237,12 @@ class _PersonalInformationPageState
                         fontWeight: FontWeight.bold,
                         fontSize: 26),
                   ),
+=======
+            child: Text(
+              'DT',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 26),
+            ),
+>>>>>>> origin/main:lib/rider/screens/profile/personal_information.dart
           ),
           Positioned(
             right: 0,

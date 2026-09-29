@@ -21,10 +21,9 @@ class _EmergencyContact {
 
 class _EmergencyContactsPageState extends State<EmergencyContactsPage> {
   final List<_EmergencyContact> _contacts = [
-    _EmergencyContact(name: 'David Chester M. Legarde', relationship: 'Sibling', phone: '+63 917 234 5678'),
-    _EmergencyContact(name: 'Denzil P. Legarde', relationship: 'Sibling', phone: '+63 918 345 6789'),
-    _EmergencyContact(name: 'Ralph Lluewyne U. Natal', relationship: 'Sibling', phone: '+63 919 456 7890'),
-    _EmergencyContact(name: 'Hanz Jibriel C. Agbayani', relationship: 'Sibling', phone: '+63 920 567 8901'),
+    _EmergencyContact(name: 'Maria Santos', relationship: 'Mother', phone: '+63 917 234 5678'),
+    _EmergencyContact(name: 'Carlo Reyes', relationship: 'Best Friend', phone: '+63 918 345 6789'),
+    _EmergencyContact(name: 'Angela Cruz', relationship: 'Spouse', phone: '+63 919 456 7890'),
   ];
 
   @override

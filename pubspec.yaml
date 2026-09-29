@@ -38,6 +38,7 @@ dependencies:
   firebase_core: ^4.15.0
   cloud_firestore: ^6.10.0
   firebase_auth: ^6.7.0
+<<<<<<< HEAD
   # Direct dependency for the web Maps script loader (lib/shared/maps/).
   web: ^1.1.1
   # Mobile app only (lib/main.dart and lib/features/). The admin console
@@ -45,6 +46,10 @@ dependencies:
   flutter_riverpod: ^3.4.3
   go_router: ^18.0.2
   logger: ^2.8.0
+=======
+  image_picker: ^1.1.2
+  http: ^1.2.2
+>>>>>>> origin/main
 
 dev_dependencies:
   flutter_test:

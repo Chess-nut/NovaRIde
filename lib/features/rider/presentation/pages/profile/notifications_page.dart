@@ -19,11 +19,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
   bool _alcoholWarnings = true;
   bool _gpsSignalLost = true;
 
-  // Reports & marketing — off by default.
-  bool _weeklySafetyReport = true;
-  bool _tripSummaries = false;
-  bool _promotions = false;
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -88,37 +83,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         subtitle: 'Notify me if helmet location tracking drops',
                         value: _gpsSignalLost,
                         onChanged: (v) => setState(() => _gpsSignalLost = v),
-                      ),
-                    ]),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('REPORTS & UPDATES'),
-                    const SizedBox(height: 12),
-                    _buildCard([
-                      _ToggleRow(
-                        icon: Icons.insert_chart_outlined_rounded,
-                        iconColor: NovaColors.green,
-                        title: 'Weekly Safety Report',
-                        subtitle: 'A summary of your riding safety score',
-                        value: _weeklySafetyReport,
-                        onChanged: (v) => setState(() => _weeklySafetyReport = v),
-                      ),
-                      const Divider(height: 1, color: NovaColors.cardBorder, indent: 56),
-                      _ToggleRow(
-                        icon: Icons.route_outlined,
-                        iconColor: NovaColors.cyan,
-                        title: 'Trip Summaries',
-                        subtitle: 'Get a recap after each completed trip',
-                        value: _tripSummaries,
-                        onChanged: (v) => setState(() => _tripSummaries = v),
-                      ),
-                      const Divider(height: 1, color: NovaColors.cardBorder, indent: 56),
-                      _ToggleRow(
-                        icon: Icons.local_offer_outlined,
-                        iconColor: NovaColors.secondaryText,
-                        title: 'Promotions & News',
-                        subtitle: 'Occasional product updates and offers',
-                        value: _promotions,
-                        onChanged: (v) => setState(() => _promotions = v),
                       ),
                     ]),
                   ],

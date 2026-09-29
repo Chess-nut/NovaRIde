@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:novaride/family/data/family_repository.dart';
-import 'package:novaride/family/models/rider_location.dart';
+import 'package:novaride/features/guardian/data/family_repository.dart';
+import 'package:novaride/features/guardian/domain/models/rider_location.dart';
 
 void main() {
   test('parses Firebase-style rider location data', () {

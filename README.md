@@ -11,7 +11,7 @@ used by dispatchers to monitor the helmet fleet and respond to accident alerts.
 
 ```bash
 flutter run -t lib/main_admin.dart -d chrome --web-port 5173   # admin console
-flutter run -t lib/main.dart                                   # rider app
+flutter run -t lib/main.dart                                   # mobile app
 ```
 
 Five tabs: **Dashboard** (live fleet grid), **Rider Monitoring** (map + telemetry
@@ -108,6 +108,56 @@ authentication design, the alert state machine, the role matrix, and a full
 **[docs/FIRESTORE_SCHEMA.md](docs/FIRESTORE_SCHEMA.md)** for the collections
 and the security rules.
 
+## 📱 Mobile app
+
+```bash
+flutter run -t lib/main.dart          # rider + guardian app
+```
+
+Riverpod for state, `go_router` for navigation — **mobile only**. The admin
+console shares none of it (see
+[docs/ADMIN_MODULE.md](docs/ADMIN_MODULE.md#2-state-management)).
+
+```
+lib/
+  app/        app.dart (MaterialApp.router) · router.dart (routes + the auth
+              gate) · di.dart (the composition root)
+  core/       theme/ · widgets/ · errors/ (Failure + the Firebase message
+              mapper) · utils/ (AppLogger) · constants/ (collection names,
+              route names)
+  features/   onboarding/ · auth/ · rider/ · guardian/
+              each: domain/ (entities, repository interfaces)
+                    data/   (implementations)
+                    presentation/ (pages, widgets, providers)
+  shared/     models and the colour palette, shared with the admin console
+  admin/      the operations console — a separate entrypoint, untouched
+```
+
+**The auth gate.** One redirect in `app/router.dart` decides everything:
+splash while the session is unknown, the signed-out screens when there is
+no session, the verify-email screen when an account has not confirmed its
+address, and otherwise the home for that account's role. It reads
+`authStateProvider`, which is a **placeholder** until Phase 3 — it resolves
+straight to signed-out and nothing can sign in yet. `test/mobile_router_test.dart`
+pins the behaviour down so swapping in real Firebase auth cannot change it
+by accident.
+
+**Two rules worth knowing before adding code here.** No feature file spells
+a Firestore collection name as a string — they are all in
+`core/constants/firestore_collections.dart`. And no feature file shows a
+raw exception: a data source catches once, maps with
+`core/errors/firebase_failure_mapper.dart`, and everything above handles a
+`Failure` whose `message` is already a sentence.
+
+**Code generation.** `UserProfile` is a `freezed` class. After changing it:
+
+```bash
+dart run build_runner build
+```
+
+The generated `.freezed.dart` and `.g.dart` files are committed, so a fresh
+clone builds without running it.
+
 ## 🛠️ Tools & Technologies Used
 
 ### Hardware / IoT Components
@@ -157,7 +207,8 @@ checkout without credentials.
 
 ## Family Live Location
 
-The Family Map route is `/family-map`. It currently consumes the existing
+The Family Map route is `/guardian/map` (`AppRoutes.guardianMapPath`; it was
+`/family-map` before the router landed). It currently consumes the existing
 `FamilyRepository` mock stream, which is permission-gated by the connected
 rider's `liveLocation` permission. The location payload shape is represented by
 `RiderLocation` and is ready to be populated by a Firestore listener when the

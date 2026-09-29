@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:novaride/family/screens/family_dashboard_page.dart';
-import 'package:novaride/family/widgets/family_bottom_nav_bar.dart';
+import 'package:novaride/features/guardian/presentation/pages/family_dashboard_page.dart';
+import 'package:novaride/features/guardian/presentation/widgets/family_bottom_nav_bar.dart';
 
 void main() {
   testWidgets('Family dashboard renders core safety content', (tester) async {

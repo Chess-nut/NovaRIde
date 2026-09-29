@@ -9,7 +9,8 @@
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import {
-  collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc,
+  collection, deleteDoc, doc, getDoc, getDocs, runTransaction,
+  serverTimestamp, setDoc,
   Timestamp, updateDoc,
 } from 'firebase/firestore';
 import {
@@ -489,4 +490,93 @@ describe('a mobile account reaches nothing else', () => {
     await assertFails(getDoc(doc(asRider(env), 'admins', 'uid-super-admin')));
     await assertFails(getDocs(collection(asRider(env), 'admins')));
   });
+});
+
+// The exact write sequence FirebaseAuthRepository.ensureProfile issues.
+//
+// The cases above check each path on its own. This one checks the
+// combination, because a transaction is all-or-nothing: one illegal
+// write in it fails every other write in it too, and the app would show
+// a permission-denied for a sign-in that looked entirely reasonable.
+describe('the ensureProfile transaction', () => {
+  const claimId = 'riderone';
+
+  /// Everything a first sign-up writes, in one transaction.
+  const signUpTransaction = (db, uid, email) =>
+    runTransaction(db, async (tx) => {
+      const userRef = doc(db, 'users', uid);
+      const claimRef = doc(db, 'usernames', claimId);
+      // Both reads happen first, which is what puts the username in the
+      // transaction's read set and makes the claim atomic.
+      await tx.get(userRef);
+      await tx.get(claimRef);
+
+      tx.set(userRef, {
+        email,
+        username: 'riderone',
+        fullName: 'Rider One',
+        role: 'rider',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+      });
+      tx.set(doc(db, 'riderProfiles', uid), {
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      tx.set(claimRef, { uid, email, createdAt: serverTimestamp() });
+    });
+
+  it('is accepted whole on a first sign-up', async () => {
+    await assertSucceeds(signUpTransaction(asRider(env), RIDER_UID, RIDER_EMAIL));
+  });
+
+  it('is accepted again as a touch once the documents exist', async () => {
+    await env.withSecurityRulesDisabled((c) => seedRider(c.firestore()));
+    const db = asRider(env);
+    await assertSucceeds(
+      runTransaction(db, async (tx) => {
+        const userRef = doc(db, 'users', RIDER_UID);
+        await tx.get(userRef);
+        // Three fields and no others. role and createdAt are absent from
+        // this map and must stay absent.
+        tx.update(userRef, {
+          lastLoginAt: serverTimestamp(),
+          fcmToken: 'a-push-token',
+          updatedAt: serverTimestamp(),
+        });
+      }),
+    );
+  });
+
+  // The failure mode worth knowing about: a touch that also rewrote the
+  // role would fail, and take the whole sign-in with it.
+  it('is refused whole when one write in it is illegal', async () => {
+    await env.withSecurityRulesDisabled((c) => seedRider(c.firestore()));
+    const db = asRider(env);
+    await assertFails(
+      runTransaction(db, async (tx) => {
+        const userRef = doc(db, 'users', RIDER_UID);
+        await tx.get(userRef);
+        tx.update(userRef, {
+          lastLoginAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          role: 'guardian',
+        });
+      }),
+    );
+  });
+
+  // Two accounts racing for one username: the rules refuse the second
+  // write rather than letting it overwrite the first.
+  it('refuses a sign-up onto a username another account already holds',
+    async () => {
+      await assertSucceeds(
+        signUpTransaction(asRider(env), RIDER_UID, RIDER_EMAIL),
+      );
+      await assertFails(
+        signUpTransaction(asOtherRider(env), 'uid-mobile-other',
+          'other@example.test'),
+      );
+    });
 });

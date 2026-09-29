@@ -1,15 +1,15 @@
 /// The session, as the router sees it.
 ///
-/// Phase 1 ships a placeholder: no Firebase, no persistence, nothing that
-/// can actually sign anybody in. That is on purpose. The shape below is
-/// what the router redirects on, so the splash → auth gate → role home
-/// behaviour can be built and tested now and still be correct when Phase 3
-/// puts a real [AuthRepository] behind it. Phase 3 replaces the body of
-/// [AuthController] and nothing else in this file.
+/// Phase 3 put a real [AuthRepository] behind this. The shape below did
+/// not change when it did — which was the point of building the router's
+/// gate against it first: swapping the placeholder for Firebase was a
+/// change to [AuthController.build] and nothing else.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/di.dart';
+import '../../../../core/utils/app_logger.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/entities/user_role.dart';
 
@@ -44,6 +44,16 @@ class AuthState {
   /// Signed in, waiting on the verification email.
   const AuthState.awaitingVerification(UserProfile profile)
       : this._(AuthStatus.awaitingEmailVerification, profile);
+
+  /// Picks the right state for a profile, from whether Firebase Auth says
+  /// the address is confirmed. One place, so the router and the screens
+  /// cannot disagree about what "signed in" means.
+  factory AuthState.forProfile(UserProfile? profile) {
+    if (profile == null) return const AuthState.signedOut();
+    return profile.emailVerified
+        ? AuthState.signedIn(profile)
+        : AuthState.awaitingVerification(profile);
+  }
 
   final AuthStatus status;
 
@@ -83,29 +93,32 @@ final authStateProvider = NotifierProvider<AuthController, AuthState>(
   AuthController.new,
 );
 
-/// Placeholder implementation.
+/// Follows `AuthRepository.authStateChanges()`.
 ///
-/// It resolves to signed-out and stays there. The mutators exist so a
-/// widget test can drive the router through the states the real thing will
-/// produce; no screen calls them, because no screen can sign in yet.
+/// It starts [AuthStatus.unknown] and stays there until the first event
+/// arrives, which is what holds the app on the splash screen while a
+/// stored session is read instead of flashing the login screen at someone
+/// who is already signed in.
 class AuthController extends Notifier<AuthState> {
   @override
   AuthState build() {
-    // Phase 3: subscribe to AuthRepository.authStateChanges() here and let
-    // the first event replace this. Resolving synchronously for now means
-    // the splash screen is passed through in one frame rather than hung
-    // on, which keeps the existing boot behaviour — straight to Welcome.
-    return const AuthState.signedOut();
+    final repository = ref.watch(authRepositoryProvider);
+
+    final subscription = repository.authStateChanges().listen(
+      (profile) => state = AuthState.forProfile(profile),
+      onError: (Object error, StackTrace stack) {
+        // The stream failing is not the same as being signed out, but
+        // there is nothing else the app can do with it, and leaving the
+        // session `unknown` would hold everyone on the splash screen
+        // forever.
+        AppLogger.e('Auth stream failed', error: error, stackTrace: stack);
+        state = const AuthState.signedOut();
+      },
+    );
+    ref.onDispose(subscription.cancel);
+
+    // Firebase answers immediately when it already knows, so this is the
+    // cold-start case only.
+    return const AuthState.unknown();
   }
-
-  /// Puts the session back to "not known yet". What a cold start looks
-  /// like before the stored session has been read.
-  void markUnknown() => state = const AuthState.unknown();
-
-  void signedIn(UserProfile profile) => state = AuthState.signedIn(profile);
-
-  void awaitingVerification(UserProfile profile) =>
-      state = AuthState.awaitingVerification(profile);
-
-  void signedOut() => state = const AuthState.signedOut();
 }

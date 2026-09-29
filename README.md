@@ -138,12 +138,14 @@ lib/
 splash while the session is unknown, the signed-out screens when there is
 no session, the verify-email screen when an account has not confirmed its
 address, and otherwise the home for that account's role. It reads
-`authStateProvider`, which is a **placeholder** until Phase 3: the login
-screen's demo credential (`admin` / `admin123`) sets it, and there is no
-Firebase behind it. Signing in does not navigate — it sets the session and
-lets the gate do the navigating, which is the path real auth will take.
-`test/mobile_router_test.dart` pins the behaviour down so swapping in
-Firebase cannot change it by accident.
+`authStateProvider`, which since Phase 3 follows
+`AuthRepository.authStateChanges()` against Firebase Auth.
+
+No screen navigates after signing in or out. It calls the repository, the
+auth stream updates `authStateProvider`, and the gate moves — which is why
+an unverified account cannot walk past the verify-email screen and a
+signed-out one cannot stay on a home screen.
+`test/mobile_router_test.dart` pins the behaviour down.
 
 ### Design: direction Signal
 
@@ -185,6 +187,35 @@ own face, already bundled and already what the layout tests measure
 against. `AppTypography.fontFamily` is the one line that changes if Inter
 is ever added, which would mean committing four font files and a `fonts:`
 block.
+
+**Firebase config is committed.** `lib/firebase_options.dart` and
+`android/app/google-services.json` are in the tree on purpose — neither is
+a credential (both ship inside every APK), and unlike the console's web
+config their absence does not degrade gracefully: the Gradle build fails.
+Regenerate with:
+
+```powershell
+flutterfire configure --project=novaride-7a68c --platforms=android,web `
+  --android-package-name=ph.edu.tip.novaride `
+  --web-app-id=1:885956155129:web:21670e7270e1ccc7dc3428
+```
+
+The `--web-app-id` matters: without it a second web app is registered.
+
+**`ensureProfile` is the piece to understand.**
+[firebase_auth_repository.dart](lib/features/auth/data/firebase_auth_repository.dart)
+runs one idempotent transaction after every sign-up *and* every sign-in.
+Absent documents are created — `users/{uid}`, the matching
+`riderProfiles/` or `guardianProfiles/`, and the `usernames/` claim, all
+keyed by the Auth uid. Present ones get `lastLoginAt`, `fcmToken` and
+`updatedAt` touched and nothing else; `role` and `createdAt` are never
+rewritten, and the security rules refuse those changes too. Every
+timestamp is `FieldValue.serverTimestamp()` — no client clock reaches
+Firestore, and the rules would refuse one anyway.
+
+If it throws, the account is signed out rather than left in the app with
+no profile. `unavailable` and `deadline-exceeded` get one retry, which is
+safe precisely because the transaction is idempotent.
 
 **Two rules worth knowing before adding code here.** No feature file spells
 a Firestore collection name as a string — they are all in

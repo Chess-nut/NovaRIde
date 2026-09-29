@@ -8,5 +8,25 @@
     "firestore": { "port": 8080 },
     "ui": { "enabled": true, "port": 4000 },
     "singleProjectMode": true
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "novaride-7a68c",
+          "appId": "1:885956155129:android:da42ddecde8b1876dc3428",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "novaride-7a68c",
+          "configurations": {
+            "android": "1:885956155129:android:da42ddecde8b1876dc3428",
+            "web": "1:885956155129:web:21670e7270e1ccc7dc3428"
+          }
+        }
+      }
+    }
   }
 }

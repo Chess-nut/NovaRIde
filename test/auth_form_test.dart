@@ -1,26 +1,71 @@
-// The auth forms' behaviour, as opposed to their looks.
+// The auth screens against a repository.
 //
-// Three of these pin down things that were wrong or missing before Phase
-// 2: an errorStyle that could collapse and hide the message, validation
-// that only ran on submit, and fields a password manager could not fill.
+// Phase 2 tested these forms against a hardcoded credential. Phase 3 put
+// a real AuthRepository behind them, so they are driven through
+// FakeAuthRepository instead — the same interface the Firebase one
+// implements, with none of the network.
+//
+// Three of these still pin down things that were wrong or missing before
+// Phase 2: an errorStyle that could collapse and hide the message,
+// validation that only ran on submit, and fields a password manager could
+// not fill.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:novaride/core/errors/failure.dart';
+import 'package:novaride/features/auth/domain/entities/user_profile.dart';
+import 'package:novaride/features/auth/domain/entities/user_role.dart';
 import 'package:novaride/features/auth/presentation/pages/login_page.dart';
+import 'package:novaride/features/auth/presentation/pages/verify_email_page.dart';
+import 'package:novaride/features/guardian/presentation/pages/family_dashboard_page.dart';
 import 'package:novaride/features/rider/presentation/pages/home_page.dart';
 
+import 'support/fake_auth_repository.dart';
 import 'support/mobile_app.dart';
 
 void main() {
   silenceAppLogger();
 
-  Future<void> openLogin(WidgetTester tester) async {
-    await pumpMobileApp(tester);
+  final rider = UserProfile(
+    uid: 'uid-rider',
+    email: 'rider@example.test',
+    username: 'riderone',
+    fullName: 'Rider One',
+    role: UserRole.rider,
+    emailVerified: true,
+  );
+  final guardian = rider.copyWith(
+    uid: 'uid-guardian',
+    email: 'guardian@example.test',
+    username: 'guardianone',
+    role: UserRole.guardian,
+  );
+
+  FakeAuthRepository repositoryWith({Failure? failWith}) => FakeAuthRepository(
+        accounts: {
+          'rider@example.test': ('rider123', rider),
+          'guardian@example.test': ('guard123', guardian),
+        },
+        usernames: const {
+          'riderone': 'rider@example.test',
+          'guardianone': 'guardian@example.test',
+        },
+        failWith: failWith,
+      );
+
+  Future<FakeAuthRepository> openLogin(
+    WidgetTester tester, {
+    Failure? failWith,
+  }) async {
+    final repository = repositoryWith(failWith: failWith);
+    addTearDown(repository.dispose);
+    await pumpMobileApp(tester, repository: repository);
     await tester.tap(find.text('Log in'));
     await tester.pumpAndSettle();
+    return repository;
   }
 
-  group('login form', () {
+  group('login form — validation', () {
     testWidgets('does not complain before anything is typed', (tester) async {
       await openLogin(tester);
       expect(find.byType(LoginPage), findsOneWidget);
@@ -62,9 +107,7 @@ void main() {
     testWidgets('offers the fields to a password manager', (tester) async {
       await openLogin(tester);
 
-      final fields = tester
-          .widgetList<TextField>(find.byType(TextField))
-          .toList();
+      final fields = tester.widgetList<TextField>(find.byType(TextField)).toList();
       expect(fields.length, 2);
       expect(fields[0].autofillHints, contains(AutofillHints.username));
       expect(fields[1].autofillHints, contains(AutofillHints.password));
@@ -90,34 +133,149 @@ void main() {
         isTrue,
       );
     });
+  });
 
-    // The message is the same for a wrong password and an unknown
-    // account, which is the rule the Firebase mapper keeps too.
-    testWidgets('reports a bad credential without naming which half',
-        (tester) async {
-      await openLogin(tester);
-
-      await tester.enterText(find.byType(TextFormField).first, 'nobody');
-      await tester.enterText(find.byType(TextFormField).last, 'wrongpass1');
+  group('login form — signing in', () {
+    Future<void> submit(WidgetTester tester, String id, String password) async {
+      await tester.enterText(find.byType(TextFormField).first, id);
+      await tester.enterText(find.byType(TextFormField).last, password);
       await tester.tap(find.text('Log in').last);
       await tester.pumpAndSettle();
+    }
+
+    // A username goes through usernames/{usernameLower}; an address does
+    // not. The one character that can only be in an address decides.
+    testWidgets('signs in by username and lands on the rider home',
+        (tester) async {
+      final repository = await openLogin(tester);
+      await submit(tester, 'riderone', 'rider123');
+
+      expect(repository.calls, contains('signInWithUsername:riderone'));
+      expect(find.byType(HomePage), findsOneWidget);
+      expect(find.byType(LoginPage), findsNothing);
+    });
+
+    testWidgets('signs in by email', (tester) async {
+      final repository = await openLogin(tester);
+      await submit(tester, 'rider@example.test', 'rider123');
+
+      expect(repository.calls, contains('signInWithEmail:rider@example.test'));
+      expect(find.byType(HomePage), findsOneWidget);
+    });
+
+    // The role comes from the account, not from the toggle on the form.
+    testWidgets('a guardian lands on the family dashboard', (tester) async {
+      await openLogin(tester);
+      await submit(tester, 'guardianone', 'guard123');
+
+      expect(find.byType(FamilyDashboardPage), findsOneWidget);
+    });
+
+    testWidgets('a wrong password stays put and says so', (tester) async {
+      await openLogin(tester);
+      await submit(tester, 'riderone', 'wrongpass1');
 
       expect(find.text('Incorrect username or password.'), findsOneWidget);
       expect(find.byType(LoginPage), findsOneWidget);
     });
 
-    // Signing in sets the session and lets the router's gate navigate.
-    // Phase 3 changes where the profile comes from and nothing else.
-    testWidgets('a good credential lands on the rider home', (tester) async {
+    // The whole point of resolving the username server-side: an unknown
+    // name and a wrong password are indistinguishable from the screen.
+    testWidgets('an unknown username gives the same sentence', (tester) async {
       await openLogin(tester);
+      await submit(tester, 'nobodyhere', 'rider123');
 
-      await tester.enterText(find.byType(TextFormField).first, 'admin');
-      await tester.enterText(find.byType(TextFormField).last, 'admin123');
-      await tester.tap(find.text('Log in').last);
+      expect(find.text('Incorrect username or password.'), findsOneWidget);
+    });
+
+    testWidgets('a network failure says so instead', (tester) async {
+      await openLogin(
+        tester,
+        failWith: const NetworkFailure(
+          'No connection to NovaRide. Check your internet and try again.',
+        ),
+      );
+      await submit(tester, 'riderone', 'rider123');
+
+      expect(
+        find.text('No connection to NovaRide. Check your internet and try again.'),
+        findsOneWidget,
+      );
+      expect(find.byType(LoginPage), findsOneWidget);
+    });
+
+    // An unverified account is held on verify-email by the router's gate,
+    // not by anything the login screen does.
+    testWidgets('an unverified account lands on verify email', (tester) async {
+      final unverified = rider.copyWith(emailVerified: false);
+      final repository = FakeAuthRepository(
+        accounts: {'rider@example.test': ('rider123', unverified)},
+        usernames: const {'riderone': 'rider@example.test'},
+      );
+      addTearDown(repository.dispose);
+
+      await pumpMobileApp(tester, repository: repository);
+      await tester.tap(find.text('Log in'));
+      await tester.pumpAndSettle();
+      await submit(tester, 'riderone', 'rider123');
+
+      expect(find.byType(VerifyEmailPage), findsOneWidget);
+      expect(find.byType(HomePage), findsNothing);
+    });
+  });
+
+  group('verify email', () {
+    Future<FakeAuthRepository> openVerify(WidgetTester tester) async {
+      final unverified = rider.copyWith(emailVerified: false);
+      final repository = FakeAuthRepository(
+        accounts: {'rider@example.test': ('rider123', unverified)},
+        usernames: const {'riderone': 'rider@example.test'},
+      );
+      addTearDown(repository.dispose);
+      await pumpMobileApp(tester, repository: repository);
+      repository.emit(unverified);
+      await tester.pumpAndSettle();
+      return repository;
+    }
+
+    testWidgets('names the address the link went to', (tester) async {
+      await openVerify(tester);
+      expect(find.byType(VerifyEmailPage), findsOneWidget);
+      expect(find.textContaining('rider@example.test'), findsOneWidget);
+    });
+
+    testWidgets('re-sends the link', (tester) async {
+      final repository = await openVerify(tester);
+
+      await tester.tap(find.text('Send the link again'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(HomePage), findsOneWidget);
-      expect(find.byType(LoginPage), findsNothing);
+      expect(repository.calls, contains('sendEmailVerification'));
+      expect(find.textContaining('Check your inbox'), findsOneWidget);
+    });
+
+    testWidgets('says so when the address is still unconfirmed',
+        (tester) async {
+      final repository = await openVerify(tester);
+
+      await tester.tap(find.text('I have confirmed it'));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, contains('reloadUser'));
+      expect(find.textContaining('Not confirmed yet'), findsOneWidget);
+      expect(find.byType(VerifyEmailPage), findsOneWidget);
+    });
+
+    // Otherwise the screen is a trap for anyone who mistyped their
+    // address at sign-up.
+    testWidgets('signing out is possible from here', (tester) async {
+      final repository = await openVerify(tester);
+
+      await tester.tap(find.text('Sign out'));
+      await tester.pumpAndSettle();
+
+      expect(repository.calls, contains('signOut'));
+      expect(find.byType(VerifyEmailPage), findsNothing);
     });
   });
 }

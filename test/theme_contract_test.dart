@@ -11,10 +11,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:novaride/app/app.dart';
+import 'package:novaride/app/di.dart';
 import 'package:novaride/core/theme/app_colors.dart';
 import 'package:novaride/core/theme/app_theme.dart';
 import 'package:novaride/core/theme/theme_mode_provider.dart';
 
+import 'support/fake_auth_repository.dart';
 import 'support/mobile_app.dart';
 
 void main() {
@@ -113,7 +115,11 @@ void main() {
     // The point is that changing the mode is already possible without
     // touching app.dart.
     testWidgets('changing the mode does not break the app', (tester) async {
-      final container = ProviderContainer();
+      final container = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(FakeAuthRepository()),
+        ],
+      );
       addTearDown(container.dispose);
 
       await tester.pumpWidget(

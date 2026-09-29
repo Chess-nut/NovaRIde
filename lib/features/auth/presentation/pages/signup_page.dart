@@ -1,6 +1,10 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../../../app/di.dart';
+import '../../../../core/errors/failure.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -22,16 +26,16 @@ import 'legal_document_page.dart';
 /// The consent copy is the part to leave alone without asking. It names
 /// GPS sharing with emergency contacts and the operator during an SOS,
 /// which is the disclosure the study's ethics approval rests on.
-class SignupPage extends StatefulWidget {
+class SignupPage extends ConsumerStatefulWidget {
   const SignupPage({super.key, this.role = UserRole.rider});
 
   final UserRole role;
 
   @override
-  State<SignupPage> createState() => _SignupPageState();
+  ConsumerState<SignupPage> createState() => _SignupPageState();
 }
 
-class _SignupPageState extends State<SignupPage> {
+class _SignupPageState extends ConsumerState<SignupPage> {
   final _formKey = GlobalKey<FormState>();
   final _fullName = TextEditingController();
   final _username = TextEditingController();
@@ -43,6 +47,13 @@ class _SignupPageState extends State<SignupPage> {
   bool _busy = false;
   bool _agreedToTerms = false;
   bool _showConsentError = false;
+
+  /// A failure that belongs to the form rather than to one field.
+  String? _formError;
+
+  /// A username the server refused. Shown on the field until the text
+  /// changes, because "taken" is only true of the value that was tried.
+  String? _usernameError;
 
   @override
   void dispose() {
@@ -65,15 +76,39 @@ class _SignupPageState extends State<SignupPage> {
     setState(() => _showConsentError = !_agreedToTerms);
     if (!formValid || !_agreedToTerms) return;
 
-    setState(() => _busy = true);
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-    setState(() => _busy = false);
+    setState(() {
+      _busy = true;
+      _formError = null;
+    });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Account created. Log in to continue.')),
-    );
-    if (context.canPop()) context.pop();
+    try {
+      await ref.read(authRepositoryProvider).signUp(
+            email: _email.text.trim(),
+            password: _password.text,
+            username: _username.text.trim(),
+            fullName: _fullName.text.trim(),
+            role: widget.role,
+            phoneNumber: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+          );
+      // No navigation and no snackbar. signUp leaves the account signed
+      // in and unverified, its auth stream updates authStateProvider, and
+      // the router's gate lands on the verify-email screen — which is
+      // where someone who just signed up should be.
+    } on Failure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        // A taken username comes back as a ValidationFailure naming the
+        // field. Put it on the field rather than in the banner, so the
+        // thing to fix is where the eye already is.
+        if (failure is ValidationFailure && failure.field == 'username') {
+          _usernameError = failure.message;
+          _formKey.currentState?.validate();
+        } else {
+          _formError = failure.message;
+        }
+      });
+    }
   }
 
   @override
@@ -119,7 +154,12 @@ class _SignupPageState extends State<SignupPage> {
                 helper: 'How you will log in. 3 to 20 characters.',
                 maxLength: 20,
                 autofillHints: const [AutofillHints.newUsername],
-                validator: Validators.username,
+                validator: (value) => _usernameError ?? Validators.username(value),
+                onChanged: (_) {
+                  if (_usernameError != null) {
+                    setState(() => _usernameError = null);
+                  }
+                },
               ),
               const SizedBox(height: AppSpacing.xl),
               NovaTextField(
@@ -180,10 +220,11 @@ class _SignupPageState extends State<SignupPage> {
               ),
               const SizedBox(height: AppSpacing.xxl),
               NovaInlineError(
-                message: _showConsentError
-                    ? 'You need to accept the terms before we can create '
-                        'the account.'
-                    : null,
+                message: _formError ??
+                    (_showConsentError
+                        ? 'You need to accept the terms before we can '
+                            'create the account.'
+                        : null),
               ),
               NovaPrimaryButton(
                 label: 'Create account',

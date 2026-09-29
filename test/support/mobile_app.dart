@@ -10,10 +10,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:novaride/app/app.dart';
+import 'package:novaride/app/di.dart';
+import 'package:novaride/features/auth/domain/repositories/auth_repository.dart';
 import 'package:novaride/core/utils/app_logger.dart';
 import 'package:novaride/features/auth/domain/entities/user_profile.dart';
 import 'package:novaride/features/auth/domain/entities/user_role.dart';
 import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
+
+import 'fake_auth_repository.dart';
 
 /// An AuthController pinned to one state, for overriding the real one.
 class FixedAuthController extends AuthController {
@@ -26,7 +30,10 @@ class FixedAuthController extends AuthController {
 }
 
 /// Pumps the app with [auth] as the session. Omit it for the default the
-/// app ships with (signed out).
+/// app ships with, which since Phase 3 means whatever
+/// [authRepositoryProvider] resolves to — so pass [repository] too, or
+/// the real Firebase one is constructed and the test reaches for a
+/// network.
 ///
 /// [settle] is false for any state that lands on the splash: its progress
 /// indicator animates forever, so `pumpAndSettle` would time out rather
@@ -35,11 +42,19 @@ class FixedAuthController extends AuthController {
 Future<void> pumpMobileApp(
   WidgetTester tester, {
   AuthState? auth,
+  AuthRepository? repository,
   bool settle = true,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        // Always overridden, never optional: without this the real
+        // FirebaseAuthRepository is constructed, reaches for
+        // FirebaseAuth.instance and fails on "no Firebase app". A test
+        // that wants behaviour passes its own fake; one that does not
+        // still gets a harmless empty one.
+        authRepositoryProvider
+            .overrideWithValue(repository ?? FakeAuthRepository()),
         if (auth != null)
           authStateProvider.overrideWith(() => FixedAuthController(auth)),
       ],

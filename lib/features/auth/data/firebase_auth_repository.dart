@@ -1,0 +1,533 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
+
+import '../../../core/constants/firestore_collections.dart';
+import '../../../core/errors/failure.dart';
+import '../../../core/errors/firebase_failure_mapper.dart';
+import '../../../core/utils/app_logger.dart';
+import '../domain/entities/user_profile.dart';
+import '../domain/entities/user_role.dart';
+import '../domain/repositories/auth_repository.dart';
+
+/// [AuthRepository] against Firebase Auth and Cloud Firestore.
+///
+/// The interface's contract is that every failure leaves here as a
+/// [Failure] with a sentence on it — never a `FirebaseException`, never a
+/// bare `Exception`. That boundary is kept in exactly one place: the
+/// private `_guard` below wraps every public method, so a caller can rely
+/// on `catch (e)` giving it something it can put on screen.
+///
+/// The interesting part is [ensureProfile]. Everything else is a thin
+/// wrapper over the SDK.
+class FirebaseAuthRepository implements AuthRepository {
+  FirebaseAuthRepository({fb.FirebaseAuth? auth, FirebaseFirestore? firestore})
+      : _auth = auth ?? fb.FirebaseAuth.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final fb.FirebaseAuth _auth;
+  final FirebaseFirestore _firestore;
+
+  /// The last profile resolved, so [currentUser] can answer without a read.
+  UserProfile? _cached;
+  String? _cachedUid;
+
+  // ------------------------------------------------------------- session
+
+  @override
+  UserProfile? get currentUser =>
+      _auth.currentUser?.uid == _cachedUid ? _cached : null;
+
+  /// Firebase's own stream, mapped to profiles.
+  ///
+  /// `userChanges()` rather than `authStateChanges()`: the latter does not
+  /// fire when `reload()` flips `emailVerified`, and the router holds an
+  /// unverified account on the verify-email screen. Without this the
+  /// screen's "I have confirmed it" button would refresh the token and
+  /// nothing would move.
+  @override
+  Stream<UserProfile?> authStateChanges() =>
+      _auth.userChanges().asyncMap(_profileFor);
+
+  Future<UserProfile?> _profileFor(fb.User? user) async {
+    if (user == null) {
+      _cached = null;
+      _cachedUid = null;
+      return null;
+    }
+    // A session restored at launch, or one this process did not create.
+    // Resolve it the same way a sign-in does, so the app never runs on a
+    // uid whose documents it has not seen.
+    try {
+      final profile = await ensureProfile(user);
+      _cached = profile;
+      _cachedUid = user.uid;
+      return profile;
+    } catch (error, stack) {
+      // Signed in with no usable profile is a state nothing downstream can
+      // handle: the router would have a uid and no role. End the session
+      // rather than let the app run in it.
+      AppLogger.e('Session for ${user.uid} has no usable profile; signing out.',
+          error: error, stackTrace: stack);
+      await signOut();
+      return null;
+    }
+  }
+
+  // ------------------------------------------------------------- sign-in
+
+  @override
+  Future<UserProfile> signInWithEmail({
+    required String email,
+    required String password,
+  }) {
+    return _guard(() async {
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      return _finishSignIn(credential.user);
+    });
+  }
+
+  /// Sign in with a username.
+  ///
+  /// Two things can go wrong here and they must be indistinguishable: the
+  /// username belongs to nobody, or it belongs to someone and the
+  /// password is wrong. If those produced different sentences, the screen
+  /// would be a way to find out which usernames are registered — which is
+  /// the same reason a wrong password and an unknown email share a
+  /// sentence in the failure mapper.
+  ///
+  /// Getting this right takes more than throwing one string in the
+  /// not-found branch: the other branch goes through Firebase, whose
+  /// `invalid-credential` maps to "Incorrect email or password" — a
+  /// *different* sentence, and one that says "email" to somebody who
+  /// typed a username. So every credential-shaped refusal is folded into
+  /// the one message below.
+  ///
+  /// `user-disabled` is deliberately left alone. It does reveal that an
+  /// account exists, and it is worth it: "this account has been turned
+  /// off" is something the person can act on, and an attacker learns only
+  /// about accounts already switched off.
+  @override
+  Future<UserProfile> signInWithUsername({
+    required String username,
+    required String password,
+  }) {
+    return _guard(() async {
+      const generic = AuthFailure('Incorrect username or password.');
+
+      final email = await _emailForUsername(username);
+      if (email == null) throw generic;
+
+      final fb.UserCredential credential;
+      try {
+        credential = await _auth.signInWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      } on fb.FirebaseAuthException catch (error) {
+        if (_credentialCodes.contains(error.code)) throw generic;
+        rethrow;
+      }
+      return _finishSignIn(credential.user);
+    });
+  }
+
+  /// Every code that means "those details did not work", across the
+  /// spellings Firebase has used. They all collapse to one sentence.
+  static const _credentialCodes = {
+    'wrong-password',
+    'user-not-found',
+    'invalid-credential',
+    'invalid-login-credentials',
+    'INVALID_LOGIN_CREDENTIALS',
+    'invalid-email',
+    'missing-password',
+  };
+
+  /// Resolves a username to the address Firebase Auth will accept.
+  ///
+  /// `usernames/{usernameLower}` is the one document an unauthenticated
+  /// client may read — see the note above that rule in firestore.rules.
+  Future<String?> _emailForUsername(String username) async {
+    final key = username.trim().toLowerCase();
+    if (key.isEmpty) return null;
+    final snapshot =
+        await _firestore.collection(FirestoreCollections.usernames).doc(key).get();
+    if (!snapshot.exists) return null;
+    final email = snapshot.data()?['email'];
+    return email is String && email.isNotEmpty ? email : null;
+  }
+
+  @override
+  Future<bool> isUsernameAvailable(String username) {
+    return _guard(() async {
+      final key = username.trim().toLowerCase();
+      if (key.isEmpty) return false;
+      final snapshot = await _firestore
+          .collection(FirestoreCollections.usernames)
+          .doc(key)
+          .get();
+      return !snapshot.exists;
+    });
+  }
+
+  // ------------------------------------------------------------- sign-up
+
+  @override
+  Future<UserProfile> signUp({
+    required String email,
+    required String password,
+    required String username,
+    required String fullName,
+    required UserRole role,
+    String? phoneNumber,
+  }) {
+    return _guard(() async {
+      final key = username.trim().toLowerCase();
+
+      // A pre-check, so the common case fails before an Auth account is
+      // created and has to be cleaned up. It is not the guarantee — the
+      // transaction below re-reads inside its own read set, which is what
+      // actually makes the claim atomic. Anything checked before a write
+      // can be taken between the two.
+      if (!await isUsernameAvailable(key)) {
+        throw const ValidationFailure(
+          'That username is taken. Try another.',
+          field: 'username',
+        );
+      }
+
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      final user = credential.user;
+      if (user == null) {
+        throw const AuthFailure(
+          'The account was not created. Try again.',
+        );
+      }
+
+      try {
+        final profile = await ensureProfile(
+          user,
+          username: username.trim(),
+          fullName: fullName.trim(),
+          role: role,
+          phoneNumber: phoneNumber?.trim(),
+        );
+        await user.sendEmailVerification();
+        _cached = profile;
+        _cachedUid = user.uid;
+        return profile;
+      } catch (error, stack) {
+        // The Auth account exists but its documents do not. Leaving the
+        // session open would put someone into the app with no role, so
+        // sign out and let them try again — the second attempt signs in
+        // to the existing account and ensureProfile completes it.
+        AppLogger.e('Sign-up for ${user.uid} failed after the account was '
+            'created; signing out.', error: error, stackTrace: stack);
+        await signOut();
+        rethrow;
+      }
+    });
+  }
+
+  // ------------------------------------------------------- verification
+
+  @override
+  Future<void> sendEmailVerification() {
+    return _guard(() async {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw const AuthFailure('You are not signed in.');
+      }
+      await user.sendEmailVerification();
+    });
+  }
+
+  @override
+  Future<UserProfile> reloadUser() {
+    return _guard(() async {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw const AuthFailure('You are not signed in.');
+      }
+      await user.reload();
+      final refreshed = _auth.currentUser;
+      if (refreshed == null) {
+        throw const AuthFailure('You are not signed in.');
+      }
+      final profile = await ensureProfile(refreshed);
+      _cached = profile;
+      _cachedUid = refreshed.uid;
+      return profile;
+    });
+  }
+
+  @override
+  Future<void> sendPasswordResetEmail(String email) {
+    return _guard(() async {
+      try {
+        await _auth.sendPasswordResetEmail(email: email.trim());
+      } on fb.FirebaseAuthException catch (error) {
+        // An address with no account must look exactly like one that has
+        // it: completing either way is what stops this being a way to
+        // find out who is registered. Everything else still fails.
+        if (error.code == 'user-not-found') return;
+        rethrow;
+      }
+    });
+  }
+
+  @override
+  Future<void> signOut() async {
+    _cached = null;
+    _cachedUid = null;
+    await _auth.signOut();
+  }
+
+  Future<UserProfile> _finishSignIn(fb.User? user) async {
+    if (user == null) {
+      // The SDK contract says this cannot happen for a successful
+      // email/password sign-in; treat it as a failed one rather than
+      // reason about a session with no user.
+      throw const AuthFailure('Sign-in did not complete. Try again.');
+    }
+    try {
+      final profile = await ensureProfile(user);
+      _cached = profile;
+      _cachedUid = user.uid;
+      return profile;
+    } catch (error, stack) {
+      AppLogger.e('ensureProfile failed for ${user.uid}; signing out.',
+          error: error, stackTrace: stack);
+      await signOut();
+      rethrow;
+    }
+  }
+
+  // -------------------------------------------------------- the profile
+
+  /// Brings an account's documents up to date, in one transaction, and
+  /// returns what they say.
+  ///
+  /// Called after **every** sign-up and **every** sign-in, and again
+  /// whenever the auth stream produces a user. It has to be idempotent,
+  /// because most of the time it runs there is nothing to do.
+  ///
+  /// When the documents are absent it creates them:
+  /// `users/{uid}`, the matching `riderProfiles/{uid}` or
+  /// `guardianProfiles/{uid}`, and — on sign-up only — the
+  /// `usernames/{usernameLower}` claim, all keyed by the Auth uid.
+  ///
+  /// When they are present it touches `lastLoginAt`, `fcmToken` and
+  /// `updatedAt` and nothing else. It never rewrites `role` or
+  /// `createdAt`: the role decides which home screen the account gets and
+  /// createdAt is evidence for the study. The security rules refuse those
+  /// two changes as well, so this is belt and braces on purpose — a bug
+  /// here is caught by the server rather than silently rewriting history.
+  ///
+  /// Every timestamp is [FieldValue.serverTimestamp]. No client clock
+  /// reaches Firestore; the rules require `request.time` and would refuse
+  /// a `DateTime.now()` anyway.
+  ///
+  /// [username], [fullName] and [role] are supplied on sign-up, where
+  /// there is nothing to read them from yet. On sign-in they are absent
+  /// and the existing document is the source of truth.
+  Future<UserProfile> ensureProfile(
+    fb.User user, {
+    String? username,
+    String? fullName,
+    UserRole? role,
+    String? phoneNumber,
+    String? fcmToken,
+  }) {
+    return _withRetry(() => _firestore.runTransaction((transaction) async {
+          final userRef = _firestore
+              .collection(FirestoreCollections.users)
+              .doc(user.uid);
+          final existing = await transaction.get(userRef);
+
+          if (existing.exists) {
+            return _touchExisting(transaction, userRef, existing, user,
+                fcmToken: fcmToken);
+          }
+          return _createAll(transaction, userRef, user,
+              username: username,
+              fullName: fullName,
+              role: role,
+              phoneNumber: phoneNumber,
+              fcmToken: fcmToken);
+        }));
+  }
+
+  /// The already-provisioned path, which is almost every call.
+  Future<UserProfile> _touchExisting(
+    Transaction transaction,
+    DocumentReference<Map<String, dynamic>> userRef,
+    DocumentSnapshot<Map<String, dynamic>> existing,
+    fb.User user, {
+    String? fcmToken,
+  }) async {
+    // Three fields, and the rules allow no others on an update from here.
+    // `role` and `createdAt` are not in this map and must never be.
+    final touch = <String, dynamic>{
+      'lastLoginAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
+    };
+    transaction.update(userRef, touch);
+
+    // Read from what was already there, not from what was just written:
+    // the server timestamps are unresolved until the transaction commits,
+    // and none of the three is a field the app displays anyway.
+    return _profileFromDocument(existing.data()!, user);
+  }
+
+  /// First sign-in for this uid — either a fresh sign-up, or an Auth
+  /// account whose documents never landed because an earlier attempt
+  /// failed between the two.
+  Future<UserProfile> _createAll(
+    Transaction transaction,
+    DocumentReference<Map<String, dynamic>> userRef,
+    fb.User user, {
+    String? username,
+    String? fullName,
+    UserRole? role,
+    String? phoneNumber,
+    String? fcmToken,
+  }) async {
+    final resolvedRole = role;
+    final resolvedUsername = (username ?? '').trim();
+    if (resolvedRole == null || resolvedUsername.isEmpty) {
+      // Signed in against an Auth account with no users/ document and no
+      // sign-up details to rebuild one from. Guessing a role would hand
+      // someone the wrong home screen, so this fails and the caller signs
+      // the session out.
+      throw const NotFoundFailure(
+        'This account is not set up yet. Sign up again, or ask for help if '
+        'it keeps happening.',
+      );
+    }
+
+    final email = user.email ?? '';
+    final usernameKey = resolvedUsername.toLowerCase();
+    final profileCollection = resolvedRole == UserRole.rider
+        ? FirestoreCollections.riderProfiles
+        : FirestoreCollections.guardianProfiles;
+
+    // The claim is read inside the transaction, so it is part of the read
+    // set: if anyone takes the username between the pre-check and the
+    // commit, this transaction is retried or aborted rather than
+    // overwriting them. The rules also refuse a write over an existing
+    // claim, which is the second line of defence.
+    final usernameRef = _firestore
+        .collection(FirestoreCollections.usernames)
+        .doc(usernameKey);
+    final claim = await transaction.get(usernameRef);
+    if (claim.exists && claim.data()?['uid'] != user.uid) {
+      throw const ValidationFailure(
+        'That username is taken. Try another.',
+        field: 'username',
+      );
+    }
+
+    // Nothing below writes a password, a hash or a token of any kind.
+    // The rules refuse those field names outright on all four paths.
+    transaction.set(userRef, {
+      'email': email,
+      'username': resolvedUsername,
+      'fullName': (fullName ?? '').trim(),
+      'role': resolvedRole.wireName,
+      if (phoneNumber != null && phoneNumber.isNotEmpty)
+        'phoneNumber': phoneNumber,
+      if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'lastLoginAt': FieldValue.serverTimestamp(),
+    });
+
+    transaction.set(
+      _firestore.collection(profileCollection).doc(user.uid),
+      {
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+    );
+
+    if (!claim.exists) {
+      transaction.set(usernameRef, {
+        'uid': user.uid,
+        'email': email,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    return UserProfile(
+      uid: user.uid,
+      email: email,
+      username: resolvedUsername,
+      fullName: (fullName ?? '').trim(),
+      role: resolvedRole,
+      emailVerified: user.emailVerified,
+      phoneNumber: phoneNumber,
+    );
+  }
+
+  /// The document plus the two things only Firebase Auth knows.
+  UserProfile _profileFromDocument(Map<String, dynamic> data, fb.User user) {
+    final profile = UserProfile.fromMap(user.uid, data);
+    return profile.copyWith(
+      // Auth owns these; the document's copies, if any, are stale.
+      emailVerified: user.emailVerified,
+      email: user.email ?? profile.email,
+    );
+  }
+
+  // ------------------------------------------------------------ plumbing
+
+  /// The interface's error contract, kept in one place.
+  ///
+  /// Everything public goes through here, so no caller ever receives a
+  /// `FirebaseException`. A [Failure] passes through untouched — an inner
+  /// layer that already mapped its own error keeps its sentence.
+  Future<T> _guard<T>(Future<T> Function() body) async {
+    try {
+      return await body();
+    } on Failure {
+      rethrow;
+    } catch (error, stack) {
+      AppLogger.w('Auth call failed', error: error, stackTrace: stack);
+      throw failureFrom(error, stack);
+    }
+  }
+
+  /// One retry, for the two codes that mean "the server was busy".
+  ///
+  /// `unavailable` and `deadline-exceeded` are transient by definition:
+  /// the request never reached a decision, so repeating it is safe.
+  /// Nothing else is retried — repeating a `permission-denied` or an
+  /// `already-exists` just fails twice and doubles the wait.
+  ///
+  /// Safe to retry an `ensureProfile` transaction specifically because it
+  /// is idempotent: the second attempt re-reads and finds either nothing
+  /// (and creates) or the documents the first attempt wrote (and only
+  /// touches them).
+  Future<T> _withRetry<T>(Future<T> Function() body) async {
+    try {
+      return await body();
+    } on FirebaseException catch (error) {
+      if (error.code != 'unavailable' && error.code != 'deadline-exceeded') {
+        rethrow;
+      }
+      AppLogger.w('Firestore said ${error.code}; retrying once.');
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      return body();
+    }
+  }
+}

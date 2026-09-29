@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:novaride/app/di.dart';
 import 'package:novaride/core/theme/app_colors.dart';
 import 'package:novaride/core/theme/app_theme.dart';
 import 'package:novaride/features/auth/domain/entities/user_role.dart';
@@ -24,6 +25,7 @@ import 'package:novaride/features/onboarding/presentation/pages/role_selection_p
 import 'package:novaride/features/onboarding/presentation/pages/splash_page.dart';
 import 'package:novaride/features/onboarding/presentation/pages/welcome_page.dart';
 
+import 'support/fake_auth_repository.dart';
 import 'support/mobile_app.dart';
 import 'support/roboto.dart';
 
@@ -54,6 +56,11 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
+        // The screens reach authStateProvider, which builds the real
+        // repository unless it is overridden here.
+        overrides: [
+          authRepositoryProvider.overrideWithValue(FakeAuthRepository()),
+        ],
         child: MaterialApp.router(
           theme: AppTheme.from(AppColors.dark),
           routerConfig: GoRouter(

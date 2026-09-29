@@ -1,6 +1,6 @@
 # Security-rules tests
 
-108 tests over `firestore.rules`, run against the Firestore emulator.
+112 tests over `firestore.rules`, run against the Firestore emulator.
 
 ```bash
 cd rules_test

@@ -14,21 +14,23 @@ import '../../../../core/widgets/nova_inline_error.dart';
 import '../../../../core/widgets/nova_page.dart';
 import '../../../../core/widgets/nova_role_toggle.dart';
 import '../../../../core/widgets/nova_text_field.dart';
-import '../../domain/entities/user_profile.dart';
 import '../../domain/entities/user_role.dart';
-import '../providers/auth_state.dart';
+import '../../../../app/di.dart';
+import '../../../../core/errors/failure.dart';
 
 /// Sign in.
 ///
-/// **Still the hardcoded demo credential** — `admin` / `admin123`. Phase 3
-/// replaces `_attemptSignIn` with a call to `AuthRepository`; everything
-/// else on this screen is finished.
+/// Signs in with Firebase Auth through [AuthRepository], by email or by
+/// username — `usernames/{usernameLower}` resolves the second to the
+/// first. A username nobody holds and a wrong password produce the same
+/// sentence on purpose; telling them apart would say which accounts
+/// exist.
 ///
-/// One thing did change in how it signs in. It no longer pushes the home
-/// screen itself: it sets the session on [authStateProvider], and the
-/// router's gate does the navigating. That is the path real auth will
-/// take, so Phase 3 swaps where the profile comes from and nothing about
-/// the navigation moves.
+/// It does not navigate. It signs in, the repository's auth stream
+/// updates [authStateProvider], and the router's gate decides where that
+/// goes — the role's home, or the verify-email screen when the address
+/// has not been confirmed. That indirection is what lets the gate be the
+/// only place in the app that knows the rules for who sees what.
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key, this.role = UserRole.rider});
 
@@ -42,9 +44,6 @@ class LoginPage extends ConsumerStatefulWidget {
 }
 
 class _LoginPageState extends ConsumerState<LoginPage> {
-  static const _demoUsername = 'admin';
-  static const _demoPassword = 'admin123';
-
   final _formKey = GlobalKey<FormState>();
   final _identifier = TextEditingController();
   final _password = TextEditingController();
@@ -69,43 +68,30 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _formError = null;
     });
 
-    final profile = await _attemptSignIn(
-      identifier: _identifier.text.trim(),
-      password: _password.text,
-    );
-    if (!mounted) return;
+    final identifier = _identifier.text.trim();
+    try {
+      final repository = ref.read(authRepositoryProvider);
+      // An address or a username, decided by the one character that can
+      // only be in one of them. Both land on the same failure sentence,
+      // so a wrong guess here costs nothing.
+      final profile = identifier.contains('@')
+          ? await repository.signInWithEmail(
+              email: identifier, password: _password.text)
+          : await repository.signInWithUsername(
+              username: identifier, password: _password.text);
 
-    if (profile == null) {
+      AppLogger.i('Signed in as ${profile.username} '
+          '(${profile.role.wireName}).');
+      // No navigation here. The repository's auth stream updates
+      // authStateProvider and the router's gate moves to the role's home
+      // — or to verify-email if the address is not confirmed yet.
+    } on Failure catch (failure) {
+      if (!mounted) return;
       setState(() {
         _busy = false;
-        // One sentence for a wrong password and an unknown account, the
-        // same rule core/errors/firebase_failure_mapper.dart keeps: a
-        // message that tells them apart says which accounts exist.
-        _formError = 'Incorrect username or password.';
+        _formError = failure.message;
       });
-      return;
     }
-
-    AppLogger.i('Signed in as ${profile.username} (${profile.role.wireName}).');
-    // No navigation here on purpose — see the class comment.
-    ref.read(authStateProvider.notifier).signedIn(profile);
-  }
-
-  /// Phase 3 replaces the body of this method and nothing above it.
-  Future<UserProfile?> _attemptSignIn({
-    required String identifier,
-    required String password,
-  }) async {
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (identifier != _demoUsername || password != _demoPassword) return null;
-    return UserProfile(
-      uid: 'demo-${_role.wireName}',
-      email: 'demo@novaride.test',
-      username: identifier,
-      fullName: 'Demo Account',
-      role: _role,
-      emailVerified: true,
-    );
   }
 
   @override

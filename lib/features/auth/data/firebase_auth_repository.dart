@@ -34,6 +34,24 @@ class FirebaseAuthRepository implements AuthRepository {
   UserProfile? _cached;
   String? _cachedUid;
 
+  /// Non-null while [signUp] owns the session.
+  ///
+  /// `userChanges()` fires the instant `createUserWithEmailAndPassword`
+  /// returns — before signUp has written a single document. Without this
+  /// gate the stream's own [ensureProfile] runs first, finds no
+  /// `users/{uid}` and no role to build one from, throws, and signs the
+  /// account out from under the sign-up that is still running.
+  ///
+  /// That is not theoretical. It produced exactly three symptoms, all of
+  /// which were seen: a permission-denied on signUp's write, because by
+  /// the time it ran the session was gone and `isOwner()` had no uid to
+  /// match; `[firebase_auth/no-current-user]` when signUp then tried to
+  /// delete the account it had just created; and an orphaned Auth account
+  /// left behind every time.
+  ///
+  /// The stream waits on this rather than racing it.
+  Completer<void>? _signUpGate;
+
   // ------------------------------------------------------------- session
 
   @override
@@ -57,6 +75,24 @@ class FirebaseAuthRepository implements AuthRepository {
       _cachedUid = null;
       return null;
     }
+    // A sign-up in flight owns this uid's documents. Wait for it to
+    // finish writing them instead of racing it — see [_signUpGate].
+    final gate = _signUpGate;
+    if (gate != null && !gate.isCompleted) {
+      await gate.future;
+    }
+
+    // Already resolved this uid, so there is nothing to read: signUp and
+    // signIn both call ensureProfile themselves, and this event is the
+    // echo of one of them. Only `emailVerified` can have moved, and it
+    // comes from Auth rather than from Firestore — which is what makes
+    // the verify-email screen work without a round trip.
+    if (_cachedUid == user.uid && _cached != null) {
+      final refreshed = _cached!.copyWith(emailVerified: user.emailVerified);
+      _cached = refreshed;
+      return refreshed;
+    }
+
     // A session restored at launch, or one this process did not create.
     // Resolve it the same way a sign-in does, so the app never runs on a
     // uid whose documents it has not seen.
@@ -188,6 +224,36 @@ class FirebaseAuthRepository implements AuthRepository {
     String? phoneNumber,
   }) {
     return _guard(() async {
+      // Held for the whole of sign-up, and released in the finally
+      // below whatever happens. The auth stream waits on it rather than
+      // provisioning the half-made account itself.
+      final gate = Completer<void>();
+      _signUpGate = gate;
+      try {
+        return await _signUp(
+          email: email,
+          password: password,
+          username: username,
+          fullName: fullName,
+          role: role,
+          phoneNumber: phoneNumber,
+        );
+      } finally {
+        _signUpGate = null;
+        if (!gate.isCompleted) gate.complete();
+      }
+    });
+  }
+
+  Future<UserProfile> _signUp({
+    required String email,
+    required String password,
+    required String username,
+    required String fullName,
+    required UserRole role,
+    String? phoneNumber,
+  }) async {
+    {
       final key = username.trim().toLowerCase();
 
       // A pre-check, so the common case fails before an Auth account is
@@ -258,7 +324,7 @@ class FirebaseAuthRepository implements AuthRepository {
         }
         rethrow;
       }
-    });
+    }
   }
 
   // ------------------------------------------------------- verification
@@ -466,33 +532,35 @@ class FirebaseAuthRepository implements AuthRepository {
     // contract test runs against the real ruleset. Nothing here writes a
     // password, a hash or a token of any kind; the rules refuse those
     // field names outright on all four paths.
-    transaction.set(
-      userRef,
-      buildUserDocument(
-        email: email,
-        username: resolvedUsername,
-        fullName: (fullName ?? '').trim(),
-        role: resolvedRole,
-        phoneNumber: phoneNumber,
-        fcmToken: fcmToken,
-        serverTimestamp: FieldValue.serverTimestamp(),
-      ),
+    final userDoc = buildUserDocument(
+      email: email,
+      username: resolvedUsername,
+      fullName: (fullName ?? '').trim(),
+      role: resolvedRole,
+      phoneNumber: phoneNumber,
+      fcmToken: fcmToken,
+      serverTimestamp: FieldValue.serverTimestamp(),
+    );
+    final profileDoc =
+        buildProfileDocument(serverTimestamp: FieldValue.serverTimestamp());
+    final claimDoc = buildUsernameClaim(
+      uid: user.uid,
+      email: email,
+      serverTimestamp: FieldValue.serverTimestamp(),
     );
 
+    // Dumped before the writes, so the trace survives a refusal — a
+    // rejected transaction is exactly when it is wanted.
+    await _traceCreate(user, email, profileCollection, usernameKey, userDoc,
+        profileDoc, claimDoc);
+
+    transaction.set(userRef, userDoc);
     transaction.set(
       _firestore.collection(profileCollection).doc(user.uid),
-      buildProfileDocument(serverTimestamp: FieldValue.serverTimestamp()),
+      profileDoc,
     );
-
     if (!claim.exists) {
-      transaction.set(
-        usernameRef,
-        buildUsernameClaim(
-          uid: user.uid,
-          email: email,
-          serverTimestamp: FieldValue.serverTimestamp(),
-        ),
-      );
+      transaction.set(usernameRef, claimDoc);
     }
 
     return UserProfile(
@@ -598,6 +666,110 @@ class FirebaseAuthRepository implements AuthRepository {
       'updatedAt': serverTimestamp,
       if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
     };
+  }
+
+
+  // ------------------------------------------------------------- tracing
+
+  /// Whether to dump every payload before writing it.
+  ///
+  /// On in debug builds, off in release — the dump contains a uid and an
+  /// email address and has no business in a shipped log. Force it either
+  /// way with `--dart-define=NOVARIDE_AUTH_TRACE=true|false`.
+  static const bool traceWrites =
+      bool.fromEnvironment('NOVARIDE_AUTH_TRACE', defaultValue: kDebugMode);
+
+  /// Prints exactly what is about to be written, before it is written.
+  ///
+  /// Every key, its value and its runtime type, for each document in the
+  /// transaction, plus the three identities the rules compare: the uid on
+  /// the document path, the email the code read off the Firebase user,
+  /// and the email claim actually on the ID token — which is what
+  /// `request.auth.token.email` resolves to, and the one value that
+  /// cannot be reproduced in the emulator, because there the harness
+  /// sets it by hand.
+  ///
+  /// Written to be pasted into the Rules Playground rather than skimmed.
+  Future<void> _traceCreate(
+    fb.User user,
+    String email,
+    String profileCollection,
+    String usernameKey,
+    Map<String, Object?> userDoc,
+    Map<String, Object?> profileDoc,
+    Map<String, Object?> claimDoc,
+  ) async {
+    if (!traceWrites) return;
+
+    // The claims are the point of this whole dump. Reading them is a
+    // local decode of the cached token, not a network call.
+    String tokenEmail = '<unavailable>';
+    String claimKeys = '<unavailable>';
+    try {
+      final token = await user.getIdTokenResult();
+      tokenEmail = '${token.claims?['email']}';
+      final keys = token.claims?.keys.toList() ?? <String>[];
+      keys.sort();
+      claimKeys = keys.join(', ');
+    } catch (error) {
+      tokenEmail = '<failed: $error>';
+    }
+
+    final buffer = StringBuffer()
+      ..writeln('=== ensureProfile: CREATE ===')
+      ..writeln('uid (document id)      : ${user.uid}')
+      ..writeln('user.email             : ${user.email}')
+      ..writeln('token email claim      : $tokenEmail')
+      ..writeln('email written to docs  : $email')
+      ..writeln('emails match (lowered) : '
+          '${email.toLowerCase() == tokenEmail.toLowerCase()}')
+      ..writeln('token claim keys       : $claimKeys')
+      ..writeln('user.isAnonymous       : ${user.isAnonymous}')
+      ..writeln('user.emailVerified     : ${user.emailVerified}')
+      ..writeln()
+      ..write(_describe('users/${user.uid}', userDoc))
+      ..write(_describe('$profileCollection/${user.uid}', profileDoc))
+      ..write(_describe('usernames/$usernameKey', claimDoc))
+      ..writeln('--- paste into the Rules Playground ---')
+      ..writeln(_playgroundJson(userDoc))
+      ..writeln('=== end ===');
+
+    // One line per line, so the log box does not rewrap the JSON.
+    for (final line in buffer.toString().split('\n')) {
+      // ignore: avoid_print
+      print('[auth-trace] $line');
+    }
+  }
+
+  /// Each key with its value and its Dart runtime type.
+  ///
+  /// The type is the interesting column: a rule that asks `is string`
+  /// fails on a null, and a null and a missing key are different things
+  /// to `.get(field, default)`.
+  static String _describe(String path, Map<String, Object?> data) {
+    final buffer = StringBuffer('--- $path (${data.length} keys) ---\n');
+    for (final key in data.keys.toList()..sort()) {
+      final value = data[key];
+      final rendered = value is FieldValue
+          ? 'FieldValue.serverTimestamp()'
+          : '$value';
+      buffer.writeln('  $key = $rendered   [${value.runtimeType}]');
+    }
+    return '$buffer\n';
+  }
+
+  /// The document as the Playground wants it, with the sentinels named
+  /// rather than printed as an opaque object.
+  static String _playgroundJson(Map<String, Object?> data) {
+    final entries = data.entries.map((e) {
+      final value = e.value;
+      if (value is FieldValue) {
+        return '  "${e.key}": "<<SERVER TIMESTAMP — tick the clock icon>>"';
+      }
+      if (value is String) return '  "${e.key}": "$value"';
+      return '  "${e.key}": $value';
+    });
+    return '{\n${entries.join(',\n')}\n}';
   }
 
   // ------------------------------------------------------------ plumbing

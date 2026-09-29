@@ -135,3 +135,52 @@ describe('the payloads FirebaseAuthRepository sends', () => {
     }));
   });
 });
+
+// Proof that the harness is not lying about timestamps.
+//
+// The fixture carries server timestamps as the string
+// `__SERVER_TIMESTAMP__`, and revive() swaps it for a real
+// serverTimestamp() sentinel. If that swap ever stopped happening, every
+// test above would still send *something* for createdAt — and would be
+// green on a payload that is not what ships. That is the exact shape of
+// gap this file exists to close, so it is worth one case of its own.
+describe('the server-timestamp marker', () => {
+  it('is refused by the rules when it reaches them unrevived', async () => {
+    const db = asRider(env);
+    // Deliberately not revived: the raw string goes to Firestore.
+    await assertFails(runTransaction(db, async (tx) => {
+      const userRef = doc(db, 'users', payloads.riderUid);
+      await tx.get(userRef);
+      tx.set(userRef, payloads.user);
+    }));
+  });
+
+  // And the same payload with the swap applied is accepted, which is
+  // what makes the case above meaningful rather than merely true.
+  it('is accepted once revived', async () => {
+    const db = asRider(env);
+    await assertSucceeds(runTransaction(db, async (tx) => {
+      const userRef = doc(db, 'users', payloads.riderUid);
+      await tx.get(userRef);
+      tx.set(userRef, revive(payloads.user));
+    }));
+  });
+
+  it('really does produce a timestamp, not a string', async () => {
+    const db = asRider(env);
+    await runTransaction(db, async (tx) => {
+      const userRef = doc(db, 'users', payloads.riderUid);
+      await tx.get(userRef);
+      tx.set(userRef, revive(payloads.user));
+    });
+    const written = await getDoc(doc(asRider(env), 'users', payloads.riderUid));
+    const createdAt = written.data().createdAt;
+    if (!(createdAt instanceof Timestamp)) {
+      throw new Error(
+        `createdAt landed as ${typeof createdAt} (${createdAt}), not a ` +
+        'Timestamp. revive() is not doing its job and every other case ' +
+        'in this file is worthless.',
+      );
+    }
+  });
+});

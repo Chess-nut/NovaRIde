@@ -209,6 +209,7 @@ console-side, and it does not exist yet.
 | `fullName` | string | yes | |
 | `role` | string | yes | `rider` \| `guardian`. **Immutable.** It decides the home screen and, in later phases, what the account may read. |
 | `phoneNumber` | string | | Optional at sign-up. |
+| `address` | string | | Where the person lives. On `users/` rather than `riderProfiles/` because a guardian has one too, and it belongs beside `phoneNumber` — both are how somebody is reached, whatever their role. Optional: sign-up does not ask for it, Personal Information does. |
 | `photoUrl` | string | | Unused so far. |
 | `fcmToken` | string | | Push address. Refreshed by `ensureProfile`. |
 | `createdAt` | timestamp | yes | Server clock. **Immutable.** |

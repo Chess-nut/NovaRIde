@@ -80,5 +80,22 @@ abstract interface class AuthRepository {
   /// account-enumeration oracle.
   Future<void> sendPasswordResetEmail(String email);
 
+  /// Edits the displayable fields of `users/{uid}`.
+  ///
+  /// Deliberately cannot touch `email`, `username` or `role`. The
+  /// rules refuse all three — an email change belongs to Firebase Auth,
+  /// a username is claimed under `usernames/` and nothing there can be
+  /// transferred, and a role decides what the account may reach. A form
+  /// offering those fields would fail on save, so it must not offer
+  /// them.
+  ///
+  /// Passing null leaves a field alone; passing an empty string clears
+  /// it. Returns the profile as it now stands.
+  Future<UserProfile> updateProfile({
+    String? fullName,
+    String? phoneNumber,
+    String? address,
+  });
+
   Future<void> signOut();
 }

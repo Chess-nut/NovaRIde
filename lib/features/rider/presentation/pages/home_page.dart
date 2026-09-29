@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:novaride/core/utils/initials.dart';
+import 'package:novaride/core/widgets/unavailable.dart';
+import 'package:novaride/features/auth/domain/entities/user_profile.dart';
+import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
 import 'package:novaride/shared/theme.dart';
 import '../widgets/nova_bottom_nav_bar.dart';
 import 'alerts_page.dart';
 import 'gps_map_page.dart';
 import 'notification_feed_page.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: NovaColors.background,
       body: SafeArea(
@@ -20,13 +26,16 @@ class HomePage extends StatelessWidget {
             children: [
               _buildHeader(context),
               const SizedBox(height: 20),
-              _buildProfileCard(),
+              _buildProfileCard(context, ref.watch(authStateProvider).profile),
               const SizedBox(height: 16),
               _buildQuickStatsRow(),
               const SizedBox(height: 16),
               _buildCircleStatsRow(context),
               const SizedBox(height: 24),
-              _buildSectionTitle('CURRENT TRIP', showLive: true),
+              // showLive is off: nothing is streaming, and a green LIVE
+              // dot over three em dashes is the contradiction this pass
+              // exists to remove.
+              _buildSectionTitle('CURRENT TRIP'),
               const SizedBox(height: 12),
               _buildTripCard(),
               const SizedBox(height: 24),
@@ -98,8 +107,20 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  // ---- Rider profile card with avatar + connection status ----
-  Widget _buildProfileCard() {
+  /// Rider identity, from `users/{uid}`.
+  ///
+  /// The name, the initials and the connection state were a hardcoded
+  /// persona — "Deor the great", "Rider #NV-08567", "Connected". None of
+  /// it was true of whoever was signed in.
+  ///
+  /// The rider number is gone rather than replaced: it belongs to the
+  /// console's roster (`riders/{R-001}`), a mobile account cannot read
+  /// that collection, and nothing links the two yet. The username is
+  /// shown instead, which is real and is what they signed in with.
+  Widget _buildProfileCard(BuildContext context, UserProfile? profile) {
+    final name = profile?.displayName ?? '';
+    final initials = initialsFrom(name);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -112,68 +133,77 @@ class HomePage extends StatelessWidget {
           CircleAvatar(
             radius: 22,
             backgroundColor: NovaColors.pink,
-            child: const Text(
-              'JD',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
-            ),
+            child: initials.isEmpty
+                ? const Icon(Icons.person_outline, color: Colors.white, size: 20)
+                : Text(
+                    initials,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Deor the great',
-                  style: TextStyle(
+                  name.isEmpty ? 'Loading…' : name,
+                  style: const TextStyle(
                     color: NovaColors.primaryText,
                     fontWeight: FontWeight.w700,
                     fontSize: 15,
                   ),
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
-                  'Rider #NV-08567',
-                  style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
+                  profile == null ? '' : '@${profile.username}',
+                  style: const TextStyle(
+                      color: NovaColors.secondaryText, fontSize: 12),
                 ),
               ],
             ),
           ),
-          _StatusPill(label: 'Connected', color: NovaColors.green),
+          // No helmet reports to this account, so there is nothing to be
+          // connected to. Saying "Connected" was the most misleading
+          // thing on the screen.
+          const _StatusPill(label: 'No helmet', color: NovaColors.secondaryText),
         ],
       ),
     );
   }
-
   // ---- Battery / Hardware / Signal row ----
+  //
+  // All three came from the helmet, and no helmet reports to a mobile
+  // account: telemetry lives on devices/{id}, which the rules refuse,
+  // and nothing links an account to a device anyway. 78%, ESP32 and
+  // -62 dBm were invented. Em dashes until there is a feed.
   Widget _buildQuickStatsRow() {
     return Row(
       children: const [
         Expanded(
           child: _InfoCard(
-            value: '78%',
-            valueColor: NovaColors.green,
+            value: Unavailable.dash,
+            valueColor: NovaColors.secondaryText,
             label: 'BATTERY',
           ),
         ),
         SizedBox(width: 10),
         Expanded(
           child: _InfoCard(
-            value: 'ESP32',
-            valueColor: NovaColors.primaryText,
+            value: Unavailable.dash,
+            valueColor: NovaColors.secondaryText,
             label: 'HARDWARE',
           ),
         ),
         SizedBox(width: 10),
         Expanded(
           child: _InfoCard(
-            value: '-62\ndBm',
-            valueColor: NovaColors.cyan,
+            value: Unavailable.dash,
+            valueColor: NovaColors.secondaryText,
             label: 'SIGNAL',
-            isTwoLine: true,
           ),
         ),
       ],
@@ -188,21 +218,21 @@ class HomePage extends StatelessWidget {
           child: _CircleStatCard(
             icon: Icons.bolt,
             iconColor: NovaColors.green,
-            value: '0.3G',
+            value: Unavailable.dash,
             label: 'IMPACT',
-            statusText: 'ACTIVE',
-            statusColor: NovaColors.green,
+            statusText: 'NO HELMET',
+            statusColor: NovaColors.secondaryText,
           ),
         ),
         const SizedBox(width: 10),
         const Expanded(
           child: _CircleStatCard(
             icon: Icons.water_drop_outlined,
-            iconColor: NovaColors.green,
-            value: '0.00%',
+            iconColor: NovaColors.secondaryText,
+            value: Unavailable.dash,
             label: '% Alcohol',
-            statusText: 'CLEAR',
-            statusColor: NovaColors.green,
+            statusText: 'NO HELMET',
+            statusColor: NovaColors.secondaryText,
           ),
         ),
         const SizedBox(width: 10),
@@ -212,8 +242,8 @@ class HomePage extends StatelessWidget {
             iconColor: NovaColors.cyan,
             value: 'GPS',
             label: 'LOCATION',
-            statusText: 'ACTIVE',
-            statusColor: NovaColors.green,
+            statusText: 'NO FIX',
+            statusColor: NovaColors.secondaryText,
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const GpsMapPage()),
@@ -259,6 +289,10 @@ class HomePage extends StatelessWidget {
   }
 
   // ---- Trip speed / distance / duration + route ----
+  //
+  // 42 km/h, 8.3 km, 23:47 and "Makati Ave → Bonifacio Global City"
+  // were a scripted demo trip. Trips are not recorded anywhere yet —
+  // there is no trips collection and no helmet feed to build one from.
   Widget _buildTripCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -273,13 +307,16 @@ class HomePage extends StatelessWidget {
           const Row(
             children: [
               Expanded(
-                child: _TripMetric(value: '42', unit: 'km/h', label: 'SPEED'),
+                child: _TripMetric(
+                    value: Unavailable.dash, unit: 'km/h', label: 'SPEED'),
               ),
               Expanded(
-                child: _TripMetric(value: '8.3', unit: 'km', label: 'DISTANCE'),
+                child: _TripMetric(
+                    value: Unavailable.dash, unit: 'km', label: 'DISTANCE'),
               ),
               Expanded(
-                child: _TripMetric(value: '23:47', unit: 'min', label: 'DURATION'),
+                child: _TripMetric(
+                    value: Unavailable.dash, unit: 'min', label: 'DURATION'),
               ),
             ],
           ),
@@ -290,7 +327,7 @@ class HomePage extends StatelessWidget {
               SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'Makati Ave → Bonifacio Global City',
+                  'No trip in progress',
                   style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -386,13 +423,11 @@ class _InfoCard extends StatelessWidget {
   final String value;
   final Color valueColor;
   final String label;
-  final bool isTwoLine;
 
   const _InfoCard({
     required this.value,
     required this.valueColor,
     required this.label,
-    this.isTwoLine = false,
   });
 
   @override
@@ -409,10 +444,10 @@ class _InfoCard extends StatelessWidget {
           Text(
             value,
             textAlign: TextAlign.center,
-            maxLines: isTwoLine ? 2 : 1,
+            maxLines: 1,
             style: TextStyle(
               color: valueColor,
-              fontSize: isTwoLine ? 16 : 18,
+              fontSize: 18,
               fontWeight: FontWeight.w800,
               height: 1.1,
             ),

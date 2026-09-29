@@ -148,3 +148,7 @@ firebase-debug.log
 # (copy Secrets.example.xcconfig). See lib/shared/maps/google_maps_key.dart.
 dart_defines.local.json
 **/ios/Flutter/Secrets.xcconfig
+
+# Node packages for the operator scripts (tool/) and the rules tests
+# (rules_test/). The lockfiles are committed; the trees are not.
+node_modules/

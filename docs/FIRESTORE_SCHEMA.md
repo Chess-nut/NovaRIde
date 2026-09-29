@@ -238,7 +238,18 @@ firebase deploy --only firestore:rules
 ```
 
 The CLI compiles the file before releasing it; a syntax error aborts the
-deploy and leaves the live ruleset untouched.
+deploy and leaves the live ruleset untouched. As of 29 Sep 2026 the live
+ruleset on `novaride-7a68c` matches this file.
+
+### Tested
+
+`rules_test/` holds 56 tests over this file, run against the Firestore
+emulator with no credentials and no reach into the real project
+(`cd rules_test && npm install && npm test`). They cover role resolution,
+each collection's write narrowing, the alert lifecycle and its server-clock
+stamps, the append-only history, and — the one that matters for the work
+ahead — that every path without a rule of its own is still closed. Run them
+before a deploy; see [rules_test/README.md](../rules_test/README.md).
 
 ### Principals
 

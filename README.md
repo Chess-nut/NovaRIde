@@ -84,6 +84,24 @@ it needs a service-account key, which **grants full admin access to the whole
 project, bypasses every security rule, and lives outside the repository**.
 The script header has the PowerShell steps and the warnings.
 
+### Security-rules tests
+
+`firestore.rules` is the only thing standing between the internet and the
+riders' live positions, so it has tests of its own — 56 of them, run against
+the Firestore emulator:
+
+```powershell
+cd rules_test
+npm install     # once
+npm test        # starts the emulator, runs the tests, shuts it down
+```
+
+They need a JDK on the PATH (Temurin 21) and download the emulator jar on
+the first run. Nothing else leaves the machine: the tests use the project id
+`demo-novaride`, which the Firebase tooling treats as non-existent, so they
+can never reach `novaride-7a68c`. Run them before deploying rules.
+See **[rules_test/README.md](rules_test/README.md)**.
+
 See **[docs/ADMIN_MODULE.md](docs/ADMIN_MODULE.md)** for the architecture, the
 authentication design, the alert state machine, the role matrix, and a full
 "simulated vs. real" disclosure, and

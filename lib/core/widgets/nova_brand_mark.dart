@@ -1,55 +1,64 @@
 import 'package:flutter/material.dart';
-import 'package:novaride/shared/theme.dart';
+
+import '../theme/app_colors.dart';
+import '../theme/app_typography.dart';
 
 /// The helmet roundel.
 ///
-/// Extracted here because the splash screen and the verify-email screen
-/// both need it and neither should own it. The Welcome screen still draws
-/// its own copy privately; Phase 2 collapses that one onto this widget
-/// rather than doing it twice under a palette that is about to change.
+/// In Signal the mark is a thin outline rather than a filled badge: the
+/// green is the action colour and spending it on decoration is exactly
+/// what the direction forbids. It reads as a line drawing, and the only
+/// saturated thing on the screen stays the button.
 class NovaLogoMark extends StatelessWidget {
-  const NovaLogoMark({super.key, this.size = 108});
+  const NovaLogoMark({super.key, this.size = 88});
 
   final double size;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
+
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: NovaColors.card,
-        border: Border.all(color: NovaColors.cyan, width: 1.5),
+        border: Border.all(color: colors.border, width: 1.5),
       ),
       child: Icon(
-        Icons.sports_motorsports,
-        color: NovaColors.cyan,
+        Icons.sports_motorsports_outlined,
+        color: colors.textSecondary,
         size: size * 0.44,
       ),
     );
   }
 }
 
-/// "Nova" in white, "Ride" in cyan — the wordmark, at whatever size.
+/// "Nova" in the primary text colour, "Ride" in the action colour.
+///
+/// The one place the accent is used for something other than a control,
+/// and it earns it: this is the wordmark, and it appears once per screen
+/// at most.
 class NovaWordmark extends StatelessWidget {
-  const NovaWordmark({super.key, this.fontSize = 32});
+  const NovaWordmark({super.key, this.fontSize = 24, this.textAlign});
 
   final double fontSize;
+  final TextAlign? textAlign;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
+
     return RichText(
-      textAlign: TextAlign.center,
+      textAlign: textAlign ?? TextAlign.center,
       text: TextSpan(
-        style: TextStyle(
+        style: AppTypography.h1.copyWith(
           fontSize: fontSize,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.2,
+          fontWeight: FontWeight.w700,
         ),
-        children: const [
-          TextSpan(text: 'Nova', style: TextStyle(color: NovaColors.primaryText)),
-          TextSpan(text: 'Ride', style: TextStyle(color: NovaColors.cyan)),
+        children: [
+          TextSpan(text: 'Nova', style: TextStyle(color: colors.textPrimary)),
+          TextSpan(text: 'Ride', style: TextStyle(color: colors.action)),
         ],
       ),
     );

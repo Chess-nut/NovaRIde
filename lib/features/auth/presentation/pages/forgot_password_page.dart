@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:novaride/shared/theme.dart';
+import 'package:go_router/go_router.dart';
 
-/// "Forgot Password" screen — reached from the Login screen.
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/validators.dart';
+import '../../../../core/widgets/nova_buttons.dart';
+import '../../../../core/widgets/nova_page.dart';
+import '../../../../core/widgets/nova_text_field.dart';
+
+/// Ask for a password-reset link.
 ///
-/// Hardcoded for now: any submitted email just flips to a confirmation
-/// state after a simulated delay. No real reset email is sent yet —
-/// Phase 2 wires this to Firebase Auth's password reset flow.
+/// **No backend yet.** Phase 3 calls
+/// `AuthRepository.sendPasswordResetEmail`, which completes normally for
+/// an address that has no account — telling the caller which is which
+/// would turn this screen into a way to find out who is registered. The
+/// confirmation below already says "if that address has an account", so
+/// the copy is right for the real thing and does not change in Phase 3.
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
 
@@ -15,251 +26,126 @@ class ForgotPasswordPage extends StatefulWidget {
 
 class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _email = TextEditingController();
 
-  bool _isLoading = false;
-  bool _emailSent = false;
+  bool _busy = false;
+  bool _sent = false;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _email.dispose();
     super.dispose();
   }
 
-  Future<void> _handleSendLink() async {
+  Future<void> _send() async {
+    FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 700));
+    setState(() => _busy = true);
+    await Future<void>.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
-
     setState(() {
-      _isLoading = false;
-      _emailSent = true;
+      _busy = false;
+      _sent = true;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: NovaColors.background,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back, color: NovaColors.primaryText),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _emailSent ? _buildSentState() : _buildFormState(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return NovaPage(
+      onBack: context.canPop() ? context.pop : null,
+      child: _sent ? _buildSent(context) : _buildForm(context),
     );
   }
 
-  // ---- Enter-your-email form ----
-  Widget _buildFormState() {
+  Widget _buildForm(BuildContext context) {
+    final colors = context.colors;
+
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 8),
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: NovaColors.card,
-              border: Border.all(color: NovaColors.cyan, width: 1.5),
-            ),
-            child: const Icon(Icons.lock_reset, color: NovaColors.cyan, size: 30),
+          const SizedBox(height: AppSpacing.xl),
+          Text(
+            'Reset your password',
+            style: AppTypography.h1.copyWith(color: colors.textPrimary),
           ),
-          const SizedBox(height: 20),
-          const Text(
-            'Forgot Password?',
-            style: TextStyle(
-              color: NovaColors.primaryText,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-            ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Enter the email on your account and we will send you a link to '
+            'choose a new password.',
+            style: AppTypography.body.copyWith(color: colors.textSecondary),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            "Enter the email linked to your account and we'll send you a "
-            'link to reset your password.',
-            style: TextStyle(color: NovaColors.secondaryText, fontSize: 13.5, height: 1.5),
+          const SizedBox(height: AppSpacing.xxxl),
+          NovaTextField(
+            label: 'Email',
+            controller: _email,
+            enabled: !_busy,
+            autofocus: true,
+            hint: 'you@example.com',
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.email],
+            validator: Validators.email,
+            onSubmitted: (_) => _send(),
           ),
-          const SizedBox(height: 28),
-          _buildLabel('EMAIL'),
-          const SizedBox(height: 8),
-          _buildEmailField(),
-          const SizedBox(height: 26),
-          _buildSendButton(),
+          const SizedBox(height: AppSpacing.xxxl),
+          NovaPrimaryButton(
+            label: 'Send reset link',
+            busy: _busy,
+            onPressed: _send,
+          ),
         ],
       ),
     );
   }
 
-  // ---- "Check your inbox" confirmation ----
-  Widget _buildSentState() {
+  Widget _buildSent(BuildContext context) {
+    final colors = context.colors;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 24),
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: NovaColors.green.withValues(alpha: 0.15),
-          ),
-          child: const Icon(Icons.mark_email_read_outlined, color: NovaColors.green, size: 30),
+        const SizedBox(height: AppSpacing.xxxl),
+        Icon(Icons.mark_email_read_outlined, size: 44, color: colors.action),
+        const SizedBox(height: AppSpacing.xxl),
+        Text(
+          'Check your email',
+          style: AppTypography.h1.copyWith(color: colors.textPrimary),
         ),
-        const SizedBox(height: 20),
-        const Text(
-          'Check Your Email',
-          style: TextStyle(
-            color: NovaColors.primaryText,
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text.rich(
-          TextSpan(
-            style: const TextStyle(color: NovaColors.secondaryText, fontSize: 13.5, height: 1.5),
+        const SizedBox(height: AppSpacing.md),
+        RichText(
+          text: TextSpan(
+            style: AppTypography.body.copyWith(color: colors.textSecondary),
             children: [
-              const TextSpan(text: "We've sent a password reset link to "),
+              // Says "if" on purpose: confirming that an address is
+              // registered would make this screen an account-enumeration
+              // oracle, and the wording has to survive into Phase 3.
+              const TextSpan(text: 'If '),
               TextSpan(
-                text: _emailController.text.trim(),
-                style: const TextStyle(color: NovaColors.primaryText, fontWeight: FontWeight.w700),
+                text: _email.text.trim(),
+                style: TextStyle(color: colors.textPrimary),
               ),
-              const TextSpan(text: '. Follow the link to choose a new password.'),
+              const TextSpan(
+                text: ' has a NovaRide account, a reset link is on its way. '
+                    'It expires in an hour.',
+              ),
             ],
           ),
         ),
-        const SizedBox(height: 26),
-        SizedBox(
-          height: 52,
-          child: ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: NovaColors.cyan,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              elevation: 0,
-            ),
-            child: const Text(
-              'BACK TO LOG IN',
-              style: TextStyle(
-                color: Colors.black,
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1,
-              ),
-            ),
-          ),
+        const SizedBox(height: AppSpacing.xxxl),
+        NovaPrimaryButton(
+          label: 'Back to log in',
+          onPressed: () => context.canPop() ? context.pop() : null,
         ),
-        const SizedBox(height: 16),
-        Center(
-          child: GestureDetector(
-            onTap: () => setState(() => _emailSent = false),
-            child: const Text(
-              "Didn't get it? Try another email",
-              style: TextStyle(color: NovaColors.cyan, fontSize: 13, fontWeight: FontWeight.w700),
-            ),
-          ),
+        const SizedBox(height: AppSpacing.sm),
+        NovaTextAction(
+          leading: 'Wrong address? ',
+          label: 'Try another',
+          onPressed: () => setState(() => _sent = false),
         ),
       ],
-    );
-  }
-
-  Widget _buildLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        color: NovaColors.secondaryText,
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1,
-      ),
-    );
-  }
-
-  Widget _buildEmailField() {
-    OutlineInputBorder border(Color color) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: color),
-        );
-
-    return TextFormField(
-      controller: _emailController,
-      keyboardType: TextInputType.emailAddress,
-      textInputAction: TextInputAction.done,
-      onFieldSubmitted: (_) => _handleSendLink(),
-      style: const TextStyle(color: NovaColors.primaryText, fontSize: 15),
-      decoration: InputDecoration(
-        hintText: 'you@example.com',
-        hintStyle: const TextStyle(color: NovaColors.secondaryText, fontSize: 14),
-        prefixIcon: const Icon(Icons.email_outlined, color: NovaColors.secondaryText, size: 20),
-        filled: true,
-        fillColor: NovaColors.card,
-        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-        border: border(NovaColors.cardBorder),
-        enabledBorder: border(NovaColors.cardBorder),
-        focusedBorder: border(NovaColors.cyan),
-        errorBorder: border(NovaColors.red),
-        focusedErrorBorder: border(NovaColors.red),
-        errorStyle: const TextStyle(color: NovaColors.red, fontSize: 11),
-      ),
-      validator: (value) {
-        if (value == null || value.trim().isEmpty) return 'Email is required';
-        final emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-        if (!emailPattern.hasMatch(value.trim())) return 'Enter a valid email';
-        return null;
-      },
-    );
-  }
-
-  Widget _buildSendButton() {
-    return SizedBox(
-      height: 52,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _handleSendLink,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: NovaColors.cyan,
-          disabledBackgroundColor: NovaColors.cyan.withValues(alpha: 0.5),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          elevation: 0,
-        ),
-        child: _isLoading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.4,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
-                ),
-              )
-            : const Text(
-                'SEND RESET LINK',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1,
-                ),
-              ),
-      ),
     );
   }
 }

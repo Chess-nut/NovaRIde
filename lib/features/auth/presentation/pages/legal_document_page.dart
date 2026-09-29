@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:novaride/shared/theme.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/nova_page.dart';
 
 /// Which legal document to render. Kept as an enum (rather than two
 /// separate screens) since both are just a title + a list of sections —
@@ -113,105 +116,75 @@ class LegalDocumentPage extends StatelessWidget {
             ),
           ],
       };
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: NovaColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(context),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildPlaceholderNotice(),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Last updated: August 2026',
-                      style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
-                    ),
-                    const SizedBox(height: 20),
-                    for (final section in _sections) ...[
-                      Text(
-                        section.heading,
-                        style: const TextStyle(
-                          color: NovaColors.primaryText,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        section.body,
-                        style: const TextStyle(
-                          color: NovaColors.secondaryText,
-                          fontSize: 13.5,
-                          height: 1.55,
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+    final colors = context.colors;
 
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 20, 4),
-      child: Row(
+    return NovaPage(
+      title: _title,
+      onBack: () => Navigator.of(context).pop(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: 36,
-              height: 36,
-              alignment: Alignment.center,
-              child: const Icon(Icons.arrow_back, color: NovaColors.primaryText, size: 22),
-            ),
-          ),
-          const SizedBox(width: 4),
+          const _PlaceholderNotice(),
+          const SizedBox(height: AppSpacing.xl),
           Text(
-            _title,
-            style: const TextStyle(
-              color: NovaColors.primaryText,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
+            'Last updated: August 2026',
+            style: AppTypography.caption.copyWith(color: colors.textMuted),
           ),
+          const SizedBox(height: AppSpacing.xl),
+          for (final section in _sections) ...[
+            Text(
+              section.heading,
+              style: AppTypography.title.copyWith(color: colors.textPrimary),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              section.body,
+              // Long-form reading gets more line height than the scale's
+              // default: this is the one screen in the app somebody
+              // actually reads top to bottom.
+              style: AppTypography.body
+                  .copyWith(color: colors.textSecondary, height: 1.6),
+            ),
+            const SizedBox(height: AppSpacing.xxl),
+          ],
         ],
       ),
     );
   }
+}
 
-  Widget _buildPlaceholderNotice() {
+/// Says out loud that the copy is not reviewed legal text.
+///
+/// [AppColors.warning] rather than the action colour: this is a caution,
+/// and in Signal a caution is the only thing allowed to be amber.
+class _PlaceholderNotice extends StatelessWidget {
+  const _PlaceholderNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: NovaColors.amber.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: NovaColors.amber.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: colors.warning.withValues(alpha: 0.35)),
+        color: colors.warning.withValues(alpha: 0.08),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline, color: NovaColors.amber, size: 16),
-          const SizedBox(width: 8),
-          const Expanded(
+          Icon(Icons.info_outline, color: colors.warning, size: 16),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
             child: Text(
-              'Placeholder copy for development. Replace with reviewed legal '
-              'text before release.',
-              style: TextStyle(color: NovaColors.secondaryText, fontSize: 11.5, height: 1.4),
+              'Placeholder copy for development. Replace with reviewed '
+              'legal text before release.',
+              style:
+                  AppTypography.caption.copyWith(color: colors.textSecondary),
             ),
           ),
         ],

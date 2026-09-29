@@ -1,11 +1,11 @@
 // Smoke test for the NovaRide mobile entrypoint.
 //
-// The app boots through the splash into the Welcome screen (brand, three
-// feature pills, GET STARTED, Log In), not the login page — the login page
-// is two taps in, behind Select User Type. The screens moved into
-// lib/features/ in Phase 1 and the app now routes with go_router under a
-// ProviderScope; what the person sees is unchanged, and that is what these
-// assertions are for.
+// The app boots through the splash into the Welcome screen, and the login
+// page is two taps in, behind Select User Type. That shape is unchanged
+// since before Phase 1; the copy is not. Phase 2's redesign (direction
+// Signal) moved the app off tracked capitals — "GET STARTED" is now "Get
+// started" — so these assertions were updated to the new wording rather
+// than the screens being held to the old.
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -22,15 +22,23 @@ void main() {
     await pumpMobileApp(tester);
 
     expect(find.byType(WelcomePage), findsOneWidget);
-    expect(find.text('GET STARTED'), findsOneWidget);
-    expect(find.text('Log In'), findsOneWidget);
+    expect(find.text('Get started'), findsOneWidget);
+    expect(find.text('Log in'), findsOneWidget);
     expect(find.byType(LoginPage), findsNothing);
   });
 
-  testWidgets('GET STARTED leads to Select User Type', (tester) async {
+  testWidgets('the welcome screen names what the helmet does', (tester) async {
     await pumpMobileApp(tester);
 
-    await tester.tap(find.text('GET STARTED'));
+    expect(find.text('Crash detection'), findsOneWidget);
+    expect(find.text('Instant SOS'), findsOneWidget);
+    expect(find.text('Live tracking'), findsOneWidget);
+  });
+
+  testWidgets('Get started leads to Select User Type', (tester) async {
+    await pumpMobileApp(tester);
+
+    await tester.tap(find.text('Get started'));
     await tester.pumpAndSettle();
 
     expect(find.byType(RoleSelectionPage), findsOneWidget);
@@ -38,13 +46,13 @@ void main() {
     expect(find.text('Family / Emergency Contact'), findsOneWidget);
   });
 
-  testWidgets('Log In opens the login page', (tester) async {
+  testWidgets('Log in opens the login page', (tester) async {
     await pumpMobileApp(tester);
 
-    await tester.tap(find.text('Log In'));
+    await tester.tap(find.text('Log in'));
     await tester.pumpAndSettle();
 
     expect(find.byType(LoginPage), findsOneWidget);
-    expect(find.text('LOG IN'), findsOneWidget);
+    expect(find.text('Welcome back'), findsOneWidget);
   });
 }

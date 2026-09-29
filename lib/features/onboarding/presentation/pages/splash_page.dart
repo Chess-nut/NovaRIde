@@ -1,34 +1,40 @@
 import 'package:flutter/material.dart';
-import 'package:novaride/core/widgets/nova_brand_mark.dart';
-import 'package:novaride/shared/theme.dart';
+
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/widgets/nova_brand_mark.dart';
 
 /// What is on screen while the router works out where to send you.
 ///
-/// It has no logic of its own and no timer. The router's redirect moves off
-/// it the moment [AuthState] resolves; if the app is sitting here, the
-/// session is genuinely still unknown. Deliberately plain — Phase 2 gives
-/// it the brand treatment.
+/// No logic and no timer. The router's redirect moves off it the moment
+/// the session resolves; if the app is sitting here, the session is
+/// genuinely still unknown.
+///
+/// The spinner is deliberately small and low — a full-width progress bar
+/// would make a 200ms wait look like a problem.
 class SplashPage extends StatelessWidget {
   const SplashPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: NovaColors.background,
+    final colors = context.colors;
+
+    return Scaffold(
+      backgroundColor: colors.surface,
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            NovaLogoMark(size: 88),
-            SizedBox(height: 24),
-            NovaWordmark(fontSize: 26),
-            SizedBox(height: 28),
+            const NovaLogoMark(size: 72),
+            const SizedBox(height: AppSpacing.xxl),
+            const NovaWordmark(fontSize: 26),
+            const SizedBox(height: AppSpacing.xxxl),
             SizedBox(
-              width: 22,
-              height: 22,
+              width: 18,
+              height: 18,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: NovaColors.cyan,
+                color: colors.textMuted,
               ),
             ),
           ],

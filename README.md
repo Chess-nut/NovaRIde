@@ -122,14 +122,15 @@ console shares none of it (see
 lib/
   app/        app.dart (MaterialApp.router) · router.dart (routes + the auth
               gate) · di.dart (the composition root)
-  core/       theme/ · widgets/ · errors/ (Failure + the Firebase message
-              mapper) · utils/ (AppLogger) · constants/ (collection names,
-              route names)
+  core/       theme/ (colour, type and spacing tokens) · widgets/ (the
+              shared form controls) · errors/ (Failure + the Firebase
+              message mapper) · utils/ (AppLogger, Validators) ·
+              constants/ (collection names, route names)
   features/   onboarding/ · auth/ · rider/ · guardian/
               each: domain/ (entities, repository interfaces)
                     data/   (implementations)
                     presentation/ (pages, widgets, providers)
-  shared/     models and the colour palette, shared with the admin console
+  shared/     models and the admin console's palette
   admin/      the operations console — a separate entrypoint, untouched
 ```
 
@@ -137,10 +138,53 @@ lib/
 splash while the session is unknown, the signed-out screens when there is
 no session, the verify-email screen when an account has not confirmed its
 address, and otherwise the home for that account's role. It reads
-`authStateProvider`, which is a **placeholder** until Phase 3 — it resolves
-straight to signed-out and nothing can sign in yet. `test/mobile_router_test.dart`
-pins the behaviour down so swapping in real Firebase auth cannot change it
-by accident.
+`authStateProvider`, which is a **placeholder** until Phase 3: the login
+screen's demo credential (`admin` / `admin123`) sets it, and there is no
+Firebase behind it. Signing in does not navigate — it sets the session and
+lets the gate do the navigating, which is the path real auth will take.
+`test/mobile_router_test.dart` pins the behaviour down so swapping in
+Firebase cannot change it by accident.
+
+### Design: direction Signal
+
+Dark, quiet, typographic. Two rules hold it together and both are worth
+keeping when adding a screen:
+
+1. **One action colour.** `AppColors.action` (the green) is the only
+   saturated thing a person is meant to press. Two green things on one
+   screen means one of them is wrong.
+2. **Colour elsewhere always means status.** `safe`, `riding`, `warning`,
+   `critical`, `sos`, `offline`, `resolved`. Nothing is coloured to look
+   nice — an accent spent on decoration is attention taken from the
+   critical states.
+
+Tokens live in [lib/core/theme/](lib/core/theme/): `app_colors.dart`
+(semantic colours), `app_typography.dart` (a seven-step scale),
+`app_spacing.dart` (spacing, radii, sizes, durations).
+
+**Widgets never name a colour.** `AppColors` is a `ThemeExtension`, read
+as `context.colors.action`, so the palette arrives through the theme
+rather than by import. `AppTheme.from(palette)` takes the palette as an
+argument and hardcodes nothing.
+
+**A light theme is not built, and adding one is three steps:** write
+`AppColors.light`, pass `AppTheme.from(AppColors.light, brightness:
+Brightness.light)` as `MaterialApp.theme`, and set `themeMode`. No widget
+changes and no `if (isDark)` anywhere. `themeMode` is already wired
+through `MaterialApp` from `themeModeProvider`.
+
+`test/theme_contract_test.dart` enforces this rather than trusting it: it
+proves a second palette reaches widgets untouched, and it scans
+`core/widgets/`, `features/auth/` and `features/onboarding/` for
+`Color(0x…)` literals, `Colors.*` constants and imports of the admin
+palette. Those tests fail the first time a colour is written into a
+widget.
+
+**Font.** Signal was specified with Inter; this ships on Roboto, the SDK's
+own face, already bundled and already what the layout tests measure
+against. `AppTypography.fontFamily` is the one line that changes if Inter
+is ever added, which would mean committing four font files and a `fonts:`
+block.
 
 **Two rules worth knowing before adding code here.** No feature file spells
 a Firestore collection name as a string — they are all in

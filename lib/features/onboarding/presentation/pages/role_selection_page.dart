@@ -1,157 +1,133 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
-import 'package:novaride/features/auth/domain/entities/user_role.dart';
-import 'package:novaride/features/auth/presentation/pages/login_page.dart';
-import 'package:novaride/shared/theme.dart';
+import '../../../../core/constants/app_routes.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/nova_page.dart';
+import '../../../auth/domain/entities/user_role.dart';
 
-/// "Select User Type" screen — shown once, right after Welcome, before
-/// Login. Existing users pick their role and land on Login; if they then
-/// tap "Sign Up" from there, the role carries forward to Signup.
+/// "Select User Type" — the one screen where choosing a role *is* the
+/// task, so the two options get the full-card treatment the login screen's
+/// toggle deliberately does not.
+///
+/// The cards carry a status colour each, matching the vocabulary the rest
+/// of the app uses: the rider is the one being kept safe, the guardian is
+/// the one watching.
 class RoleSelectionPage extends StatelessWidget {
   const RoleSelectionPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: NovaColors.background,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back, color: NovaColors.primaryText),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Select User Type',
-                        style: TextStyle(
-                          color: NovaColors.primaryText,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Are you a Rider or a Family / Emergency Contact user?',
-                        style: TextStyle(color: NovaColors.secondaryText, fontSize: 13.5, height: 1.4),
-                      ),
-                      const SizedBox(height: 28),
-                      _RoleCard(
-                        icon: Icons.sports_motorsports,
-                        color: NovaColors.cyan,
-                        title: 'Motorcycle Rider',
-                        description: 'Wear the smart helmet. Monitor your own helmet status, '
-                            'trip stats, and safety score, and trigger SOS if you crash.',
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const LoginPage(role: UserRole.rider),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      _RoleCard(
-                        icon: Icons.family_restroom,
-                        color: NovaColors.pink,
-                        title: 'Family / Emergency Contact',
-                        description: "Watch over a rider you care about. Get notified "
-                            'instantly during an SOS and track their live location.',
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const LoginPage(role: UserRole.guardian),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+    final colors = context.colors;
+
+    return NovaPage(
+      onBack: context.canPop() ? context.pop : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: AppSpacing.xl),
+          Text(
+            'Who is using NovaRide?',
+            style: AppTypography.h1.copyWith(color: colors.textPrimary),
           ),
-        ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'This decides what you see when you sign in. You can only be '
+            'one on an account.',
+            style: AppTypography.body.copyWith(color: colors.textSecondary),
+          ),
+          const SizedBox(height: AppSpacing.xxxl),
+          _RoleCard(
+            icon: Icons.sports_motorsports_outlined,
+            tint: colors.safe,
+            title: 'Motorcycle Rider',
+            detail: 'You wear the helmet. NovaRide watches your ride and '
+                'raises the alarm if something happens.',
+            onTap: () => context.push(
+              '${AppRoutes.loginPath}?role=${UserRole.rider.wireName}',
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          _RoleCard(
+            icon: Icons.favorite_outline,
+            tint: colors.riding,
+            title: 'Family / Emergency Contact',
+            detail: 'You follow a rider from home and are the first to know '
+                'if they need help.',
+            onTap: () => context.push(
+              '${AppRoutes.loginPath}?role=${UserRole.guardian.wireName}',
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _RoleCard extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String title;
-  final String description;
-  final VoidCallback onTap;
-
   const _RoleCard({
     required this.icon,
-    required this.color,
+    required this.tint,
     required this.title,
-    required this.description,
+    required this.detail,
     required this.onTap,
   });
 
+  final IconData icon;
+  final Color tint;
+  final String title;
+  final String detail;
+  final VoidCallback onTap;
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: NovaColors.card,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: NovaColors.cardBorder),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 24),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: NovaColors.primaryText,
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w800,
+    final colors = context.colors;
+
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: Container(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          decoration: BoxDecoration(
+            color: colors.surfaceRaised,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(color: colors.border),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: tint, size: 24),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTypography.title
+                          .copyWith(color: colors.textPrimary),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    description,
-                    style: const TextStyle(
-                      color: NovaColors.secondaryText,
-                      fontSize: 12.5,
-                      height: 1.45,
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      detail,
+                      style: AppTypography.caption
+                          .copyWith(color: colors.textMuted),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 6),
-            const Icon(Icons.chevron_right, color: NovaColors.secondaryText, size: 22),
-          ],
+              const SizedBox(width: AppSpacing.sm),
+              Icon(
+                Icons.arrow_forward,
+                color: colors.textMuted,
+                size: 18,
+              ),
+            ],
+          ),
         ),
       ),
     );

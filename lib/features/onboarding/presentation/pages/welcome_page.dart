@@ -1,201 +1,149 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
-import 'package:novaride/features/auth/presentation/pages/login_page.dart';
-import 'package:novaride/shared/theme.dart';
+import '../../../../core/constants/app_routes.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/nova_brand_mark.dart';
+import '../../../../core/widgets/nova_buttons.dart';
+import '../../../../core/widgets/nova_page.dart';
 
-import 'role_selection_page.dart';
-
-/// "Welcome" screen — the very first thing a rider or emergency contact
-/// sees when opening NovaRide, before choosing to Log In or Sign Up.
+/// The first thing anyone sees.
 ///
-/// Static for now (no entrance/pulse animation) — animation, motion, and
-/// polish pass comes later.
+/// Signal's version of this screen is mostly space. The old one gave three
+/// coloured pills equal visual weight with the button, which meant the eye
+/// had four places to land on a screen with one job. Now the pills are
+/// quiet rows — the colour on each is doing real work, because crash
+/// detection, SOS and tracking map onto the same status colours the
+/// guardian dashboards use, so the vocabulary is being taught here — and
+/// the only saturated thing is "Get started".
 class WelcomePage extends StatelessWidget {
   const WelcomePage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: NovaColors.background,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 24, 28, 28),
-          child: Column(
-            children: [
-              const Spacer(flex: 3),
-              _buildLogoMark(),
-              const SizedBox(height: 32),
-              _buildTitleBlock(),
-              const SizedBox(height: 36),
-              _buildFeatureRow(),
-              const Spacer(flex: 4),
-              _buildActions(context),
-            ],
+    final colors = context.colors;
+
+    // Centred and scrollable rather than a Column of Spacers. The old
+    // version distributed the content with flex, which looks right until
+    // a 320x568 phone, where the same content is 80 pixels taller than
+    // the screen and Spacers have nothing left to give — an overflow, not
+    // a squeeze. Centring holds the composition on a normal phone and
+    // scrolls on a small one.
+    return NovaPage(
+      centred: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: AppSpacing.xl),
+          const Center(child: NovaLogoMark(size: 96)),
+          const SizedBox(height: AppSpacing.xxl),
+          const Center(child: NovaWordmark(fontSize: 34)),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'Every second counts after a crash.\n'
+            'NovaRide makes sure help never waits.',
+            textAlign: TextAlign.center,
+            style: AppTypography.body.copyWith(color: colors.textSecondary),
           ),
-        ),
+          const SizedBox(height: AppSpacing.xxxl),
+          const _CapabilityList(),
+          const SizedBox(height: AppSpacing.xxxl),
+          NovaPrimaryButton(
+            label: 'Get started',
+            onPressed: () => context.push(AppRoutes.selectUserTypePath),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          NovaTextAction(
+            leading: 'Already have an account? ',
+            label: 'Log in',
+            onPressed: () => context.push(AppRoutes.loginPath),
+          ),
+        ],
       ),
     );
   }
+}
 
-  // ---- Logo mark ----
-  Widget _buildLogoMark() {
-    return Container(
-      width: 108,
-      height: 108,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: NovaColors.card,
-        border: Border.all(color: NovaColors.cyan, width: 1.5),
-      ),
-      child: const Icon(
-        Icons.sports_motorsports,
-        color: NovaColors.cyan,
-        size: 48,
-      ),
-    );
-  }
+/// The three things the helmet does.
+///
+/// A list rather than a row of pills: at 28px gutters on a small phone the
+/// pills had to wrap their labels onto two lines, and three two-line
+/// labels side by side is harder to read than three sentences stacked.
+class _CapabilityList extends StatelessWidget {
+  const _CapabilityList();
 
-  // ---- Name + mission-led tagline ----
-  Widget _buildTitleBlock() {
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
     return Column(
       children: [
-        RichText(
-          textAlign: TextAlign.center,
-          text: const TextSpan(
-            style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: 0.2),
-            children: [
-              TextSpan(text: 'Nova', style: TextStyle(color: NovaColors.primaryText)),
-              TextSpan(text: 'Ride', style: TextStyle(color: NovaColors.cyan)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'Every second counts after a crash.\nNovaRide makes sure help never waits.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: NovaColors.secondaryText,
-            fontSize: 14.5,
-            height: 1.5,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ---- Three-pillar value proposition ----
-  Widget _buildFeatureRow() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: const [
-        _FeaturePill(
+        _Capability(
           icon: Icons.sensors,
-          color: NovaColors.pink,
-          label: 'Crash\nDetection',
+          tint: colors.critical,
+          title: 'Crash detection',
+          detail: 'Two sensors have to agree before an alert goes out.',
         ),
-        _FeaturePill(
+        const SizedBox(height: AppSpacing.xl),
+        _Capability(
           icon: Icons.sos_rounded,
-          color: NovaColors.red,
-          label: 'Instant\nSOS',
+          tint: colors.sos,
+          title: 'Instant SOS',
+          detail: 'Reach your emergency contacts without taking a hand off.',
         ),
-        _FeaturePill(
-          icon: Icons.location_on,
-          color: NovaColors.green,
-          label: 'Live\nTracking',
-        ),
-      ],
-    );
-  }
-
-  // ---- Get Started / Log In actions ----
-  Widget _buildActions(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          height: 54,
-          child: ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const RoleSelectionPage()),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: NovaColors.cyan,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              elevation: 0,
-            ),
-            child: const Text(
-              'GET STARTED',
-              style: TextStyle(
-                color: Colors.black,
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'Already have an account? ',
-              style: TextStyle(color: NovaColors.secondaryText, fontSize: 13),
-            ),
-            GestureDetector(
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const LoginPage()),
-                );
-              },
-              child: const Text(
-                'Log In',
-                style: TextStyle(
-                  color: NovaColors.cyan,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
+        const SizedBox(height: AppSpacing.xl),
+        _Capability(
+          icon: Icons.location_on_outlined,
+          tint: colors.safe,
+          title: 'Live tracking',
+          detail: 'Family can see where you are while you ride.',
         ),
       ],
     );
   }
 }
 
-/// One icon + label pillar in the value-proposition row.
-class _FeaturePill extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String label;
+class _Capability extends StatelessWidget {
+  const _Capability({
+    required this.icon,
+    required this.tint,
+    required this.title,
+    required this.detail,
+  });
 
-  const _FeaturePill({required this.icon, required this.color, required this.label});
+  final IconData icon;
+  final Color tint;
+  final String title;
+  final String detail;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final colors = context.colors;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.14),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: color, size: 24),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: NovaColors.secondaryText,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            height: 1.3,
+        Icon(icon, color: tint, size: 20),
+        const SizedBox(width: AppSpacing.lg),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style:
+                    AppTypography.title.copyWith(color: colors.textPrimary),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                detail,
+                style:
+                    AppTypography.caption.copyWith(color: colors.textMuted),
+              ),
+            ],
           ),
         ),
       ],

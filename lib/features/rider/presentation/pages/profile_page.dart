@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'package:novaride/features/auth/presentation/pages/login_page.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
 import 'package:novaride/shared/theme.dart';
 
 import '../widgets/nova_bottom_nav_bar.dart';
@@ -322,15 +324,20 @@ class ProfilePage extends StatelessWidget {
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Cancel', style: TextStyle(color: NovaColors.secondaryText)),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const LoginPage()),
-                (route) => false,
-              );
-            },
-            child: const Text('Log Out', style: TextStyle(color: NovaColors.red)),
+          // Clearing the session is what signs out: the router's gate
+          // sees an unauthenticated state and takes it from there. Doing
+          // it with a Navigator push instead would leave the session
+          // marked signed-in behind a login screen. Wrapped in a Consumer
+          // rather than making the whole page a ConsumerWidget — the
+          // rider screens are Phase 7's to restructure.
+          Consumer(
+            builder: (context, ref, _) => TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                ref.read(authStateProvider.notifier).signedOut();
+              },
+              child: const Text('Log Out', style: TextStyle(color: NovaColors.red)),
+            ),
           ),
         ],
       ),

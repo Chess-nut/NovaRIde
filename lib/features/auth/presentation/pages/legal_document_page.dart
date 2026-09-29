@@ -118,56 +118,7 @@ class LegalDocumentPage extends StatelessWidget {
       };
   @override
   Widget build(BuildContext context) {
-<<<<<<< HEAD:lib/features/auth/presentation/pages/legal_document_page.dart
     final colors = context.colors;
-=======
-    return Scaffold(
-      backgroundColor: NovaColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(context),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Last updated: August 2026',
-                      style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
-                    ),
-                    const SizedBox(height: 20),
-                    for (final section in _sections) ...[
-                      Text(
-                        section.heading,
-                        style: const TextStyle(
-                          color: NovaColors.primaryText,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        section.body,
-                        style: const TextStyle(
-                          color: NovaColors.secondaryText,
-                          fontSize: 13.5,
-                          height: 1.55,
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
->>>>>>> origin/main:lib/rider/screens/legal_document_page.dart
 
     return NovaPage(
       title: _title,
@@ -215,7 +166,6 @@ class _PlaceholderNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-<<<<<<< HEAD:lib/features/auth/presentation/pages/legal_document_page.dart
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -242,6 +192,3 @@ class _PlaceholderNotice extends StatelessWidget {
     );
   }
 }
-=======
-}
->>>>>>> origin/main:lib/rider/screens/legal_document_page.dart

@@ -240,7 +240,6 @@ raw exception: a data source catches once, maps with
  - **Backend & Cloud Database:** Firebase Realtime Database & Firebase Authentication
  - **Mapping Integration:** Google Maps Platform API
 
-<<<<<<< HEAD
 ## Google Maps keys
 
 The rider and family screens use `google_maps_flutter`. **Keys are supplied at
@@ -280,20 +279,6 @@ The Family Map route is `/guardian/map` (`AppRoutes.guardianMapPath`; it was
 rider's `liveLocation` permission. The location payload shape is represented by
 `RiderLocation` and is ready to be populated by a Firestore listener when the
 rider app is connected to Firebase.
-=======
-## Emergency Contact Live Location
-
-The Emergency Contact map route is `/emergency-map`. It consumes the shared
-`EmergencyContactRepository` stream, permission-gated by the connected rider's
-`liveLocation` permission. The location payload shape is represented by
-`RiderLocation` and can be connected to the existing Firebase telemetry source.
-
-Google Maps keys are intentionally supplied through native build settings and
-are not stored in this repository. For Android, provide the Gradle property
-`GOOGLE_MAPS_API_KEY` when building. For iOS, set the `GOOGLE_MAPS_API_KEY`
-build setting for the Runner target. The Android manifest and iOS delegate read
-these values at runtime.
->>>>>>> origin/main
 
 Useful checks:
 

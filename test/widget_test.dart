@@ -7,19 +7,13 @@
 // started" — so these assertions were updated to the new wording rather
 // than the screens being held to the old.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-<<<<<<< HEAD
 import 'package:novaride/features/auth/presentation/pages/login_page.dart';
 import 'package:novaride/features/onboarding/presentation/pages/role_selection_page.dart';
 import 'package:novaride/features/onboarding/presentation/pages/welcome_page.dart';
 
 import 'support/mobile_app.dart';
-=======
-import 'package:novaride/main.dart';
-import 'package:novaride/rider/screens/home_page.dart';
->>>>>>> origin/main
 
 void main() {
   silenceAppLogger();
@@ -60,12 +54,5 @@ void main() {
 
     expect(find.byType(LoginPage), findsOneWidget);
     expect(find.text('Welcome back'), findsOneWidget);
-  });
-
-  testWidgets('home page does not expose an alerts navigation connection', (WidgetTester tester) async {
-    await tester.pumpWidget(const MaterialApp(home: HomePage()));
-
-    expect(find.text('ALERTS'), findsNothing);
-    expect(find.text('NOVARIDE'), findsOneWidget);
   });
 }

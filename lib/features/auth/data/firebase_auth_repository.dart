@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/firestore_collections.dart';
 import '../../../core/errors/failure.dart';
@@ -225,13 +226,36 @@ class FirebaseAuthRepository implements AuthRepository {
         _cachedUid = user.uid;
         return profile;
       } catch (error, stack) {
-        // The Auth account exists but its documents do not. Leaving the
-        // session open would put someone into the app with no role, so
-        // sign out and let them try again — the second attempt signs in
-        // to the existing account and ensureProfile completes it.
-        AppLogger.e('Sign-up for ${user.uid} failed after the account was '
-            'created; signing out.', error: error, stackTrace: stack);
-        await signOut();
+        // The Auth account exists and its documents do not. Signing out
+        // is not enough: it leaves an account behind that can never be
+        // used, because signing into it finds no users/ document and
+        // fails the same way. Two of those were created for real before
+        // this branch deleted anything.
+        //
+        // So the account goes too. It was created seconds ago by this
+        // same call, which is what makes `delete()` legal without a
+        // re-authentication, and nothing else can have started depending
+        // on it yet. The person retries and gets a clean attempt rather
+        // than "that email is already in use" on an account they cannot
+        // reach.
+        AppLogger.e('Sign-up for ${user.uid} failed after the Auth account '
+            'was created; removing it.', error: error, stackTrace: stack);
+        try {
+          await user.delete();
+        } catch (deleteError, deleteStack) {
+          // Out of options: the account is orphaned and only an operator
+          // with the Admin SDK can clear it. Say so loudly rather than
+          // swallowing it — this is the line that explains a mystery
+          // account in the console later.
+          AppLogger.e(
+            'Could not remove the orphaned Auth account ${user.uid}. It has '
+            'no profile documents and cannot be signed into; delete it in '
+            'the Firebase console.',
+            error: deleteError,
+            stackTrace: deleteStack,
+          );
+          await signOut();
+        }
         rethrow;
       }
     });
@@ -374,14 +398,15 @@ class FirebaseAuthRepository implements AuthRepository {
     fb.User user, {
     String? fcmToken,
   }) async {
-    // Three fields, and the rules allow no others on an update from here.
-    // `role` and `createdAt` are not in this map and must never be.
-    final touch = <String, dynamic>{
-      'lastLoginAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-      if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
-    };
-    transaction.update(userRef, touch);
+    // Built by the same function the contract test checks against the
+    // rules. `role` and `createdAt` are not in it and must never be.
+    transaction.update(
+      userRef,
+      buildLoginTouch(
+        serverTimestamp: FieldValue.serverTimestamp(),
+        fcmToken: fcmToken,
+      ),
+    );
 
     // Read from what was already there, not from what was just written:
     // the server timestamps are unresolved until the transaction commits,
@@ -437,35 +462,37 @@ class FirebaseAuthRepository implements AuthRepository {
       );
     }
 
-    // Nothing below writes a password, a hash or a token of any kind.
-    // The rules refuse those field names outright on all four paths.
-    transaction.set(userRef, {
-      'email': email,
-      'username': resolvedUsername,
-      'fullName': (fullName ?? '').trim(),
-      'role': resolvedRole.wireName,
-      if (phoneNumber != null && phoneNumber.isNotEmpty)
-        'phoneNumber': phoneNumber,
-      if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-      'lastLoginAt': FieldValue.serverTimestamp(),
-    });
+    // All three payloads come from the builders below, which is what the
+    // contract test runs against the real ruleset. Nothing here writes a
+    // password, a hash or a token of any kind; the rules refuse those
+    // field names outright on all four paths.
+    transaction.set(
+      userRef,
+      buildUserDocument(
+        email: email,
+        username: resolvedUsername,
+        fullName: (fullName ?? '').trim(),
+        role: resolvedRole,
+        phoneNumber: phoneNumber,
+        fcmToken: fcmToken,
+        serverTimestamp: FieldValue.serverTimestamp(),
+      ),
+    );
 
     transaction.set(
       _firestore.collection(profileCollection).doc(user.uid),
-      {
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
+      buildProfileDocument(serverTimestamp: FieldValue.serverTimestamp()),
     );
 
     if (!claim.exists) {
-      transaction.set(usernameRef, {
-        'uid': user.uid,
-        'email': email,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      transaction.set(
+        usernameRef,
+        buildUsernameClaim(
+          uid: user.uid,
+          email: email,
+          serverTimestamp: FieldValue.serverTimestamp(),
+        ),
+      );
     }
 
     return UserProfile(
@@ -487,6 +514,90 @@ class FirebaseAuthRepository implements AuthRepository {
       emailVerified: user.emailVerified,
       email: user.email ?? profile.email,
     );
+  }
+
+
+  // ---------------------------------------------- the payloads, exactly
+  //
+  // The four maps ensureProfile writes, pulled out as pure functions so a
+  // test can take the *real* payload and run it against the *real*
+  // security rules. A shape the rules refuse then fails in the test suite
+  // instead of at sign-up.
+  //
+  // [serverTimestamp] is injected rather than called here so the payloads
+  // can be built outside a Firebase app. Production passes
+  // `FieldValue.serverTimestamp()`; the contract test passes a marker it
+  // can serialise and the Node side turns back into a server timestamp.
+  // Nothing else about the maps differs between the two.
+
+  /// `users/{uid}` on first sign-up.
+  ///
+  /// `fullName` is unconditional: the rules require it to be a string,
+  /// and a guardian seeing a username instead of a name during an SOS is
+  /// the reason the field exists at all.
+  @visibleForTesting
+  static Map<String, Object?> buildUserDocument({
+    required String email,
+    required String username,
+    required String fullName,
+    required UserRole role,
+    required Object serverTimestamp,
+    String? phoneNumber,
+    String? fcmToken,
+  }) {
+    return {
+      'email': email,
+      'username': username,
+      'fullName': fullName,
+      'role': role.wireName,
+      if (phoneNumber != null && phoneNumber.isNotEmpty)
+        'phoneNumber': phoneNumber,
+      if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
+      'createdAt': serverTimestamp,
+      'updatedAt': serverTimestamp,
+      'lastLoginAt': serverTimestamp,
+    };
+  }
+
+  /// `riderProfiles/{uid}` or `guardianProfiles/{uid}` on first sign-up.
+  /// Role-specific fields arrive with the phase that needs them.
+  @visibleForTesting
+  static Map<String, Object?> buildProfileDocument({
+    required Object serverTimestamp,
+  }) {
+    return {
+      'createdAt': serverTimestamp,
+      'updatedAt': serverTimestamp,
+    };
+  }
+
+  /// `usernames/{usernameLower}`. Exactly three fields — the rules use
+  /// `hasOnly`, because this document is world-readable.
+  @visibleForTesting
+  static Map<String, Object?> buildUsernameClaim({
+    required String uid,
+    required String email,
+    required Object serverTimestamp,
+  }) {
+    return {
+      'uid': uid,
+      'email': email,
+      'createdAt': serverTimestamp,
+    };
+  }
+
+  /// The update on every later sign-in. Three keys and no others: `role`
+  /// and `createdAt` are absent here and must stay absent.
+  @visibleForTesting
+  static Map<String, Object?> buildLoginTouch({
+    required Object serverTimestamp,
+    String? fcmToken,
+  }) {
+    return {
+      'lastLoginAt': serverTimestamp,
+      'updatedAt': serverTimestamp,
+      if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
+    };
   }
 
   // ------------------------------------------------------------ plumbing

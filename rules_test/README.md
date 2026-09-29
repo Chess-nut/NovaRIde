@@ -1,6 +1,6 @@
 # Security-rules tests
 
-112 tests over `firestore.rules`, run against the Firestore emulator.
+117 tests over `firestore.rules`, run against the Firestore emulator.
 
 ```bash
 cd rules_test
@@ -29,6 +29,7 @@ read and a stray call can never reach `novaride-7a68c`.
 | `admins.test.js` | own-document reads, Super Admin lists, no client writes at all |
 | `accounts.test.js` | the phone app's four collections: who may create, read and update `users/`, `riderProfiles/`, `guardianProfiles/`, and how a `usernames/` claim works |
 | `closed.test.js` | the catch-all: every path without a rule is denied to everyone |
+| `payload_contract.test.js` | the payloads the **Dart app actually sends**, replayed against the real ruleset — see below |
 
 `closed.test.js` is the one to watch. It asserts that every path without a
 rule of its own is denied to everybody — today `emergencyContacts/`,
@@ -38,6 +39,37 @@ become readable without someone editing that file on purpose. Phase 3 is
 what that looks like in practice: it moved `users/`, `riderProfiles/`,
 `guardianProfiles/` and `usernames/` out of that list and into
 `accounts.test.js`, where what each one permits is spelled out.
+
+
+## The payload contract
+
+Every test here except one uses a fixture typed in JavaScript. That
+proves the rules are right about *a* payload — not about the one
+`FirebaseAuthRepository` sends. A field the app omits and the rules
+require passes all of them and fails at sign-up, on a phone.
+
+So `payload_contract.test.js` does not invent its payloads. It reads
+`fixtures/auth_payloads.json`, which is written by
+
+```bash
+flutter test test/auth_payload_contract_test.dart
+```
+
+straight out of the production builders on `FirebaseAuthRepository`
+(`buildUserDocument`, `buildProfileDocument`, `buildUsernameClaim`,
+`buildLoginTouch`) — the same functions `ensureProfile` calls. Server
+timestamps travel as the marker `__SERVER_TIMESTAMP__` and become real
+ones on this side, which is the only reason the payloads can be built
+outside a Firebase app.
+
+**Run `flutter test` before `npm test`.** The fixture is committed, so a
+change to the payload is visible in review as a change to that JSON, and
+the Node side refuses to run at all if the file is missing.
+
+It is checked both ways: one case asserts the real payload is accepted,
+another asserts the same payload *without* `fullName` is refused — so a
+rule that quietly stopped checking anything would not leave the suite
+green.
 
 ## Writing a test
 

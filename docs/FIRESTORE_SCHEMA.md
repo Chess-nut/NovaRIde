@@ -307,7 +307,7 @@ and sign-in return `permission-denied` until the deploy above is run.
 
 ### Tested
 
-`rules_test/` holds 112 tests over this file, run against the Firestore
+`rules_test/` holds 117 tests over this file, run against the Firestore
 emulator with no credentials and no reach into the real project
 (`cd rules_test && npm install && npm test`). They cover role resolution,
 each collection's write narrowing, the alert lifecycle and its server-clock

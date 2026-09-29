@@ -14,13 +14,8 @@
 /// label, not the identifier — [label] is the only place the two meet.
 library;
 
-import 'package:json_annotation/json_annotation.dart';
-
 enum UserRole {
-  @JsonValue('rider')
   rider,
-
-  @JsonValue('guardian')
   guardian;
 
   /// The string stored in Firestore.

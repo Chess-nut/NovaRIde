@@ -7,7 +7,7 @@ why those choices were made, and — explicitly — which parts are simulated.
 **Run it:**
 
 ```bash
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173
+flutter run -t lib/main_admin.dart -d edge --web-port 5173
 ```
 
 **Signing in:** with `assets/config/firebase.json` present the console runs

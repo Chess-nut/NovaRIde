@@ -395,14 +395,14 @@ firebase apps:sdkconfig WEB 1:885956155129:web:21670e7270e1ccc7dc3428 > assets/c
 #    free id. There is deliberately no "merge" flag: the seed is fixture
 #    data for an empty project, not a reset, and merging it over real
 #    riders would raise the question of which record wins on R-001.
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173 --dart-define=SEED_FIRESTORE=true
+flutter run -t lib/main_admin.dart -d edge --web-port 5173 --dart-define=SEED_FIRESTORE=true
 
 # Day to day. With the config present the top bar shows FIRESTORE; sign in
 # with one of the operator accounts (§2, admins/).
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173
+flutter run -t lib/main_admin.dart -d edge --web-port 5173
 
 # Rehearse offline on a configured machine (simulation + local demo login):
-flutter run -t lib/main_admin.dart -d chrome --dart-define=NOVARIDE_FORCE_SIMULATION=true
+flutter run -t lib/main_admin.dart -d edge --dart-define=NOVARIDE_FORCE_SIMULATION=true
 
 # Optional: put the role in the ID token as a custom claim (see §4 and the
 # header of tool/set_admin_claims.mjs — the key lives OUTSIDE the repo).

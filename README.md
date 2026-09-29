@@ -10,7 +10,7 @@ The operations console is a second Flutter entrypoint in the same repository,
 used by dispatchers to monitor the helmet fleet and respond to accident alerts.
 
 ```bash
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173   # admin console
+flutter run -t lib/main_admin.dart -d edge --web-port 5173   # admin console
 flutter run -t lib/main.dart                                   # mobile app
 ```
 
@@ -72,7 +72,7 @@ firebase apps:sdkconfig WEB 1:885956155129:web:21670e7270e1ccc7dc3428 > assets/c
 #    flag, then sign in as the Super Admin — the seed runs at that moment,
 #    because the rules only accept its writes from a signed-in Super Admin.
 #    The terminal prints "seedFirestore: wrote 10 riders, …" when it lands.
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173 --dart-define=SEED_FIRESTORE=true
+flutter run -t lib/main_admin.dart -d edge --web-port 5173 --dart-define=SEED_FIRESTORE=true
 ```
 
 Adding an operator: create the account under Authentication → Users, then
@@ -148,15 +148,6 @@ a Firestore collection name as a string — they are all in
 raw exception: a data source catches once, maps with
 `core/errors/firebase_failure_mapper.dart`, and everything above handles a
 `Failure` whose `message` is already a sentence.
-
-**Code generation.** `UserProfile` is a `freezed` class. After changing it:
-
-```bash
-dart run build_runner build
-```
-
-The generated `.freezed.dart` and `.g.dart` files are committed, so a fresh
-clone builds without running it.
 
 ## 🛠️ Tools & Technologies Used
 

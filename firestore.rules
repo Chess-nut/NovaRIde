@@ -30,10 +30,13 @@ rules_version = '2';
 //   HELMET SERVICE — the identity the ESP32 firmware will authenticate as:
 //   a Firebase Auth user carrying the claim `role: helmetService`. It is
 //   never a console role (the console rejects it as unprovisioned), and it
-//   is the only client that may write telemetry. No such account exists
-//   yet; the firmware's auth story is an open item in
-//   docs/FIRESTORE_SCHEMA.md §7. A bridge using the Admin SDK bypasses these
-//   rules entirely and needs nothing here.
+//   is the only client that may write telemetry. It must never have an
+//   admins/{uid} document: its claim is not a console role, so role()
+//   would fall through to that document and hand the helmet an operator's
+//   reads. tool/provision_helmet_service.mjs grants the claim and refuses
+//   such an account; docs/FIRMWARE_CONTRACT.md is what the helmet may
+//   write. A bridge using the Admin SDK bypasses these rules entirely and
+//   needs nothing here.
 //
 // Alias tolerance: `administrator`/`admin` read as superAdmin, `operator`
 // as dispatcher, so a claim or document set by hand with the wrong spelling
@@ -42,7 +45,9 @@ rules_version = '2';
 //
 // What is enforced beyond "who": the alert lifecycle is linear
 // (open → acknowledged → dispatched → resolved) and each step stamps its
-// own server timestamp; history/ is append-only and its `at` must be the
+// own server timestamp; an alert the helmet raises must carry the fields
+// the board queries on and a server-clock `timestamp`, and no alert is
+// created without one; history/ is append-only and its `at` must be the
 // server clock; a dispatcher's only write to a rider is its status; a Super
 // Admin's only write to an existing device is its pairing. Rider validation
 // (helmet-id uniqueness, phone format) stays in the console — uniqueness is
@@ -129,6 +134,48 @@ service cloud.firestore {
       return status == 'acknowledged' || status == 'dispatched' || status == 'resolved';
     }
 
+    // What the helmet service must put in an alert it raises. The board is
+    // orderBy('timestamp'), and Firestore leaves a document without the
+    // ordered field out of the query: an alert with no timestamp would be
+    // stored, seen by nobody and worked by nobody. A refusal is better —
+    // the firmware sees it on the bench, before a helmet ships.
+    //
+    // Everything required here is a constant or a server transform the
+    // firmware can always supply, so a refusal is always a firmware bug and
+    // never "the GPS had no fix". That is why a position is not required —
+    // a crash with no fix must still reach the board — but a malformed one
+    // is refused. `status`, `type` and `riderId` are required because the
+    // committed indexes query on them, and a query on a field skips every
+    // document without it. The lifecycle stamps belong to the console.
+    // docs/FIRMWARE_CONTRACT.md is this, field by field.
+    function isHelmetAlert() {
+      let d = request.resource.data;
+      return d.get('riderId', '') is string && d.get('riderId', '') != ''
+          && d.get('deviceId', '') is string && d.get('deviceId', '') != ''
+          && d.get('type', '') in ['crash', 'sos', 'alcoholWarning', 'lowBattery']
+          && d.get('severity', '') in ['low', 'moderate', 'high']
+          && d.get('status', '') == 'open'
+          && isServerTime(d.get('timestamp', ''))
+          && !d.keys().hasAny(['acknowledgedAt', 'dispatchedAt', 'resolvedAt'])
+          && isOptionalNumber(d, 'alcoholLevel') && isOptionalNumber(d, 'alcohol_level')
+          && isOptionalNumber(d, 'impactMagnitude') && isOptionalNumber(d, 'impact_magnitude')
+          && (!('location' in d) || d.location is latlng)
+          && isOptionalLatLng(d);
+    }
+
+    function isOptionalNumber(d, field) {
+      return !(field in d) || d[field] is number;
+    }
+
+    // Both or neither, and in range — which also catches the commonest
+    // bug, latitude and longitude swapped (Manila's 121 is no latitude).
+    function isOptionalLatLng(d) {
+      return (!('lat' in d) && !('lng' in d))
+          || (d.get('lat', null) is number && d.get('lng', null) is number
+              && d.lat >= -90 && d.lat <= 90
+              && d.lng >= -180 && d.lng <= 180);
+    }
+
     // --------------------------------------------------------- collections
 
     // Roster. Console-owned, camelCase. Read by every operator; created and
@@ -163,12 +210,17 @@ service cloud.firestore {
 
     // Alerts. Created by the helmet service (or a Super Admin — the seed),
     // worked by dispatchers and Super Admins through the linear lifecycle.
-    // Each transition may change only `status` and stamp exactly the
-    // matching `<status>At` with the server clock, which is what the
-    // console's batched write does and what the Reports tab trusts.
+    // The helmet's create must satisfy the firmware contract above; the
+    // seed writes the simulation's historical alerts, so its timestamps are
+    // its own, but it may not leave one out either. Each transition may
+    // change only `status` and stamp exactly the matching `<status>At` with
+    // the server clock, which is what the console's batched write does and
+    // what the Reports tab trusts.
     match /alerts/{alertId} {
       allow read: if isOperator();
-      allow create: if isHelmetService() || hasRole(['superAdmin']);
+      allow create: if (isHelmetService() && isHelmetAlert())
+                    || (hasRole(['superAdmin'])
+                        && request.resource.data.get('timestamp', null) is timestamp);
       allow update: if hasRole(['superAdmin', 'dispatcher'])
                     && onlyChanges(['status', 'acknowledgedAt', 'dispatchedAt', 'resolvedAt'])
                     && isLifecycleStep(request.resource.data.get('status', ''))

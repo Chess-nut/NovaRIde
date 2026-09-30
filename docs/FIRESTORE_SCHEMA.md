@@ -117,17 +117,24 @@ firmware or app that writes `speedKmh` still renders. Pick one and stay on it.
 
 ### `alerts/{alertId}` — created by firmware, worked by the console, camelCase
 
+**The firmware side of this collection and of `devices/` — exact payloads,
+authentication, what a malformed write returns — is
+[FIRMWARE_CONTRACT.md](FIRMWARE_CONTRACT.md).** The table below is the
+console's view.
+
 Document id: any. The seed uses `A-101`; firmware should use auto-ids.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `riderId` | string | yes | `riders/{riderId}`. |
 | `riderName` | string | | Denormalised for the feed; the console fills it from `riders/` if empty. |
-| `deviceId` | string | | Helmet that raised it. |
+| `deviceId` | string | helmet: yes | Helmet that raised it. |
+| `severity` | string | helmet: yes | `low` | `moderate` | `high`, exactly. Not read by the console yet. |
+| `alcoholLevel`, `impactMagnitude` | number | | mg/L; m/s². Snake_case aliases accepted by the rules. Not read by the console yet. |
 | `type` | string | yes | `crash` \| `sos` \| `alcoholWarning` \| `lowBattery`. Aliases accepted: `fall`, `impact`, `collision` → crash; `alcohol` → alcoholWarning; `battery` → lowBattery; `panic`, `emergency` → sos. Anything else is shown as SOS and logged — a live alert with an odd label beats a hidden one. |
 | `lat`, `lng` | number | yes | Also accepted: `latitude`/`longitude`, or a `location` GeoPoint / map. |
 | `address` | string | | Street-level label. Falls back to the nearest district's address. |
-| `timestamp` | timestamp | **yes** | When the helmet raised it. **The board is `orderBy('timestamp')` — a document without this field is invisible.** |
+| `timestamp` | timestamp | **yes** | When the alert reached the database — a server timestamp from the helmet, enforced. **The board is `orderBy('timestamp')` — a document without this field would be invisible, so the rules refuse one.** |
 | `status` | string | | `open` \| `acknowledged` \| `dispatched` \| `resolved`. Default `open`. Only the console changes it. |
 | `acknowledgedAt`, `dispatchedAt`, `resolvedAt` | timestamp | console | Server timestamps stamped on each transition, for Reports queries. |
 
@@ -308,7 +315,7 @@ and sign-in return `permission-denied` until the deploy above is run.
 
 ### Tested
 
-`rules_test/` holds 117 tests over this file, run against the Firestore
+`rules_test/` holds 141 tests over this file, run against the Firestore
 emulator with no credentials and no reach into the real project
 (`cd rules_test && npm install && npm test`). They cover role resolution,
 each collection's write narrowing, the alert lifecycle and its server-clock
@@ -323,7 +330,7 @@ closed. Run them before a deploy; see
 |---|---|---|
 | **Operator** (`superAdmin` \| `dispatcher` \| `viewer`) | Firebase Auth email/password, from the console | `request.auth.token.role` (custom claim) first; if absent or not one of the three, `admins/{uid}.role`. Aliases `administrator`/`admin` → `superAdmin`, `operator` → `dispatcher` are read-tolerated. |
 | **Mobile account** (`rider` \| `guardian`) | Firebase Auth email/password, from the phone app | No claim at all. The account is whoever `request.auth.uid` says it is; `users/{uid}.role` decides what the app shows it, not what the rules let it reach. It may read and write its own `users/`, `riderProfiles/` or `guardianProfiles/` document and claim a `usernames/` entry — and nothing else in the database. |
-| **Helmet service** | A Firebase Auth user the ESP32 will sign in as, carrying the claim `role: helmetService` | The claim only. It is not a console role; the console rejects it as unprovisioned. **No such account exists yet** — how the firmware authenticates is an open item (§7). A bridge using the Admin SDK bypasses these rules and needs nothing here. |
+| **Helmet service** | A Firebase Auth user the ESP32 will sign in as, carrying the claim `role: helmetService`, granted by `tool/provision_helmet_service.mjs` | The claim only. It is not a console role; the console rejects it as unprovisioned, and it must never have an `admins/` document (the script refuses one). Provisioning steps: [FIRMWARE_CONTRACT.md §7](FIRMWARE_CONTRACT.md#7-for-the-project-owner-provisioning-the-helmet-identity). A bridge using the Admin SDK bypasses these rules and needs nothing here. |
 | Anyone else | — | Denied everywhere. |
 
 **No custom claims are set today.** All three operators resolve through
@@ -339,7 +346,7 @@ places. Keep them in step.
 |---|---|---|---|---|
 | `riders/{id}` | operator | superAdmin | superAdmin; dispatcher **or** helmet service if only `status` changes | never (deactivate instead) |
 | `devices/{id}` | operator | helmet service; superAdmin (registering a helmet; the seed) | helmet service; superAdmin **only if nothing but `assigned_rider_id` / `paired_at` changes** (the pairing) | never |
-| `alerts/{id}` | operator | helmet service; superAdmin (the seed) | superAdmin / dispatcher, **one lifecycle step forward**, touching only `status` + the matching `<status>At`, which must be the server clock | never |
+| `alerts/{id}` | operator | helmet service, **only with the contract's fields and a server-clock `timestamp`**; superAdmin (the seed), with any `timestamp` but never none | superAdmin / dispatcher, **one lifecycle step forward**, touching only `status` + the matching `<status>At`, which must be the server clock | never |
 | `alerts/{id}/history/{e}` | operator (single alert and collection group) | superAdmin / dispatcher, `at` must be the server clock | never | never |
 | `admins/{uid}` | own document: any signed-in user; all: superAdmin | never from a client | never | never |
 | everything else (incl. `emergencyContacts/`) | — | — | — | — |
@@ -412,7 +419,7 @@ has an authenticated identity. What is still absent, deliberately:
 - **A guardian reading their rider's anything.** There is no link model yet
   — `riderLinks/` is named in `closed.test.js` as the path that would carry
   it, and is denied to everybody.
-- **The helmet's identity** (§7), unchanged.
+- **Binding a helmet account to its serial** — see FIRMWARE_CONTRACT.md §8.
 
 ---
 
@@ -521,7 +528,10 @@ Still open:
    `assigned_rider_id` and `paired_at` in the same transaction as the rider
    (§2). The rider app has no part in pairing; a helmet that reports before
    it is paired is joined by `riders.helmetId` until a Super Admin pairs it.
-4. **How does the ESP32 authenticate?** The rules reserve a Firebase Auth
+4. ~~How does the ESP32 authenticate?~~ **Settled:** a Firebase Auth
+   email/password account per helmet carrying `role: helmetService`, provisioned
+   with `tool/provision_helmet_service.mjs`; see FIRMWARE_CONTRACT.md §2 and §7.
+   Previously: The rules reserve a Firebase Auth
    identity carrying the claim `role: helmetService` (one account for the
    fleet, or one per helmet — the rules do not care). The alternative is a
    bridge that writes through the Admin SDK, which bypasses the rules. Either

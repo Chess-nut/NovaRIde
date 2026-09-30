@@ -4,7 +4,8 @@
   "type": "module",
   "description": "Operator scripts for the NovaRide Firebase project. They authenticate with a service-account key that lives OUTSIDE the repository — see set_admin_claims.mjs.",
   "scripts": {
-    "claims": "node set_admin_claims.mjs"
+    "claims": "node set_admin_claims.mjs",
+    "helmet": "node provision_helmet_service.mjs"
   },
   "dependencies": {
     "firebase-admin": "^13.0.0"

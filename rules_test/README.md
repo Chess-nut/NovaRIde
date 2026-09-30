@@ -1,6 +1,6 @@
 # Security-rules tests
 
-117 tests over `firestore.rules`, run against the Firestore emulator.
+141 tests over `firestore.rules`, run against the Firestore emulator.
 
 ```bash
 cd rules_test
@@ -24,11 +24,12 @@ read and a stray call can never reach `novaride-7a68c`.
 | `roles.test.js` | `role()` — claim first, then `admins/{uid}`, with the `administrator`/`operator` aliases, and the four ways to be nobody |
 | `riders.test.js` | Super Admin writes; the dispatcher's and the helmet's `status`-only exceptions; no deletes |
 | `devices.test.js` | firmware writes readings, console writes only `assigned_rider_id` and `paired_at` |
-| `alerts.test.js` | who creates; the linear lifecycle; server-clock stamps |
+| `alerts.test.js` | who creates; what a helmet alert must carry (server-clock `timestamp`, fixed `type`/`severity`, well-formed position); the linear lifecycle; server-clock stamps |
 | `history.test.js` | append-only; required fields; the `collectionGroup('history')` read |
 | `admins.test.js` | own-document reads, Super Admin lists, no client writes at all |
 | `accounts.test.js` | the phone app's four collections: who may create, read and update `users/`, `riderProfiles/`, `guardianProfiles/`, and how a `usernames/` claim works |
 | `closed.test.js` | the catch-all: every path without a rule is denied to everyone |
+| `firmware_contract.test.js` | the JSON bodies in `docs/FIRMWARE_CONTRACT.md`, sent verbatim over REST as the helmet — the doc and the rules cannot drift apart |
 | `payload_contract.test.js` | the payloads the **Dart app actually sends**, replayed against the real ruleset — see below |
 
 `closed.test.js` is the one to watch. It asserts that every path without a

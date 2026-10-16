@@ -195,7 +195,8 @@ secret.
 
 Every alert is **created** by the helmet and never touched by it again.
 Dispatchers then move it through `open → acknowledged → dispatched →
-resolved` from the console.
+resolved` from the console. A crash starts one step earlier, `pending`,
+while its rider can call it off (§3.8).
 
 ### 3.1 Fields
 
@@ -207,7 +208,7 @@ Field names are **camelCase** in this collection.
 | `deviceId` | string (`stringValue`) | **yes**, non-empty | e.g. `NR-H1-001` | This helmet's serial, the same as its `devices/` document id. |
 | `type` | string (`stringValue`) | **yes** | exactly `crash` · `sos` · `alcoholWarning` · `lowBattery` | Case-sensitive. The reports filter on this field. |
 | `severity` | string (`stringValue`) | **yes** | exactly `low` · `moderate` · `high` | **Lowercase, and only these three.** `High`, `medium` and `critical` are all refused. How a reading maps to a severity is the firmware's decision. |
-| `status` | string (`stringValue`) | **yes** | exactly `open` | Every alert starts open. Only the console moves it on. |
+| `status` | string (`stringValue`) | **yes** | `pending` for a `crash`; `open` for everything else | A crash may also be sent `open`, and must be when the rules refuse `pending` (§3.8). Only the console, and the rider during the countdown, move it on. |
 | `timestamp` | timestamp | **yes** | server time | **Never put this in `fields`.** It is written by a server transform (§3.2). A time from the helmet's clock is refused. |
 | `location` | GeoPoint (`geoPointValue`) | no, but send it whenever you have one | degrees, WGS-84 | **The canonical position.** Latitude −90…90, longitude −180…180. Send the last known good fix. |
 | `lat`, `lng` | number, number | no | degrees | Accepted **instead of** `location`, never alongside it. If you send one, send both. |
@@ -241,7 +242,7 @@ alerts/k3F9qTz2VbX8mLw4NcR7
   deviceId:        "NR-H1-001"
   type:            "crash"
   severity:        "high"
-  status:          "open"
+  status:          "pending"
   location:        GeoPoint(14.5995, 120.9842)
   alcoholRaw:      1210
   impactMagnitude: 31.4
@@ -263,7 +264,7 @@ against the emulator (§1):
           "deviceId":        { "stringValue": "NR-H1-001" },
           "type":            { "stringValue": "crash" },
           "severity":        { "stringValue": "high" },
-          "status":          { "stringValue": "open" },
+          "status":          { "stringValue": "pending" },
           "location":        { "geoPointValue": { "latitude": 14.5995, "longitude": 120.9842 } },
           "alcoholRaw":      { "integerValue": "1210" },
           "impactMagnitude": { "doubleValue": 31.4 }
@@ -332,7 +333,7 @@ against the emulator:
 | `severity` of `"High"`, `"medium"`, `"critical"`, or missing | `403 PERMISSION_DENIED` |
 | `type` of `"Crash"`, `"fall"`, `"alcohol_warning"`, or missing | `403 PERMISSION_DENIED` |
 | `riderId` or `deviceId` missing or `""` | `403 PERMISSION_DENIED` |
-| `status` missing or anything but `"open"`, or any `…At` lifecycle field | `403 PERMISSION_DENIED` |
+| `status` missing, `"pending"` on anything but a `crash`, anything but `"open"` or `"pending"`, or any `…At` lifecycle field (including `cancelledAt`) | `403 PERMISSION_DENIED` |
 | `lat` without `lng`, or either as a string, or latitude out of range (swapped?) | `403 PERMISSION_DENIED` |
 | `location` as a map `{latitude, longitude}` instead of a GeoPoint | `403 PERMISSION_DENIED` |
 | `alcoholLevel` or `impactMagnitude` as a string (`"0.08"`) or null | `403 PERMISSION_DENIED` |
@@ -405,6 +406,42 @@ the limit for motorcycle and public-utility drivers is zero tolerance; the
 
 The baseline procedure, and what converting to mg/L would take, are in
 [firmware/README.md](../firmware/README.md).
+
+---
+
+### 3.8 The false-positive countdown
+
+A crash arrives `pending`. For **15 seconds of server time** after its
+`timestamp`, the rider's own app account, once a Super Admin has linked it
+to the rider (`riders/{id}.authUid`), may cancel it. The rider sees a
+countdown and an *I'm OK* button. Cancelling sets `status: cancelled` and a
+server-clock `cancelledAt`, and stands the rider down from `emergency` to
+`riding`.
+
+**The countdown can only suppress an alert, never be needed to send one.**
+Nothing has to happen for a crash to escalate: once the 15 s pass, the rules
+refuse a cancel and the console treats the alert as open. A phone that is
+broken, flat, offline or in a pocket changes nothing. A dispatcher may also
+acknowledge a `pending` alert at any time, which ends the countdown.
+
+What this asks of the helmet:
+
+- Send a crash with `status: "pending"`. `sos`, `alcoholWarning` and
+  `lowBattery` stay `open`: they are deliberate or informational.
+- **If the alert is refused with 403**, resend the same id with
+  `status: "open"`. That is the live project still running rules from
+  before the countdown. A crash that can't be cancelled is a nuisance; one
+  that is refused is lost. Firmware 0.5 does this, and keeps sending `open`
+  until it reboots.
+- Set `riders/{id}.status = "emergency"` as before (§3.5). If the rider
+  cancels, the app clears it, even when the helmet's write lands after the
+  cancel.
+
+**Limitation, plainly:** the countdown is shown only while the rider app is
+open, in the foreground. A backgrounded or killed app shows nothing, so the
+alert escalates when the 15 s run out. That is the safe direction, but it
+means a false positive goes to the dispatcher. Keeping the app listening in
+the background needs an Android foreground service, which is future work.
 
 ---
 

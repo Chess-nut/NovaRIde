@@ -46,6 +46,7 @@ struct PendingAlert {
   char id[21];
   const char* type;
   const char* severity;
+  const char* status;  // "pending" (a crash, in its countdown) or "open"
   bool hasLocation;
   double lat, lng;
   bool hasImpact;

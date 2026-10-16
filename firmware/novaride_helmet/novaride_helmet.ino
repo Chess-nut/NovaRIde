@@ -547,6 +547,13 @@ static void stampServerTime(JsonObject write, const char* field) {
 // ---------------------------------------------------------------- alerts
 
 static PendingAlert g_alerts[ALERT_QUEUE_LEN];
+
+// A crash arrives "pending" so its rider can call it off in the app during
+// the countdown (contract §3.8). Rules deployed before the countdown refuse
+// "pending" with a 403; the first refusal flips this, the same alert goes
+// again as "open", and every later crash goes "open" until a reboot. A crash
+// that cannot be cancelled is a nuisance; one that is refused is lost.
+static bool g_pendingAccepted = true;
 static size_t g_alertHead = 0, g_alertCount = 0;
 
 // 20 characters from A-Z a-z 0-9, like the Firebase SDKs' auto-ids. Made
@@ -575,7 +582,7 @@ static String alertBody(const PendingAlert& a) {
   putString(f, "deviceId", DEVICE_ID);
   putString(f, "type", a.type);
   putString(f, "severity", a.severity);
-  putString(f, "status", "open");
+  putString(f, "status", a.status);
   if (a.hasLocation) {
     // A GeoPoint, never a map, and never 0,0 for "no fix" (contract §3.1).
     f["location"]["geoPointValue"]["latitude"] = a.lat;
@@ -615,6 +622,7 @@ static PendingAlert& queueAlert(const char* type, const char* severity) {
   newAlertId(a.id);
   a.type = type;
   a.severity = severity;
+  a.status = (strcmp(type, "crash") == 0 && g_pendingAccepted) ? "pending" : "open";
 
   portENTER_CRITICAL(&g_mux);
   const GpsState gpsNow = g_gps;
@@ -688,7 +696,13 @@ static bool serviceAlertQueue() {
       a.nextAttempt = now + backoff(a.attempts);
       Serial.printf("[alert] %s HTTP %d, retry %u in %lus\n", a.id, code, a.attempts,
                     (unsigned long)(backoff(a.attempts) / 1000));
-      if (code == 403) {
+      if (code == 403 && strcmp(a.status, "pending") == 0) {
+        // Rules from before the countdown. Same id: nothing was created.
+        Serial.println("[alert] rules refuse \"pending\": resending as \"open\" (deploy the rules)");
+        g_pendingAccepted = false;
+        a.status = "open";
+        a.nextAttempt = now;
+      } else if (code == 403) {
         // Always a firmware bug or a pre-claim token (§3.4). Never drop a
         // crash for it: keep retrying, and say so loudly.
         Serial.printf("[alert] PERMISSION_DENIED: %s\n", resp.c_str());

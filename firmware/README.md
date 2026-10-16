@@ -166,9 +166,10 @@ and it is gone.
 
 - **No SOS button and no battery measurement** in this hardware, so no
   `sos` or `lowBattery` alerts.
-- **No false-positive countdown.** Crash alerts go out at once as `open`.
-  The 15 s countdown changes the alert flow across firmware, rules,
-  console and rider app, and waits on the app-architecture decision.
+- **The countdown needs the rules deployed.** A crash goes out
+  `pending` (contract §3.8). Against rules from before the countdown it
+  is refused, so the helmet resends it `open` and logs `rules refuse
+  "pending"`. If you see that line, deploy the rules.
 - **The alert queue is in RAM.** An alert raised offline survives a lost
   connection, but not a reboot or power loss before it is sent.
 - **The IMU is required.** With the MPU6050 down there is no crash

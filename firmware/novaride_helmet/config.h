@@ -5,7 +5,7 @@
 
 #include <stdint.h>
 
-static const char FIRMWARE_VERSION[] = "0.4.1";
+static const char FIRMWARE_VERSION[] = "0.5.0";
 
 // ---------------------------------------------------------------- pins
 

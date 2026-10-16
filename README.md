@@ -134,6 +134,10 @@ lib/
   admin/      the operations console — a separate entrypoint, untouched
 ```
 
+**Guardian is the code name for the paper's Emergency Contact role.** The
+`guardian` role, `features/guardian/` and `guardianProfiles/` are all that
+role; the names differ only because the rules and tests already use them.
+
 **The auth gate.** One redirect in `app/router.dart` decides everything:
 splash while the session is unknown, the signed-out screens when there is
 no session, the verify-email screen when an account has not confirmed its

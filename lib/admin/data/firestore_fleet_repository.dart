@@ -386,7 +386,8 @@ class FirestoreFleetRepository implements FleetRepository {
     return HelmetTelemetry(
       riderId: rider.id,
       speedKmh: _num(d, ['speed_kmh', 'speedKmh', 'speed']) ?? 0,
-      alcoholLevel: _num(d, ['alcohol_level', 'alcoholLevel']) ?? 0,
+      // No default: absent is "not measured", not "not detected".
+      alcoholDetected: _bool(d, ['alcohol_detected', 'alcoholDetected']),
       batteryPct: (_num(d, ['battery_pct', 'batteryPct', 'battery']) ?? 0)
           .round()
           .clamp(0, 100),

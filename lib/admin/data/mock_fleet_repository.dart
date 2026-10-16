@@ -105,7 +105,7 @@ class MockFleetRepository implements FleetRepository {
         speedKmh: rider.status == RiderStatus.riding
             ? 24 + _rng.nextDouble() * 20
             : 0,
-        alcoholLevel: 0,
+        alcoholDetected: null,
         batteryPct: 80 + _rng.nextInt(20),
         gpsFix: true,
         lat: district.lat + _signed(0.006),

@@ -230,7 +230,9 @@ class HomePage extends ConsumerWidget {
             icon: Icons.water_drop_outlined,
             iconColor: NovaColors.secondaryText,
             value: Unavailable.dash,
-            label: '% Alcohol',
+            // No unit: the helmet reports vapour above its own baseline,
+            // not a percentage or a breath concentration.
+            label: 'ALCOHOL',
             statusText: 'NO HELMET',
             statusColor: NovaColors.secondaryText,
           ),

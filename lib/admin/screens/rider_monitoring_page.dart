@@ -385,11 +385,13 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
                 ),
                 _Metric(
                   label: 'ALCOHOL',
-                  value: telemetry.alcoholLevel.toStringAsFixed(2),
+                  value: telemetry.alcoholLabel,
                   icon: Icons.local_bar,
-                  color: telemetry.alcoholLevel > kAlcoholWarningLevel
-                      ? NovaColors.amber
-                      : NovaColors.green,
+                  color: switch (telemetry.alcoholDetected) {
+                    true => NovaColors.amber,
+                    false => NovaColors.green,
+                    null => NovaColors.secondaryText,
+                  },
                 ),
                 _Metric(
                   label: 'GPS',

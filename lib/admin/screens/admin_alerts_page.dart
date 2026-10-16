@@ -671,10 +671,12 @@ class _AlertDetailPanel extends StatelessWidget {
             _row('Battery', '${telemetry.batteryPct}%'),
             _row(
               'Alcohol',
-              telemetry.alcoholLevel.toStringAsFixed(2),
-              valueColor: telemetry.alcoholLevel > kAlcoholWarningLevel
-                  ? NovaColors.amber
-                  : null,
+              telemetry.alcoholLabel,
+              valueColor: switch (telemetry.alcoholDetected) {
+                true => NovaColors.amber,
+                false => null,
+                null => NovaColors.secondaryText,
+              },
             ),
             _row('GPS fix', telemetry.gpsFix ? 'Locked' : 'No fix'),
           ],

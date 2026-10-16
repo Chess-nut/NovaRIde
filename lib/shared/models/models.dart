@@ -59,8 +59,15 @@ class HelmetTelemetry {
   final String riderId;
   final double speedKmh;
 
-  /// MQ-3 breath alcohol reading, 0.00–1.00 mg/L. Above 0.05 is a warning.
-  final double alcoholLevel;
+  /// The helmet's own verdict: MQ-3 vapour above that helmet's measured
+  /// clean-air baseline (`alcohol_detected`). Null when the helmet sends no
+  /// verdict — no baseline yet, sensor warming up, older firmware — which
+  /// means "not measured" and must never be shown as sober.
+  ///
+  /// There is deliberately no number and no legal-limit comparison: RA 10586
+  /// is zero tolerance for motorcycle riders, and a sensor inside a helmet
+  /// measures the vapour in the helmet, not breath.
+  final bool? alcoholDetected;
   final int batteryPct;
   final bool gpsFix;
   final double lat;
@@ -70,7 +77,7 @@ class HelmetTelemetry {
   const HelmetTelemetry({
     required this.riderId,
     required this.speedKmh,
-    required this.alcoholLevel,
+    this.alcoholDetected,
     required this.batteryPct,
     required this.gpsFix,
     required this.lat,
@@ -87,7 +94,7 @@ class HelmetTelemetry {
       HelmetTelemetry(
         riderId: riderId,
         speedKmh: speedKmh ?? this.speedKmh,
-        alcoholLevel: alcoholLevel,
+        alcoholDetected: alcoholDetected,
         batteryPct: batteryPct,
         gpsFix: gpsFix,
         lat: lat ?? this.lat,
@@ -183,8 +190,15 @@ class AlertEvent {
   }
 }
 
-/// Threshold above which a breath alcohol reading is flagged in amber.
-const double kAlcoholWarningLevel = 0.05;
+/// The only three things the console may say about alcohol. "Not measured"
+/// is its own state, so a helmet that sends nothing never reads as sober.
+extension AlcoholReadout on HelmetTelemetry {
+  String get alcoholLabel => switch (alcoholDetected) {
+        true => 'Detected',
+        false => 'Not detected',
+        null => 'Not measured',
+      };
+}
 
 extension RiderStatusLabel on RiderStatus {
   String get label => switch (this) {

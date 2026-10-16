@@ -104,8 +104,8 @@ class AppColors extends ThemeExtension<AppColors> {
   /// A trip is in progress.
   final Color riding;
 
-  /// Something needs attention but nobody is hurt — alcohol over the
-  /// threshold, a low battery.
+  /// Something needs attention but nobody is hurt — alcohol detected, a
+  /// low battery.
   final Color warning;
 
   /// A crash has been detected.

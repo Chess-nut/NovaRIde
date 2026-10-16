@@ -5,8 +5,8 @@ import 'package:novaride/shared/theme.dart';
 
 /// Live fleet telemetry table.
 ///
-/// Emergency rows are tinted red with a NovaColors.red border, and any
-/// alcohol reading above the warning threshold is shown in amber.
+/// Emergency rows are tinted red with a NovaColors.red border, and alcohol
+/// the helmet has detected is shown in amber.
 ///
 /// Telemetry is passed in rather than read from the mock statics, so the
 /// table shows the same live values as the map beside it.
@@ -83,7 +83,7 @@ class FleetTable extends StatelessWidget {
     final t = _telemetryFor(rider.id);
     final isEmergency = rider.status == RiderStatus.emergency;
     final selected = rider.id == selectedRiderId;
-    final overLimit = (t?.alcoholLevel ?? 0) > kAlcoholWarningLevel;
+    final alcohol = t?.alcoholDetected;
     final lowBattery = (t?.batteryPct ?? 100) < 20;
 
     // Selection outranks the emergency tint so the operator never loses track
@@ -136,9 +136,13 @@ class FleetTable extends StatelessWidget {
           Expanded(
             flex: _columns[3].flex,
             child: _cell(
-              (t?.alcoholLevel ?? 0).toStringAsFixed(2),
-              color: overLimit ? NovaColors.amber : NovaColors.primaryText,
-              bold: overLimit,
+              t?.alcoholLabel ?? 'Not measured',
+              color: switch (alcohol) {
+                true => NovaColors.amber,
+                false => NovaColors.primaryText,
+                null => NovaColors.secondaryText,
+              },
+              bold: alcohol == true,
             ),
           ),
           Expanded(

@@ -96,7 +96,7 @@ class MockData {
     HelmetTelemetry(
       riderId: 'R-001',
       speedKmh: 42.5,
-      alcoholLevel: 0.00,
+      alcoholDetected: false,
       batteryPct: 87,
       gpsFix: true,
       lat: 14.6760,
@@ -106,7 +106,7 @@ class MockData {
     HelmetTelemetry(
       riderId: 'R-002',
       speedKmh: 28.3,
-      alcoholLevel: 0.02,
+      alcoholDetected: false,
       batteryPct: 64,
       gpsFix: true,
       lat: 14.6091,
@@ -116,7 +116,7 @@ class MockData {
     HelmetTelemetry(
       riderId: 'R-003',
       speedKmh: 0.0,
-      alcoholLevel: 0.01,
+      alcoholDetected: false,
       batteryPct: 58,
       gpsFix: true,
       lat: 14.5896,
@@ -126,7 +126,7 @@ class MockData {
     HelmetTelemetry(
       riderId: 'R-004',
       speedKmh: 51.8,
-      alcoholLevel: 0.00,
+      alcoholDetected: false,
       batteryPct: 92,
       gpsFix: true,
       lat: 14.6507,
@@ -136,7 +136,7 @@ class MockData {
     HelmetTelemetry(
       riderId: 'R-005',
       speedKmh: 0.0,
-      alcoholLevel: 0.08,
+      alcoholDetected: true,
       batteryPct: 41,
       gpsFix: true,
       lat: 14.5547,
@@ -146,7 +146,7 @@ class MockData {
     HelmetTelemetry(
       riderId: 'R-006',
       speedKmh: 36.1,
-      alcoholLevel: 0.00,
+      alcoholDetected: false,
       batteryPct: 73,
       gpsFix: true,
       lat: 14.6349,
@@ -156,7 +156,7 @@ class MockData {
     HelmetTelemetry(
       riderId: 'R-007',
       speedKmh: 0.0,
-      alcoholLevel: 0.00,
+      alcoholDetected: false,
       batteryPct: 12,
       gpsFix: false,
       lat: 14.6538,
@@ -166,7 +166,7 @@ class MockData {
     HelmetTelemetry(
       riderId: 'R-008',
       speedKmh: 47.9,
-      alcoholLevel: 0.00,
+      alcoholDetected: false,
       batteryPct: 80,
       gpsFix: true,
       lat: 14.5995,
@@ -176,7 +176,7 @@ class MockData {
     HelmetTelemetry(
       riderId: 'R-009',
       speedKmh: 0.0,
-      alcoholLevel: 0.06,
+      alcoholDetected: true,
       batteryPct: 55,
       gpsFix: true,
       lat: 14.5647,
@@ -186,7 +186,7 @@ class MockData {
     HelmetTelemetry(
       riderId: 'R-010',
       speedKmh: 0.0,
-      alcoholLevel: 0.00,
+      alcoholDetected: false,
       batteryPct: 8,
       gpsFix: false,
       lat: 14.5764,

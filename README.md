@@ -138,6 +138,17 @@ lib/
 `guardian` role, `features/guardian/` and `guardianProfiles/` are all that
 role; the names differ only because the rules and tests already use them.
 
+**The crash countdown.** When the helmet raises a crash, a linked rider's
+app covers whatever screen is open with a 15 s countdown and an *I'm OK*
+button (`features/rider/presentation/widgets/crash_countdown_gate.dart`).
+Cancelling calls the alert off; doing nothing lets it escalate to the
+dispatcher. **It only works while the app is open and in the foreground.**
+A backgrounded or closed app shows nothing, and the alert escalates when the
+15 s run out. That is the safe direction, but a false positive then reaches
+the dispatcher. Background delivery needs an Android foreground service,
+which is future work. A rider has to be linked first: User Management →
+*Link app account*.
+
 **The auth gate.** One redirect in `app/router.dart` decides everything:
 splash while the session is unknown, the signed-out screens when there is
 no session, the verify-email screen when an account has not confirmed its

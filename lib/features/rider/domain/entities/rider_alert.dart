@@ -5,6 +5,8 @@
 /// refuse both, and the app treats "not linked" as a state, not an error.
 library;
 
+import 'package:novaride/shared/models/models.dart' show kCrashCountdown;
+
 /// `riders/{R-xxx}` as its own rider may read it.
 class LinkedRider {
   const LinkedRider({
@@ -78,6 +80,19 @@ class RiderAlert {
   /// The server's time of arrival. Null only while a local write is
   /// pending, which a rider's read-only listener never has.
   final DateTime? timestamp;
+
+  bool get isCritical => type == 'crash' || type == 'sos';
+
+  /// Still being worked: anything but resolved or cancelled.
+  bool get isLive =>
+      status != RiderAlertStatus.resolved && status != RiderAlertStatus.cancelled;
+
+  /// When the rules stop accepting a cancel: [kCrashCountdown] after the
+  /// server timestamp. Null for anything that is not a pending crash.
+  DateTime? get countdownEndsAt =>
+      (type == 'crash' && status == RiderAlertStatus.pending && timestamp != null)
+          ? timestamp!.add(kCrashCountdown)
+          : null;
 
   factory RiderAlert.fromMap(String id, Map<String, dynamic> map) {
     return RiderAlert(

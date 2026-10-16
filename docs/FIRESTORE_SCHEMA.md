@@ -72,7 +72,8 @@ the transaction is what makes them safe with more than one console open.
 | `fullName` | string | yes | console | A document without it is skipped. |
 | `helmetId` | string | yes | console | Helmet serial; **this is the join key to `devices/`** (see §3). Unique across riders: the console checks its roster in the form and the store re-checks `devices/{helmetId}.assigned_rider_id` inside the write transaction, so two operators cannot pair the same helmet. Cannot become a rule (§4). |
 | `phone` | string | | console | Normalised to `+63 9XX XXX XXXX` by the form. |
-| `status` | string | | shared | `riding` \| `idle` \| `offline` \| `emergency`. Default `idle`. The console sets it on register/edit, on deactivate (`offline`) and on the stand-down after a critical alert resolves (`idle`); the helmet service may set `emergency` (§4). |
+| `status` | string | | shared | `riding` \| `idle` \| `offline` \| `emergency`. Default `idle`. The console sets it on register/edit, on deactivate (`offline`) and on the stand-down after a critical alert resolves (`idle`); the helmet service may set `emergency` (§4); the rider's own linked account may set `riding` after cancelling a crash (FIRMWARE_CONTRACT.md §3.8). |
+| `statusClearedBy` | string | | rider app | The alert a rider cancelled when they stood themself down from `emergency`. The rules check it against that alert. |
 | `isActive` | bool | | console | Default `true`. Deactivated riders are kept, never deleted — alert history references them. |
 | `registeredAt` | timestamp | | console | Written once at registration. |
 | `authUid` | string | | console | The rider's own app account (Firebase Auth uid). Super Admin only, and the rules accept only a uid whose `users/{uid}.role` is `rider`. One account per rider is the console's check, like helmet ids. Once set, that account may read this document and the alerts filed under this id. |
@@ -138,7 +139,8 @@ Document id: any. The seed uses `A-101`; firmware should use auto-ids.
 | `lat`, `lng` | number | yes | Also accepted: `latitude`/`longitude`, or a `location` GeoPoint / map. |
 | `address` | string | | Street-level label. Falls back to the nearest district's address. |
 | `timestamp` | timestamp | **yes** | When the alert reached the database — a server timestamp from the helmet, enforced. **The board is `orderBy('timestamp')` — a document without this field would be invisible, so the rules refuse one.** |
-| `status` | string | | `open` \| `acknowledged` \| `dispatched` \| `resolved`. Default `open`. Only the console changes it. |
+| `status` | string | | `pending` \| `open` \| `acknowledged` \| `dispatched` \| `resolved` \| `cancelled`. A crash arrives `pending`; for 15 s its linked rider may set `cancelled`, and after that the console shows it as `open` (FIRMWARE_CONTRACT.md §3.8). Otherwise only the console changes it. |
+| `cancelledAt` | timestamp | rider app | Server time of the rider's cancel. The rules require it with `cancelled`. |
 | `acknowledgedAt`, `dispatchedAt`, `resolvedAt` | timestamp | console | Server timestamps stamped on each transition, for Reports queries. |
 
 The console listens to the newest **100** alerts. Response-time averages are

@@ -17,9 +17,11 @@ import 'package:novaride/features/auth/domain/entities/user_profile.dart';
 import 'package:novaride/features/auth/domain/entities/user_role.dart';
 import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
 
+import 'package:novaride/features/rider/domain/repositories/rider_alert_repository.dart';
 import 'package:novaride/features/rider/domain/repositories/rider_profile_repository.dart';
 
 import 'fake_auth_repository.dart';
+import 'fake_rider_alert_repository.dart';
 import 'fake_rider_profile_repository.dart';
 
 /// An AuthController pinned to one state, for overriding the real one.
@@ -47,6 +49,7 @@ Future<void> pumpMobileApp(
   AuthState? auth,
   AuthRepository? repository,
   RiderProfileRepository? riderProfiles,
+  RiderAlertRepository? riderAlerts,
   bool settle = true,
 }) async {
   await tester.pumpWidget(
@@ -61,6 +64,10 @@ Future<void> pumpMobileApp(
             .overrideWithValue(repository ?? FakeAuthRepository()),
         riderProfileRepositoryProvider.overrideWithValue(
             riderProfiles ?? FakeRiderProfileRepository()),
+        // The countdown gate wraps every screen and reads this as soon as
+        // anyone is signed in.
+        riderAlertRepositoryProvider.overrideWithValue(
+            riderAlerts ?? FakeRiderAlertRepository()),
         if (auth != null)
           authStateProvider.overrideWith(() => FixedAuthController(auth)),
       ],

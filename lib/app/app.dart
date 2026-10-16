@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/theme_mode_provider.dart';
+import '../features/rider/presentation/widgets/crash_countdown_gate.dart';
 import 'router.dart';
 
 /// The mobile app widget.
@@ -32,6 +33,10 @@ class NovaRideApp extends ConsumerWidget {
       darkTheme: dark,
       themeMode: ref.watch(themeModeProvider),
       routerConfig: ref.watch(routerProvider),
+      // Above every route, so a crash countdown covers whatever screen the
+      // rider is on. It shows nothing for a guardian or an unlinked rider.
+      builder: (context, child) =>
+          CrashCountdownGate(child: child ?? const SizedBox.shrink()),
     );
   }
 }

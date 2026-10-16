@@ -48,4 +48,44 @@ class FirestoreRiderAlertRepository implements RiderAlertRepository {
         .handleError((Object error, StackTrace stack) =>
             throw failureFrom(error, stack));
   }
+
+  @override
+  Future<void> cancelPendingCrash({
+    required String alertId,
+    required String riderId,
+    required bool standDown,
+  }) async {
+    final batch = _firestore.batch();
+    batch.update(_firestore.collection(FirestoreCollections.alerts).doc(alertId), {
+      'status': 'cancelled',
+      'cancelledAt': FieldValue.serverTimestamp(),
+    });
+    if (standDown) {
+      batch.update(
+        _firestore.collection(FirestoreCollections.riders).doc(riderId),
+        _standDownFields(alertId),
+      );
+    }
+    try {
+      await batch.commit();
+    } catch (error, stack) {
+      throw failureFrom(error, stack);
+    }
+  }
+
+  @override
+  Future<void> standDown({required String riderId, required String alertId}) async {
+    try {
+      await _firestore
+          .collection(FirestoreCollections.riders)
+          .doc(riderId)
+          .update(_standDownFields(alertId));
+    } catch (error, stack) {
+      throw failureFrom(error, stack);
+    }
+  }
+
+  /// Exactly what isRiderStandDown in firestore.rules admits.
+  static Map<String, Object> _standDownFields(String alertId) =>
+      {'status': 'riding', 'statusClearedBy': alertId};
 }

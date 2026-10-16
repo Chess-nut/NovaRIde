@@ -123,9 +123,12 @@ service cloud.firestore {
       return value == request.time;
     }
 
-    // The linear alert lifecycle. '' means "no legal next step".
+    // The linear alert lifecycle. '' means "no legal next step". A pending
+    // crash (inside its countdown) is acknowledged like an open one: the
+    // countdown may hold an alert back from a dispatcher's attention, never
+    // from a dispatcher's hands.
     function nextAlertStatus(current) {
-      return (current == 'open')
+      return (current == 'open' || current == 'pending')
           ? 'acknowledged'
           : ((current == 'acknowledged')
               ? 'dispatched'
@@ -156,13 +159,55 @@ service cloud.firestore {
           && d.get('deviceId', '') is string && d.get('deviceId', '') != ''
           && d.get('type', '') in ['crash', 'sos', 'alcoholWarning', 'lowBattery']
           && d.get('severity', '') in ['low', 'moderate', 'high']
-          && d.get('status', '') == 'open'
+          && (d.get('status', '') == 'open'
+              || (d.get('status', '') == 'pending' && d.get('type', '') == 'crash'))
           && isServerTime(d.get('timestamp', ''))
-          && !d.keys().hasAny(['acknowledgedAt', 'dispatchedAt', 'resolvedAt'])
+          && !d.keys().hasAny(['acknowledgedAt', 'dispatchedAt', 'resolvedAt', 'cancelledAt'])
           && isOptionalNumber(d, 'alcoholLevel') && isOptionalNumber(d, 'alcohol_level')
           && isOptionalNumber(d, 'impactMagnitude') && isOptionalNumber(d, 'impact_magnitude')
           && (!('location' in d) || d.location is latlng)
           && isOptionalLatLng(d);
+    }
+
+    // ------------------------------------------- the false-positive countdown
+    //
+    // A crash the helmet raises arrives `pending`. For COUNTDOWN seconds of
+    // server time its own linked rider may call it off as a false positive;
+    // after that only the console moves it, as if it had arrived open. The
+    // countdown can only suppress: an alert nobody cancels escalates on the
+    // clock, with no phone involved, so a phone broken in the crash cannot
+    // stop it. docs/FIRMWARE_CONTRACT.md §3.8.
+    function countdownOpen(alert) {
+      return request.time < alert.timestamp + duration.value(15, 's');
+    }
+
+    function isRiderCancel() {
+      return resource.data.get('status', '') == 'pending'
+          && isLinkedRiderOf(resource.data.riderId)
+          && countdownOpen(resource.data)
+          && onlyChanges(['status', 'cancelledAt'])
+          && request.resource.data.status == 'cancelled'
+          && isServerTime(request.resource.data.get('cancelledAt', ''));
+    }
+
+    // The helmet sets riders/{id}.status = emergency right after the alert,
+    // and that write can land before or after the rider cancels. So the
+    // rider may stand themself down, emergency → riding, naming the alert
+    // they cancelled (statusClearedBy): in the same batch as the cancel, or
+    // up to 90 s after the alert arrived, which covers the helmet's write
+    // arriving late. No other change, no other alert, no other rider.
+    function isRiderStandDown(riderId) {
+      let alertId = request.resource.data.get('statusClearedBy', '');
+      let alertPath = /databases/$(database)/documents/alerts/$(alertId);
+      return alertId is string && alertId != ''
+          && isLinkedRiderOf(riderId)
+          && onlyChanges(['status', 'statusClearedBy'])
+          && resource.data.get('status', '') == 'emergency'
+          && request.resource.data.status == 'riding'
+          && existsAfter(alertPath)
+          && getAfter(alertPath).data.get('riderId', '') == riderId
+          && getAfter(alertPath).data.get('status', '') == 'cancelled'
+          && request.time < getAfter(alertPath).data.timestamp + duration.value(90, 's');
     }
 
     function isOptionalNumber(d, field) {
@@ -200,7 +245,8 @@ service cloud.firestore {
       allow create: if hasRole(['superAdmin']) && authUidNamesARider();
       allow update: if (hasRole(['superAdmin']) && authUidNamesARider())
                     || ((hasRole(['dispatcher']) || isHelmetService())
-                        && onlyChanges(['status']));
+                        && onlyChanges(['status']))
+                    || isRiderStandDown(riderId);
       allow delete: if false;   // deactivate instead; alert history references riders
     }
 
@@ -253,12 +299,13 @@ service cloud.firestore {
       allow create: if (isHelmetService() && isHelmetAlert())
                     || (hasRole(['superAdmin'])
                         && request.resource.data.get('timestamp', null) is timestamp);
-      allow update: if hasRole(['superAdmin', 'dispatcher'])
-                    && onlyChanges(['status', 'acknowledgedAt', 'dispatchedAt', 'resolvedAt'])
-                    && isLifecycleStep(request.resource.data.get('status', ''))
-                    && request.resource.data.status
-                         == nextAlertStatus(resource.data.get('status', 'open'))
-                    && isServerTime(request.resource.data.get(request.resource.data.status + 'At', ''));
+      allow update: if (hasRole(['superAdmin', 'dispatcher'])
+                        && onlyChanges(['status', 'acknowledgedAt', 'dispatchedAt', 'resolvedAt'])
+                        && isLifecycleStep(request.resource.data.get('status', ''))
+                        && request.resource.data.status
+                             == nextAlertStatus(resource.data.get('status', 'open'))
+                        && isServerTime(request.resource.data.get(request.resource.data.status + 'At', '')))
+                    || isRiderCancel();
       allow delete: if false;
 
       // Audit trail. Append-only: nothing edits or deletes a history entry,

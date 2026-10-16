@@ -43,6 +43,11 @@ class _ScriptedRepository implements FleetRepository {
   @override
   Future<void> setRiderActive(String riderId, bool active) async {}
   @override
+  Future<String> linkAppAccount(String riderId, String username) async =>
+      'rider@example.test';
+  @override
+  Future<void> unlinkAppAccount(String riderId) async {}
+  @override
   Future<void> setRiderStatus(String riderId, RiderStatus status) async {}
   @override
   Future<void> transitionAlert(String alertId, AlertAction action) {

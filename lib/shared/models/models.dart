@@ -25,6 +25,11 @@ class Rider {
 
   final DateTime registeredAt;
 
+  /// The rider's own app account (`riders/{id}.authUid`), once a Super Admin
+  /// has linked it. Null until then. The link is what lets the rider read
+  /// their own alerts, and so answer the false-positive countdown.
+  final String? authUid;
+
   Rider({
     required this.id,
     required this.fullName,
@@ -33,6 +38,7 @@ class Rider {
     required this.status,
     this.isActive = true,
     DateTime? registeredAt,
+    this.authUid,
   }) : registeredAt = registeredAt ?? DateTime.now();
 
   Rider copyWith({
@@ -52,6 +58,7 @@ class Rider {
         status: status ?? this.status,
         isActive: isActive ?? this.isActive,
         registeredAt: registeredAt ?? this.registeredAt,
+        authUid: authUid,
       );
 }
 

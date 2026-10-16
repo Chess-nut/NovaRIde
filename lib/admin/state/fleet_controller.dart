@@ -363,6 +363,26 @@ class FleetController extends ChangeNotifier {
     );
   }
 
+  /// Links [riderId] to the rider's app account by the username they signed
+  /// up with, resolving to that account's email for the confirmation. No
+  /// optimistic overlay: the roster stream shows the link when it lands.
+  Future<String> linkAppAccount(String riderId, String username) {
+    if (riderFor(riderId) == null) {
+      throw StateError('Rider $riderId is not on the roster.');
+    }
+    if (username.trim().replaceFirst('@', '').isEmpty) {
+      throw StateError('Enter the username the rider signed up with.');
+    }
+    return _repository.linkAppAccount(riderId, username);
+  }
+
+  Future<void> unlinkAppAccount(String riderId) {
+    if (riderFor(riderId) == null) {
+      throw StateError('Rider $riderId is not on the roster.');
+    }
+    return _repository.unlinkAppAccount(riderId);
+  }
+
   /// Shows [expected] on the roster now, runs [write], and reconciles:
   ///
   /// - the store accepts → the entry is marked confirmed and dropped as

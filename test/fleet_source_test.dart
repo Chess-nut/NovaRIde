@@ -49,6 +49,11 @@ class _CloudLikeRepository implements FleetRepository {
   Future<void> setRiderActive(String riderId, bool active) async =>
       writes.add('active $riderId $active');
   @override
+  Future<String> linkAppAccount(String riderId, String username) async =>
+      'rider@example.test';
+  @override
+  Future<void> unlinkAppAccount(String riderId) async {}
+  @override
   Future<void> setRiderStatus(String riderId, RiderStatus status) async =>
       writes.add('status $riderId ${status.name}');
   @override

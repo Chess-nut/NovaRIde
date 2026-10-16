@@ -20,8 +20,10 @@ rules_version = '2';
 //   Phase 3. They carry no claim at all and are not operators: an account
 //   is whoever `request.auth.uid` says it is, and it may read and write
 //   its own users/{uid}, its own riderProfiles/ or guardianProfiles/
-//   document, and nothing else in the database. A rider cannot read the
-//   roster, the alerts or another rider's anything. The one exception to
+//   document. A rider account a Super Admin has linked to a roster entry
+//   (riders/{id}.authUid) also reads that one entry and the alerts filed
+//   under it, and nothing else of the roster, the alerts or another
+//   rider's anything. The one exception to
 //   "signed in or nothing" in this whole file is a `get` on
 //   usernames/{usernameLower}, which has to work before sign-in because
 //   logging in by username means resolving it to an email first; the
@@ -183,13 +185,41 @@ service cloud.firestore {
     // resets a rider to idle when their last critical alert is resolved —
     // and the helmet service may set it to emergency when it raises a
     // critical alert (the firmware contract in FIRESTORE_SCHEMA.md §2).
+    //
+    // `authUid` links a roster entry to the rider's own app account. Only a
+    // Super Admin writes it, and only to an account whose users/{uid}.role
+    // is `rider` — a guardian linked here would read this rider's alerts.
+    // One account per rider is the console's check: rules cannot query for
+    // it, as with helmet-id uniqueness. Once linked, the rider may read this
+    // document: `get`, and the one query the app makes, where authUid is
+    // its own uid. The rule is provable from that filter, so no other
+    // rider's entry can come back.
     match /riders/{riderId} {
-      allow read: if isOperator();
-      allow create: if hasRole(['superAdmin']);
-      allow update: if hasRole(['superAdmin'])
+      allow read: if isOperator()
+                  || (signedIn() && resource.data.authUid == request.auth.uid);
+      allow create: if hasRole(['superAdmin']) && authUidNamesARider();
+      allow update: if (hasRole(['superAdmin']) && authUidNamesARider())
                     || ((hasRole(['dispatcher']) || isHelmetService())
                         && onlyChanges(['status']));
       allow delete: if false;   // deactivate instead; alert history references riders
+    }
+
+    function authUidNamesARider() {
+      let next = request.resource.data.get('authUid', null);
+      let prev = resource == null ? null : resource.data.get('authUid', null);
+      return next == null
+          || next == prev
+          || (next is string
+              && exists(/databases/$(database)/documents/users/$(next))
+              && get(/databases/$(database)/documents/users/$(next))
+                   .data.get('role', '') == 'rider');
+    }
+
+    // The rider app account linked to riders/{riderId}, and nobody else.
+    function isLinkedRiderOf(riderId) {
+      return signedIn()
+          && get(/databases/$(database)/documents/riders/$(riderId))
+               .data.get('authUid', '') == request.auth.uid;
     }
 
     // Telemetry and pairing. Firmware-owned, snake_case, except for the two
@@ -216,8 +246,10 @@ service cloud.firestore {
     // change only `status` and stamp exactly the matching `<status>At` with
     // the server clock, which is what the console's batched write does and
     // what the Reports tab trusts.
+    // A linked rider reads their own alerts: `get`, and queries filtered on
+    // riderId == their roster id. That is what the countdown listens to.
     match /alerts/{alertId} {
-      allow read: if isOperator();
+      allow read: if isOperator() || isLinkedRiderOf(resource.data.riderId);
       allow create: if (isHelmetService() && isHelmetAlert())
                     || (hasRole(['superAdmin'])
                         && request.resource.data.get('timestamp', null) is timestamp);

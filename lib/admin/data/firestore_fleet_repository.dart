@@ -368,6 +368,7 @@ class FirestoreFleetRepository implements FleetRepository {
       registeredAt:
           _date(d, ['registeredAt', 'registered_at', 'createdAt']) ??
               DateTime.now(),
+      authUid: _str(d, ['authUid']),
     );
   }
 
@@ -763,6 +764,54 @@ class FirestoreFleetRepository implements FleetRepository {
       );
     }
   }
+
+  @override
+  Future<String> linkAppAccount(String riderId, String username) =>
+      _guard(() async {
+        final key = username.trim().replaceFirst(RegExp(r'^@'), '').toLowerCase();
+        // usernames/ is the one index anyone may `get`: it is how login
+        // turns a username into an email, and here how a username becomes
+        // the uid to link.
+        final claim = await _db.collection('usernames').doc(key).get();
+        final uid = _str(claim.data() ?? const {}, ['uid']);
+        if (uid == null) {
+          throw FleetWriteException(
+            'No app account is called @$key. Check the spelling with the rider.',
+          );
+        }
+        for (final r in _riders) {
+          if (r.id != riderId && r.authUid == uid) {
+            throw FleetWriteException(
+              '@$key is already linked to ${r.id}. Unlink it there first.',
+            );
+          }
+        }
+        try {
+          await _db.collection('riders').doc(riderId).update({
+            'authUid': uid,
+            'authLinkedAt': FieldValue.serverTimestamp(),
+          });
+        } on FirebaseException catch (error) {
+          // The rules refuse an account whose role is not rider: a guardian
+          // linked here would read this rider's alerts.
+          if (error.code == 'permission-denied') {
+            throw FleetWriteException(
+              '@$key was not linked: only a rider\'s own account can be '
+              'linked, and only by a Super Admin.',
+            );
+          }
+          rethrow;
+        }
+        return _str(claim.data()!, ['email']) ?? '@$key';
+      });
+
+  @override
+  Future<void> unlinkAppAccount(String riderId) => _guard(
+        () => _db.collection('riders').doc(riderId).update({
+          'authUid': FieldValue.delete(),
+          'authLinkedAt': FieldValue.delete(),
+        }),
+      );
 
   @override
   Future<void> setRiderStatus(String riderId, RiderStatus status) => _guard(

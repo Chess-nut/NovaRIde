@@ -64,6 +64,14 @@ class _ScriptedRepository implements FleetRepository {
   Future<void> setRiderActive(String riderId, bool active) =>
       _answer('active $riderId $active', _placeholder);
   @override
+  Future<String> linkAppAccount(String riderId, String username) async {
+    log.add('link $riderId $username');
+    return 'rider@example.test';
+  }
+  @override
+  Future<void> unlinkAppAccount(String riderId) async =>
+      log.add('unlink $riderId');
+  @override
   Future<void> setRiderStatus(String riderId, RiderStatus status) async =>
       log.add('status $riderId ${status.name}');
   @override
@@ -385,6 +393,59 @@ void main() {
 
       expect(find.text('Helmet NR-H1-001 is already assigned'), findsOneWidget);
       expect(repo.log, isEmpty, reason: 'no document written');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    testWidgets('a Super Admin links a rider to their app account by username',
+        (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final repo = _ScriptedRepository();
+      final auth = _SuperAdminAuth();
+      addTearDown(auth.dispose);
+      await tester.pumpWidget(AdminApp(auth: auth, createRepository: () => repo));
+      await tester.enterText(find.byType(TextFormField).first, 'op@tip.edu.ph');
+      await tester.enterText(find.byType(TextFormField).last, 'pw');
+      await tester.pump();
+      await tester.tap(find.text('SIGN IN'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      repo.riders.add([
+        _rider('R-001', helmet: 'NR-H1-001'),
+        Rider(
+          id: 'R-002',
+          fullName: 'Linked Rider',
+          helmetId: 'NR-H1-002',
+          phone: '+63 917 000 0002',
+          status: RiderStatus.idle,
+          authUid: 'uid-linked',
+        ),
+      ]);
+      repo.telemetry.add(const []);
+      repo.alerts.add(const []);
+      repo.connection.add(FleetConnection.connected);
+      await tester.pump();
+
+      await tester.tap(find.text('User Management').first);
+      await tester.pump();
+      expect(find.text('APP'), findsOneWidget, reason: 'only R-002 is linked');
+
+      await tester.tap(find.byTooltip('Rider actions').first);
+      await _settle(tester);
+      expect(find.text('Unlink app account'), findsNothing,
+          reason: 'nothing to unlink on an unlinked rider');
+      await tester.tap(find.text('Link app account…'));
+      await _settle(tester);
+      await tester.enterText(find.byType(TextField).last, 'juan');
+      await tester.tap(find.text('Link'));
+      await _settle(tester);
+
+      expect(repo.log, ['link R-001 juan']);
+      expect(find.textContaining('linked to rider@example.test'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();

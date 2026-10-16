@@ -5,8 +5,8 @@
 /// score) have no source yet:
 ///
 /// - **Pairing** lives console-side, on `riders/{R-xxx}.helmetId` and
-///   `devices/{id}.assigned_rider_id`. A mobile account cannot read
-///   either, and nothing writes `riders/{id}.authUid` to link the two.
+///   `devices/{id}.assigned_rider_id`. A linked rider can read their
+///   roster entry (`linkedRiderProvider`), but not `devices/`.
 /// - **Telemetry** lives on `devices/{id}`, which the rules refuse to a
 ///   mobile account for the same reason.
 /// - **Trip totals and safety score** are not computed anywhere, by

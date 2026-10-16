@@ -374,6 +374,13 @@ class _UserManagementPageState extends State<UserManagementPage> {
                       ),
                     ),
                   ),
+                  if (rider.authUid != null) ...[
+                    const SizedBox(width: 6),
+                    const Tooltip(
+                      message: 'Linked to the rider\'s app account',
+                      child: _Badge('APP', color: NovaColors.cyan),
+                    ),
+                  ],
                   if (inactive) ...[
                     const SizedBox(width: 6),
                     Container(
@@ -460,6 +467,10 @@ class _UserManagementPageState extends State<UserManagementPage> {
             _openRiderForm(fleet, rider: rider);
           case 'toggle':
             _setActive(fleet, rider, !rider.isActive);
+          case 'link':
+            _linkAppAccount(fleet, rider);
+          case 'unlink':
+            _unlinkAppAccount(fleet, rider);
           case 'alerts':
             AdminNavScope.of(context).openAlertsForRider(rider.fullName);
         }
@@ -489,6 +500,27 @@ class _UserManagementPageState extends State<UserManagementPage> {
             tooltip: _canManage ? null : _role.restrictionMessage,
           ),
         ),
+        PopupMenuItem(
+          value: 'link',
+          enabled: _canManage,
+          child: _MenuRow(
+            Icons.phone_iphone,
+            rider.authUid == null ? 'Link app account…' : 'Change app account…',
+            disabled: !_canManage,
+            tooltip: _canManage ? null : _role.restrictionMessage,
+          ),
+        ),
+        if (rider.authUid != null)
+          PopupMenuItem(
+            value: 'unlink',
+            enabled: _canManage,
+            child: _MenuRow(
+              Icons.link_off,
+              'Unlink app account',
+              disabled: !_canManage,
+              tooltip: _canManage ? null : _role.restrictionMessage,
+            ),
+          ),
         const PopupMenuItem(
           value: 'alerts',
           child: _MenuRow(Icons.notifications_none, 'View alerts'),
@@ -563,6 +595,26 @@ class _UserManagementPageState extends State<UserManagementPage> {
       success: (_) => active
           ? '${rider.fullName} is back on active duty'
           : '${rider.fullName} deactivated — alert history kept',
+    );
+  }
+
+  Future<void> _linkAppAccount(FleetController fleet, Rider rider) async {
+    final username = await showDialog<String>(
+      context: context,
+      builder: (_) => _LinkAccountDialog(rider: rider),
+    );
+    if (username == null || !mounted) return;
+    _run(
+      () => fleet.linkAppAccount(rider.id, username),
+      success: (email) => '${rider.fullName} linked to $email — they can '
+          'now see their own alerts in the app',
+    );
+  }
+
+  void _unlinkAppAccount(FleetController fleet, Rider rider) {
+    _run(
+      () => fleet.unlinkAppAccount(rider.id),
+      success: (_) => '${rider.fullName}\'s app account unlinked',
     );
   }
 
@@ -690,5 +742,105 @@ class _MenuRow extends StatelessWidget {
 
     if (tooltip == null) return row;
     return Tooltip(message: tooltip!, child: row);
+  }
+}
+
+class _Badge extends StatelessWidget {
+  final String text;
+  final Color color;
+
+  const _Badge(this.text, {required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 8.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+}
+
+/// Asks for the username the rider signed up with in the app. The rider
+/// reads it off their own profile; the console never sees their password
+/// or anything else about the account but its email.
+class _LinkAccountDialog extends StatefulWidget {
+  final Rider rider;
+
+  const _LinkAccountDialog({required this.rider});
+
+  @override
+  State<_LinkAccountDialog> createState() => _LinkAccountDialogState();
+}
+
+class _LinkAccountDialogState extends State<_LinkAccountDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final username = _controller.text.trim();
+    if (username.replaceFirst('@', '').isEmpty) return;
+    Navigator.of(context).pop(username);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: NovaColors.card,
+      title: Text(
+        'Link ${widget.rider.fullName}\'s app account',
+        style: const TextStyle(color: NovaColors.primaryText, fontSize: 16),
+      ),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'The username the rider signed up with in the NovaRide app. '
+              'Once linked, the rider sees their own alerts and can cancel a '
+              'false crash alert during its countdown.',
+              style: TextStyle(color: NovaColors.secondaryText, fontSize: 12.5),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              onSubmitted: (_) => _submit(),
+              style: const TextStyle(color: NovaColors.primaryText),
+              decoration: const InputDecoration(
+                labelText: 'App username',
+                prefixText: '@',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Link')),
+      ],
+    );
   }
 }

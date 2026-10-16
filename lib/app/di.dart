@@ -10,7 +10,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/data/firebase_auth_repository.dart';
 import '../features/auth/domain/repositories/auth_repository.dart';
+import '../features/rider/data/firestore_rider_alert_repository.dart';
 import '../features/rider/data/firestore_rider_profile_repository.dart';
+import '../features/rider/domain/repositories/rider_alert_repository.dart';
 import '../features/rider/domain/repositories/rider_profile_repository.dart';
 
 /// The identity provider.
@@ -29,4 +31,10 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 /// screen constructs Firestore and fails on "no Firebase app".
 final riderProfileRepositoryProvider = Provider<RiderProfileRepository>((ref) {
   return FirestoreRiderProfileRepository();
+});
+
+/// The rider's linked roster entry and their alerts. Here for the same
+/// reason: a test overrides it rather than constructing Firestore.
+final riderAlertRepositoryProvider = Provider<RiderAlertRepository>((ref) {
+  return FirestoreRiderAlertRepository();
 });

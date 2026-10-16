@@ -75,6 +75,8 @@ the transaction is what makes them safe with more than one console open.
 | `status` | string | | shared | `riding` \| `idle` \| `offline` \| `emergency`. Default `idle`. The console sets it on register/edit, on deactivate (`offline`) and on the stand-down after a critical alert resolves (`idle`); the helmet service may set `emergency` (§4). |
 | `isActive` | bool | | console | Default `true`. Deactivated riders are kept, never deleted — alert history references them. |
 | `registeredAt` | timestamp | | console | Written once at registration. |
+| `authUid` | string | | console | The rider's own app account (Firebase Auth uid). Super Admin only, and the rules accept only a uid whose `users/{uid}.role` is `rider`. One account per rider is the console's check, like helmet ids. Once set, that account may read this document and the alerts filed under this id. |
+| `authLinkedAt` | timestamp | | console | Server time of the link; removed with it. |
 
 Written only by the console, always with explicit field paths: `set` on
 create (the id was just proven free), `update` on edit, and a two-field
@@ -205,8 +207,9 @@ after every sign-up *and* every sign-in.
 
 They are deliberately separate from the console's `riders/` roster. The
 roster is an operator's record of a person; these are a person's own
-account. The link between them is `riders/{R-xxx}.authUid`, written
-console-side, and it does not exist yet.
+account. The link between them is `riders/{R-xxx}.authUid`, written by a
+Super Admin from User Management → *Link app account*, by the username the
+rider signed up with (resolved through `usernames/`).
 
 #### `users/{uid}` — one per account, whatever the role
 
@@ -411,12 +414,10 @@ ruleset and one deploy command.
 Phase 3 gave the phone app its own four collections (§2), so the rider now
 has an authenticated identity. What is still absent, deliberately:
 
-- **A rider reading their own roster entry, telemetry or alerts.** The
-  draft's `request.auth.uid == resource.data.authUid` and `ownsHelmet(...)`
-  clauses still have nothing to bind to: `riders/` has no `authUid` field
-  and nothing writes one. A mobile account is refused `riders/`, `devices/`
-  and `alerts/` outright, which `accounts.test.js` asserts. Linking the two
-  sides is the next rules change, and it needs `authUid` on `riders/` first.
+- **A rider reading their own telemetry.** A linked rider now reads their
+  own roster entry and alerts (`rider_link.test.js`); `devices/` is still
+  refused to every mobile account. An unlinked account reaches none of the
+  three, which `accounts.test.js` asserts.
 - **A guardian reading their rider's anything.** There is no link model yet
   — `riderLinks/` is named in `closed.test.js` as the path that would carry
   it, and is denied to everybody.
@@ -537,5 +538,6 @@ Still open:
    fleet, or one per helmet — the rules do not care). The alternative is a
    bridge that writes through the Admin SDK, which bypasses the rules. Either
    way the firmware team decides; nothing exists yet.
-5. Rider-app access: `riders/` needs an `authUid` field before any rider can
-   read their own record or alerts (§4, "Still to write").
+5. ~~Rider-app access: `riders/` needs an `authUid` field before any rider
+   can read their own record or alerts.~~ **Settled:** `riders/{id}.authUid`,
+   linked by a Super Admin; the rider reads their roster entry and alerts.

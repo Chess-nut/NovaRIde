@@ -7,7 +7,15 @@ enum RiderStatus { riding, idle, offline, emergency }
 
 enum AlertType { crash, alcoholWarning, lowBattery, sos }
 
-enum AlertStatus { open, acknowledged, dispatched, resolved }
+/// `pending` is a crash inside its false-positive countdown, which its
+/// rider may still cancel in the app; `cancelled` is one they did. Both are
+/// docs/FIRMWARE_CONTRACT.md §3.8.
+enum AlertStatus { pending, open, acknowledged, dispatched, resolved, cancelled }
+
+/// How long a rider has to cancel a pending crash, from its server
+/// timestamp. The rules enforce the same 15 s (firestore.rules,
+/// countdownOpen); after it the alert is open whatever the app does.
+const Duration kCrashCountdown = Duration(seconds: 15);
 
 /// Emergency service an operator can dispatch to an incident.
 enum ResponderType { medical, police, fireRescue, barangay }
@@ -230,17 +238,26 @@ extension AlertTypeLabel on AlertType {
 
 extension AlertStatusLabel on AlertStatus {
   String get label => switch (this) {
+        AlertStatus.pending => 'Awaiting rider',
         AlertStatus.open => 'Open',
         AlertStatus.acknowledged => 'Acknowledged',
         AlertStatus.dispatched => 'Dispatched',
         AlertStatus.resolved => 'Resolved',
+        AlertStatus.cancelled => 'Cancelled by rider',
       };
 
-  bool get isOpen => this == AlertStatus.open || this == AlertStatus.acknowledged;
+  /// Needs a dispatcher. A pending crash counts: it is on the board, and a
+  /// dispatcher may act on it before the countdown ends.
+  bool get isOpen =>
+      this == AlertStatus.pending ||
+      this == AlertStatus.open ||
+      this == AlertStatus.acknowledged;
 
   /// Still consuming dispatch attention. Unlike [isOpen] this counts
   /// `dispatched` — responders are rolling but the incident is not closed.
-  bool get isActive => this != AlertStatus.resolved;
+  /// A cancelled alert is over: the rider said it was a false positive.
+  bool get isActive =>
+      this != AlertStatus.resolved && this != AlertStatus.cancelled;
 
   /// The alert lifecycle is strictly linear:
   ///
@@ -249,10 +266,12 @@ extension AlertStatusLabel on AlertStatus {
   /// Skipping a step or moving backwards is rejected, so the audit trail can
   /// never claim a responder was sent to an alert nobody had acknowledged.
   AlertStatus? get nextStatus => switch (this) {
+        AlertStatus.pending => AlertStatus.acknowledged,
         AlertStatus.open => AlertStatus.acknowledged,
         AlertStatus.acknowledged => AlertStatus.dispatched,
         AlertStatus.dispatched => AlertStatus.resolved,
         AlertStatus.resolved => null,
+        AlertStatus.cancelled => null,
       };
 
   bool canTransitionTo(AlertStatus target) => nextStatus == target;

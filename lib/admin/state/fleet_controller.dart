@@ -102,6 +102,11 @@ class FleetController extends ChangeNotifier {
 
   List<HelmetTelemetry> _telemetry = const [];
   List<AlertEvent> _alerts = const [];
+
+  /// The alerts exactly as the source sent them. [_alerts] is this with
+  /// every expired countdown shown as open; see [_applyCountdown].
+  List<AlertEvent> _sourceAlerts = const [];
+  Timer? _countdownTimer;
   final Map<String, List<TrailPoint>> _trails = {};
 
   bool _ridersLoaded = false;
@@ -195,10 +200,42 @@ class FleetController extends ChangeNotifier {
   }
 
   void _onAlerts(List<AlertEvent> alerts) {
-    _alerts = alerts;
+    _sourceAlerts = alerts;
+    _applyCountdown();
     _alertsLoaded = true;
     _lastSync = DateTime.now();
     notifyListeners();
+  }
+
+  /// A pending crash is its rider's to cancel for [kCrashCountdown] after its
+  /// server timestamp. Once that passes the rules refuse a cancel, so the
+  /// board shows it as open, as the contract says. The source sends nothing
+  /// when a clock runs out, hence the timer for the next expiry.
+  void _applyCountdown() {
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+    final now = DateTime.now();
+    DateTime? nextExpiry;
+    _alerts = [
+      for (final a in _sourceAlerts)
+        if (a.status != AlertStatus.pending)
+          a
+        else if (a.timestamp.add(kCrashCountdown).isAfter(now))
+          a
+        else
+          a.copyWith(status: AlertStatus.open),
+    ];
+    for (final a in _alerts) {
+      if (a.status != AlertStatus.pending) continue;
+      final ends = a.timestamp.add(kCrashCountdown);
+      if (nextExpiry == null || ends.isBefore(nextExpiry)) nextExpiry = ends;
+    }
+    if (nextExpiry != null) {
+      _countdownTimer = Timer(nextExpiry.difference(now), () {
+        _applyCountdown();
+        notifyListeners();
+      });
+    }
   }
 
   void _onConnection(FleetConnection connection) {
@@ -560,6 +597,7 @@ class FleetController extends ChangeNotifier {
   /// controller owns its repository — `FleetHost` builds them as a pair.
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _ridersSub?.cancel();
     _telemetrySub?.cancel();
     _alertsSub?.cancel();

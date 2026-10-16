@@ -166,6 +166,51 @@ void main() {
           AlertStatus.open);
     });
 
+    test('a pending crash awaits its rider for 15 s, then shows as open',
+        () async {
+      final repo = _CloudLikeRepository();
+      final fleet = FleetController(repo);
+      addTearDown(fleet.dispose);
+
+      AlertEvent crash(String id, AlertStatus status, Duration age) =>
+          MockData.alerts.first.copyWith(
+            id: id,
+            type: AlertType.crash,
+            status: status,
+            timestamp: DateTime.now().subtract(age),
+          );
+      repo.riders.add(MockData.riders);
+      repo.telemetry.add(MockData.telemetry);
+      repo.alerts.add([
+        crash('fresh', AlertStatus.pending, const Duration(seconds: 2)),
+        crash('expiring', AlertStatus.pending,
+            kCrashCountdown - const Duration(milliseconds: 150)),
+        crash('expired', AlertStatus.pending, const Duration(seconds: 40)),
+        crash('cancelled', AlertStatus.cancelled, const Duration(seconds: 5)),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+
+      AlertStatus statusOf(String id) =>
+          fleet.alerts.firstWhere((a) => a.id == id).status;
+      expect(statusOf('fresh'), AlertStatus.pending);
+      expect(statusOf('expiring'), AlertStatus.pending);
+      expect(statusOf('expired'), AlertStatus.open,
+          reason: 'the rules no longer let the rider cancel it');
+      expect(statusOf('cancelled').isActive, isFalse,
+          reason: 'a false positive is over, not open');
+      expect(AlertStatus.pending.isOpen, isTrue,
+          reason: 'on the board, and a dispatcher may act on it at once');
+
+      // No new snapshot arrives when a clock runs out.
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(statusOf('expiring'), AlertStatus.open);
+      expect(statusOf('fresh'), AlertStatus.pending);
+
+      await fleet.acknowledgeAlert('fresh', actor: 'Ops');
+      expect(repo.writes, ['transition fresh acknowledged'],
+          reason: 'the countdown never holds a responder back');
+    });
+
     test('resolving the last critical alert also releases the rider',
         () async {
       final repo = _CloudLikeRepository();

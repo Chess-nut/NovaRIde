@@ -140,6 +140,38 @@ describe('docs/FIRMWARE_CONTRACT.md — what it promises about them', () => {
     assert.ok(device.get('last_update') instanceof Timestamp);
   });
 
+  it('§3.1: a crash with no fix, and with a field the rules do not name, still lands', async () => {
+    // The shape firmware/novaride_helmet sends before its first GPS fix,
+    // with the MQ-3 reading as raw ADC counts rather than mg/L.
+    const { body } = example('alert');
+    const fields = body.writes[0].update.fields;
+    delete fields.location;
+    delete fields.alcoholLevel;
+    fields.alcoholRaw = { integerValue: '1834' };
+    assert.equal((await commit(body)).status, 200);
+    const alert = await read('alerts/k3F9qTz2VbX8mLw4NcR7');
+    assert.equal(alert.get('location'), undefined);
+    assert.equal(alert.get('alcoholRaw'), 1834);
+  });
+
+  it('§4.1: telemetry with no current fix leaves the last stored position alone', async () => {
+    assert.equal((await commit(example('telemetry').body)).status, 200);
+    const { body } = example('telemetry');
+    const write = body.writes[0];
+    for (const k of ['latitude', 'longitude', 'speed_kmh', 'alcohol_level']) {
+      delete write.update.fields[k];
+    }
+    write.update.fields.gps_fix = { booleanValue: false };
+    write.update.fields.imu_ok = { booleanValue: true };
+    write.update.fields.alcohol_raw = { integerValue: '1834' };
+    write.updateMask.fieldPaths = Object.keys(write.update.fields);
+    assert.equal((await commit(body)).status, 200);
+    const device = await read('devices/NR-H1-001');
+    assert.equal(device.get('gps_fix'), false);
+    assert.equal(device.get('latitude'), 14.5995);
+    assert.equal(device.get('assigned_rider_id'), 'R-001');
+  });
+
   it('§4.3: the same body without updateMask is accepted and wipes the pairing', async () => {
     const { body } = example('telemetry');
     delete body.writes[0].updateMask;

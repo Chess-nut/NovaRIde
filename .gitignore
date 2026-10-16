@@ -160,3 +160,6 @@ dart_defines.local.json
 # Node packages for the operator scripts (tool/) and the rules tests
 # (rules_test/). The lockfiles are committed; the trees are not.
 node_modules/
+
+# Helmet firmware: per-helmet Wi-Fi and Firebase credentials.
+firmware/**/secrets.h

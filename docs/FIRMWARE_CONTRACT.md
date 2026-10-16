@@ -211,7 +211,8 @@ Field names are **camelCase** in this collection.
 | `timestamp` | timestamp | **yes** | server time | **Never put this in `fields`.** It is written by a server transform (§3.2). A time from the helmet's clock is refused. |
 | `location` | GeoPoint (`geoPointValue`) | no, but send it whenever you have one | degrees, WGS-84 | **The canonical position.** Latitude −90…90, longitude −180…180. Send the last known good fix. |
 | `lat`, `lng` | number, number | no | degrees | Accepted **instead of** `location`, never alongside it. If you send one, send both. |
-| `alcoholLevel` | number (`doubleValue` or `integerValue`) | no | **mg/L**, MQ-3 | The reading at the moment of the alert. The console treats anything above **0.05** as over the limit. |
+| `alcoholLevel` | number (`doubleValue` or `integerValue`) | no | **mg/L**, MQ-3 | The reading at the moment of the alert. The console treats anything above **0.05** as over the limit. Not sent until the MQ-3 is calibrated: see `alcoholRaw`. |
+| `alcoholRaw` | number (`integerValue`) | no | ADC counts, 0–4095 | The uncalibrated MQ-3 output, sent instead of a converted mg/L figure that would be invented. **Not mg/L**, and the console ignores it. See [firmware/README.md](../firmware/README.md). |
 | `impactMagnitude` | number (`doubleValue` or `integerValue`) | no | **m/s²** | Peak of √(ax² + ay² + az²) from the MPU6050, the same formula and unit as `vector_magnitude` in `devices/`. About 9.8 at rest. |
 
 **Snake_case aliases.** `alcohol_level` and `impact_magnitude` are accepted in
@@ -396,6 +397,8 @@ convention, kept on purpose.
 | Field | Type (REST value) | Units / values | If missing, the console shows |
 |---|---|---|---|
 | `alcohol_level` | number | **mg/L**, MQ-3; over 0.05 is flagged | 0 |
+| `alcohol_raw` | number (`integerValue`) | ADC counts, 0–4095, uncalibrated; **not mg/L** | stored, not displayed |
+| `imu_ok` | boolean | `false` while the MPU6050 is not answering at ±16 g. Crash detection needs both sensors, so it is **off** while this is false | stored, not displayed |
 | `ax`, `ay`, `az` | number | **m/s²**, MPU6050 axes | stored, not displayed |
 | `vector_magnitude` | number | **m/s²**, √(ax² + ay² + az²) | stored, not displayed |
 | `latitude`, `longitude` | number, number | degrees, NEO-6M fix | 0, 0 |
@@ -618,8 +621,10 @@ What this contract does not settle yet:
    needs detection time too, agree a separate field before the firmware
    writes one.
 4. **Severity thresholds** (which `impactMagnitude` counts as `moderate`,
-   and so on) are the firmware's decision. Write them down next to this file
-   once chosen.
+   and so on) are the firmware's decision. They are in
+   `firmware/novaride_helmet/config.h`, with how each was chosen, and are
+   placeholders until the bench tests in
+   [firmware/README.md](../firmware/README.md) have been run.
 5. **The helmet identity is not bound to its serial.** Any helmet account
    may write any `devices/` document or name any `deviceId`. Binding them
    (a `deviceId` claim per account, checked by the rules) is possible once

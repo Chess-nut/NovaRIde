@@ -22,7 +22,9 @@ struct GpsState {
 
 struct AlcoholState {
   bool ready;
-  uint16_t raw;  // ADC counts, 0-4095. Uncalibrated: not mg/L.
+  uint16_t raw;     // ADC counts, 0-4095. Uncalibrated: not mg/L.
+  bool hasVerdict;  // warmed up and a baseline is configured
+  bool detected;    // above baseline + margin (config.h)
 };
 
 // Detector → loop.

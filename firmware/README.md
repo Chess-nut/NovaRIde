@@ -96,12 +96,45 @@ crash logs `(clipped)`, `impactMagnitude` is then a lower bound, and the
 alert is sent as `high`. Measuring the true peak needs a high-g part such
 as the ADXL375 (±200 g).
 
-## MQ-3: what calibration it needs
+## MQ-3
+
+### Detection above a baseline
 
 The firmware reports the MQ-3 as **raw ADC counts** (`alcoholRaw` on alerts,
 `alcohol_raw` on `devices/`) and writes nothing to `alcoholLevel` /
 `alcohol_level`. Readings are withheld for the first 3 minutes while the
-heater settles. Turning counts into mg/L takes:
+heater settles.
+
+What the console shows is a verdict, `alcohol_detected`: the reading has
+stayed `MQ3_DETECT_MARGIN_RAW` counts above this helmet's clean-air baseline
+for 2 s. When detection starts the helmet raises one `alcoholWarning` alert,
+then no more for 10 minutes. This is **not a legal-limit comparison**.
+RA 10586 is zero tolerance for motorcycle and public-utility drivers, and
+the sensor measures vapour in the helmet, not breath. So the question it
+answers is "is there alcohol vapour here that clean air does not explain",
+not "is this rider over the limit".
+
+To set it up per helmet:
+
+1. Burn the sensor in (below), then power the helmet in clean air, away
+   from sanitiser and fuel, for at least 10 minutes.
+2. Note the `mq3=` value from the `[tune]` lines over a few minutes:
+   their mean and their spread.
+3. Set `MQ3_BASELINE_RAW` in `secrets.h` to the mean. Set
+   `MQ3_DETECT_MARGIN_RAW` in `config.h` to several times the spread.
+4. Check that a sanitiser wipe held near the sensor gives a verdict, and
+   that clean air clears it again.
+
+Until `MQ3_BASELINE_RAW` is set the helmet makes no verdict, and the
+console says **Not measured**.
+
+The baseline moves with temperature, humidity and sensor age. Re-measure
+it before a demo in a different room.
+
+### Converting to mg/L
+
+Converting counts to mg/L is not needed for detection. If the study ever
+wants a concentration, it takes:
 
 1. **Burn-in.** A new sensor needs 24–48 h powered before its readings
    settle.
@@ -125,14 +158,9 @@ alcohol (BrAC) and not BAC. Without a fixed sampling procedure (the rider
 breathes toward the sensor for a set time), describe it in the paper as an
 alcohol-vapour indicator.
 
-Check the console's limit too. It flags **0.05 mg/L**, which looks like the
-**0.05 % BAC** figure. 0.05 % BAC is about **0.24 mg/L** BrAC at the
-standard 2100:1 ratio, nearly five times higher. Confirm which number the
-paper means, and which legal limit applies to motorcycle riders, before
-this goes live.
-
-Until the MQ-3 is calibrated the firmware sends no `alcoholWarning`
-alerts: their threshold is in mg/L.
+The console used to flag readings above 0.05. That number was the
+private-vehicle BAC limit, which doesn't apply to riders under RA 10586,
+and it is gone.
 
 ## Not done yet
 

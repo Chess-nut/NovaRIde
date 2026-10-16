@@ -30,6 +30,10 @@
 #error "Copy secrets.example.h to secrets.h and fill it in (firmware/README.md)."
 #endif
 
+#ifndef MQ3_BASELINE_RAW
+#define MQ3_BASELINE_RAW 0  // a secrets.h from before 0.4.1: no alcohol verdict
+#endif
+
 // ------------------------------------------------------------ endpoints
 
 #ifdef NR_EMULATOR_HOST
@@ -281,6 +285,8 @@ static void detectorTask(void*) {
 
 static void auxTask(void*) {
   uint32_t nextAlcoholSample = 0;
+  uint8_t alcoholOverCount = 0;
+  bool alcoholDetected = false;
   bool warnedNoGps = false;
   const uint32_t started = nowMs();
 
@@ -335,8 +341,21 @@ static void auxTask(void*) {
       for (int i = 0; i < MQ3_SAMPLES_PER_READING; i++) sum += analogRead(MQ3_PIN);
       const uint16_t raw = sum / MQ3_SAMPLES_PER_READING;
       const bool ready = reached(now, MQ3_WARMUP_MS);
+      const bool hasVerdict = ready && MQ3_BASELINE_RAW > 0;
+      if (hasVerdict) {
+        if (raw >= MQ3_BASELINE_RAW + MQ3_DETECT_MARGIN_RAW) {
+          if (alcoholOverCount < MQ3_DETECT_READINGS) alcoholOverCount++;
+        } else {
+          alcoholOverCount = 0;
+        }
+        if (!alcoholDetected && alcoholOverCount >= MQ3_DETECT_READINGS) {
+          alcoholDetected = true;
+        } else if (alcoholDetected && raw < MQ3_BASELINE_RAW + MQ3_DETECT_MARGIN_RAW / 2) {
+          alcoholDetected = false;
+        }
+      }
       portENTER_CRITICAL(&g_mux);
-      g_alcohol = {ready, raw};
+      g_alcohol = {ready, raw, hasVerdict, alcoholDetected};
       portEXIT_CRITICAL(&g_mux);
     }
 
@@ -583,7 +602,9 @@ static String riderStatusBody() {
   return body;
 }
 
-static void queueCrash(const CrashEvent& ev) {
+// A new alert at the tail of the queue, with the position and alcohol
+// snapshot taken now, at detection, not when it finally gets through.
+static PendingAlert& queueAlert(const char* type, const char* severity) {
   if (g_alertCount == ALERT_QUEUE_LEN) {
     Serial.printf("[alert] queue full, dropping unsent %s\n", g_alerts[g_alertHead].id);
     g_alertHead = (g_alertHead + 1) % ALERT_QUEUE_LEN;
@@ -592,13 +613,9 @@ static void queueCrash(const CrashEvent& ev) {
   PendingAlert& a = g_alerts[(g_alertHead + g_alertCount) % ALERT_QUEUE_LEN];
   a = {};
   newAlertId(a.id);
-  a.type = "crash";
-  a.severity = (ev.clipped || ev.peakG >= SEVERITY_HIGH_G) ? "high" : "moderate";
-  a.hasImpact = true;
-  a.impactMs2 = ev.peakG * STANDARD_GRAVITY;
+  a.type = type;
+  a.severity = severity;
 
-  // The snapshot is taken now, a few ms after the crash, not when the
-  // alert finally gets through.
   portENTER_CRITICAL(&g_mux);
   const GpsState gpsNow = g_gps;
   const AlcoholState alcoholNow = g_alcohol;
@@ -612,13 +629,38 @@ static void queueCrash(const CrashEvent& ev) {
   g_alertCount++;
 
   if (a.hasLocation) {
-    Serial.printf("[alert] %s queued: crash, %s, %.1f m/s2, at %.6f,%.6f (fix %lus old)\n", a.id,
-                  a.severity, a.impactMs2, a.lat, a.lng,
-                  (unsigned long)((nowMs() - gpsNow.fixMs) / 1000));
+    Serial.printf("[alert] %s queued: %s, %s, at %.6f,%.6f (fix %lus old)\n", a.id, type, severity,
+                  a.lat, a.lng, (unsigned long)((nowMs() - gpsNow.fixMs) / 1000));
   } else {
-    Serial.printf("[alert] %s queued: crash, %s, %.1f m/s2, no fix since boot\n", a.id,
-                  a.severity, a.impactMs2);
+    Serial.printf("[alert] %s queued: %s, %s, no fix since boot\n", a.id, type, severity);
   }
+  return a;
+}
+
+static void queueCrash(const CrashEvent& ev) {
+  PendingAlert& a =
+    queueAlert("crash", (ev.clipped || ev.peakG >= SEVERITY_HIGH_G) ? "high" : "moderate");
+  a.hasImpact = true;
+  a.impactMs2 = ev.peakG * STANDARD_GRAVITY;
+}
+
+// One alcoholWarning when detection starts, then none for the refractory
+// period however long it lasts or however often it flickers.
+static void watchAlcohol() {
+  static bool wasDetected = false;
+  static bool alerted = false;
+  static uint32_t lastAlert = 0;
+  portENTER_CRITICAL(&g_mux);
+  const bool detected = g_alcohol.hasVerdict && g_alcohol.detected;
+  portEXIT_CRITICAL(&g_mux);
+  const uint32_t now = nowMs();
+  if (detected && !wasDetected
+      && (!alerted || reached(now, lastAlert + ALCOHOL_ALERT_REFRACTORY_MS))) {
+    queueAlert("alcoholWarning", "moderate");
+    alerted = true;
+    lastAlert = now;
+  }
+  wasDetected = detected;
 }
 
 static uint32_t backoff(uint8_t attempts) {
@@ -727,6 +769,14 @@ static void sendTelemetry() {
     putDouble(f, mask, "speed_kmh", gpsNow.speedKmh);
   }
   if (alcoholNow.ready) putInteger(f, mask, "alcohol_raw", alcoholNow.raw);
+  // With no verdict the field is left out, so the console says "Not
+  // measured"; a stored verdict from before a reboot would otherwise
+  // linger, so it is cleared by listing it in the mask with no value.
+  if (alcoholNow.hasVerdict) {
+    putBool(f, mask, "alcohol_detected", alcoholNow.detected);
+  } else {
+    mask.add("alcohol_detected");
+  }
   f["firmware_version"]["stringValue"] = FIRMWARE_VERSION;
   mask.add("firmware_version");
   stampServerTime(write, "last_update");
@@ -815,6 +865,7 @@ void loop() {
 
   CrashEvent ev;
   while (xQueueReceive(g_crashQueue, &ev, 0) == pdTRUE) queueCrash(ev);
+  watchAlcohol();
 
   if (WiFi.status() == WL_CONNECTED) {
     // Alerts first. Telemetry only goes out when no alert is due.

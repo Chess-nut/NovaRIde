@@ -146,29 +146,30 @@ describe('docs/FIRMWARE_CONTRACT.md — what it promises about them', () => {
     const { body } = example('alert');
     const fields = body.writes[0].update.fields;
     delete fields.location;
-    delete fields.alcoholLevel;
-    fields.alcoholRaw = { integerValue: '1834' };
     assert.equal((await commit(body)).status, 200);
     const alert = await read('alerts/k3F9qTz2VbX8mLw4NcR7');
     assert.equal(alert.get('location'), undefined);
-    assert.equal(alert.get('alcoholRaw'), 1834);
+    assert.equal(alert.get('alcoholRaw'), 1210);
   });
 
-  it('§4.1: telemetry with no current fix leaves the last stored position alone', async () => {
+  it('§4.1: telemetry with no fix and no alcohol verdict keeps the position, drops the verdict', async () => {
     assert.equal((await commit(example('telemetry').body)).status, 200);
+    assert.equal((await read('devices/NR-H1-001')).get('alcohol_detected'), false);
     const { body } = example('telemetry');
     const write = body.writes[0];
-    for (const k of ['latitude', 'longitude', 'speed_kmh', 'alcohol_level']) {
+    for (const k of ['latitude', 'longitude', 'speed_kmh', 'alcohol_detected']) {
       delete write.update.fields[k];
     }
     write.update.fields.gps_fix = { booleanValue: false };
     write.update.fields.imu_ok = { booleanValue: true };
     write.update.fields.alcohol_raw = { integerValue: '1834' };
-    write.updateMask.fieldPaths = Object.keys(write.update.fields);
+    // Masked with no value: how the sketch clears a verdict it no longer has.
+    write.updateMask.fieldPaths = [...Object.keys(write.update.fields), 'alcohol_detected'];
     assert.equal((await commit(body)).status, 200);
     const device = await read('devices/NR-H1-001');
     assert.equal(device.get('gps_fix'), false);
     assert.equal(device.get('latitude'), 14.5995);
+    assert.equal(device.get('alcohol_detected'), undefined);
     assert.equal(device.get('assigned_rider_id'), 'R-001');
   });
 

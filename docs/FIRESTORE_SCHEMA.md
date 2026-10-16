@@ -91,7 +91,8 @@ fields — the pairing — when a Super Admin registers or edits a rider.
 
 | Field | Type | Owner | Notes |
 |---|---|---|---|
-| `alcohol_level` | number | firmware | MQ-3, mg/L. Warning above 0.05. |
+| `alcohol_detected` | bool | firmware | Vapour above the helmet's clean-air baseline. **Absent means not measured**, and the console says so. No legal-limit comparison anywhere (FIRMWARE_CONTRACT.md §3.7). |
+| `alcohol_raw` | number | firmware | MQ-3 ADC counts. Not a concentration; not displayed. |
 | `ax`, `ay`, `az` | number | firmware | MPU6050 axes. |
 | `vector_magnitude` | number | firmware | √(ax² + ay² + az²). |
 | `severity` | string | firmware | Firmware's own classification; not interpreted by the console yet. |
@@ -130,7 +131,7 @@ Document id: any. The seed uses `A-101`; firmware should use auto-ids.
 | `riderName` | string | | Denormalised for the feed; the console fills it from `riders/` if empty. |
 | `deviceId` | string | helmet: yes | Helmet that raised it. |
 | `severity` | string | helmet: yes | `low` | `moderate` | `high`, exactly. Not read by the console yet. |
-| `alcoholLevel`, `impactMagnitude` | number | | mg/L; m/s². Snake_case aliases accepted by the rules. Not read by the console yet. |
+| `alcoholRaw`, `impactMagnitude` | number | | MQ-3 ADC counts; m/s². Not read by the console yet. `alcoholLevel` (mg/L) is accepted by the rules but not sent: FIRMWARE_CONTRACT.md §3.7. |
 | `type` | string | yes | `crash` \| `sos` \| `alcoholWarning` \| `lowBattery`. Aliases accepted: `fall`, `impact`, `collision` → crash; `alcohol` → alcoholWarning; `battery` → lowBattery; `panic`, `emergency` → sos. Anything else is shown as SOS and logged — a live alert with an odd label beats a hidden one. |
 | `lat`, `lng` | number | yes | Also accepted: `latitude`/`longitude`, or a `location` GeoPoint / map. |
 | `address` | string | | Street-level label. Falls back to the nearest district's address. |

@@ -21,6 +21,13 @@
 // example R-001. Not a Firebase Auth uid. Contract §3.6.
 #define RIDER_ID "R-001"
 
+// This helmet's MQ-3 in clean air, warmed up, in raw ADC counts: the mean
+// of the bench readings (firmware/README.md, "MQ-3"). Per helmet, because
+// every sensor and divider differs. 0 means not measured, and then the
+// helmet makes no alcohol verdict at all and the console shows
+// "Not measured".
+#define MQ3_BASELINE_RAW 0
+
 // Uncomment to talk to the local emulators on this laptop address instead
 // of the live project (contract §1). Plain HTTP, project demo-novaride.
 // #define NR_EMULATOR_HOST "192.168.100.23"

@@ -18,7 +18,7 @@ The helmet makes exactly three kinds of write, and it reads nothing:
 
 | Write | When | Section |
 |---|---|---|
-| Create `alerts/{id}` | A crash, an SOS, an alcohol reading over the limit, a low battery | §3 |
+| Create `alerts/{id}` | A crash, an SOS, alcohol detected (§3.7), a low battery | §3 |
 | Set `riders/{riderId}.status` to `"emergency"` | Right after a `crash` or `sos` alert | §3.5 |
 | Update `devices/{deviceId}` | Periodically, with the latest readings | §4 |
 
@@ -211,8 +211,8 @@ Field names are **camelCase** in this collection.
 | `timestamp` | timestamp | **yes** | server time | **Never put this in `fields`.** It is written by a server transform (§3.2). A time from the helmet's clock is refused. |
 | `location` | GeoPoint (`geoPointValue`) | no, but send it whenever you have one | degrees, WGS-84 | **The canonical position.** Latitude −90…90, longitude −180…180. Send the last known good fix. |
 | `lat`, `lng` | number, number | no | degrees | Accepted **instead of** `location`, never alongside it. If you send one, send both. |
-| `alcoholLevel` | number (`doubleValue` or `integerValue`) | no | **mg/L**, MQ-3 | The reading at the moment of the alert. The console treats anything above **0.05** as over the limit. Not sent until the MQ-3 is calibrated: see `alcoholRaw`. |
-| `alcoholRaw` | number (`integerValue`) | no | ADC counts, 0–4095 | The uncalibrated MQ-3 output, sent instead of a converted mg/L figure that would be invented. **Not mg/L**, and the console ignores it. See [firmware/README.md](../firmware/README.md). |
+| `alcoholLevel` | number (`doubleValue` or `integerValue`) | no | **mg/L**, MQ-3 | A calibrated concentration, for if the study ever needs one. Firmware 0.4 does not send it (§3.7), and the console does not read it. |
+| `alcoholRaw` | number (`integerValue`) | no | ADC counts, 0–4095 | The uncalibrated MQ-3 output at the moment of the alert, sent instead of a converted mg/L figure that would be invented. **Not mg/L**. Stored, not displayed. See §3.7. |
 | `impactMagnitude` | number (`doubleValue` or `integerValue`) | no | **m/s²** | Peak of √(ax² + ay² + az²) from the MPU6050, the same formula and unit as `vector_magnitude` in `devices/`. About 9.8 at rest. |
 
 **Snake_case aliases.** `alcohol_level` and `impact_magnitude` are accepted in
@@ -243,7 +243,7 @@ alerts/k3F9qTz2VbX8mLw4NcR7
   severity:        "high"
   status:          "open"
   location:        GeoPoint(14.5995, 120.9842)
-  alcoholLevel:    0.02
+  alcoholRaw:      1210
   impactMagnitude: 31.4
   timestamp:       2026-09-30 04:33:35 UTC+8     ← stamped by the server
 ```
@@ -265,7 +265,7 @@ against the emulator (§1):
           "severity":        { "stringValue": "high" },
           "status":          { "stringValue": "open" },
           "location":        { "geoPointValue": { "latitude": 14.5995, "longitude": 120.9842 } },
-          "alcoholLevel":    { "doubleValue": 0.02 },
+          "alcoholRaw":      { "integerValue": "1210" },
           "impactMagnitude": { "doubleValue": 31.4 }
         }
       },
@@ -381,6 +381,31 @@ with. For now, `riderId` is part of the helmet's configuration, set when it
 is flashed, and it must match the pairing a Super Admin made in the console.
 If a helmet is re-paired to another rider in the console, reflash it. See §8.
 
+### 3.7 Alcohol: what the helmet measures, and what it claims
+
+**A sensor inside a helmet measures the vapour in the helmet, not breath.**
+The air is diluted by ventilation and by however the rider happens to be
+breathing. Nothing the MQ-3 reports there is a breath alcohol concentration
+(BrAC) or a blood alcohol figure, calibrated or not, and nothing in this
+system may present it as one.
+
+So the helmet makes **detection above a measured clean-air baseline**, not
+a legal-limit comparison. Each helmet's MQ-3 is measured in clean air on
+the bench, and that baseline is flashed with it. The helmet reports
+`alcohol_detected: true` while the reading stays a margin above that
+baseline. A legal limit would be the wrong comparison anyway. Under RA 10586
+the limit for motorcycle and public-utility drivers is zero tolerance; the
+0.05 % BAC figure the console once used is the private-vehicle limit.
+
+| | |
+|---|---|
+| `devices/.alcohol_detected` | The current verdict. **Absent when there is none**: no baseline flashed, or the heater still warming. The console shows absent as "Not measured", never as sober. |
+| `devices/.alcohol_raw`, `alerts/.alcoholRaw` | The raw ADC count, for the study's records. Not a concentration. |
+| `alerts/` with `type: alcoholWarning` | Raised once when detection starts, `severity: moderate`, then not again for 10 minutes. |
+
+The baseline procedure, and what converting to mg/L would take, are in
+[firmware/README.md](../firmware/README.md).
+
 ---
 
 ## 4. `devices/{deviceId}`: the helmet's live readings
@@ -396,7 +421,8 @@ convention, kept on purpose.
 
 | Field | Type (REST value) | Units / values | If missing, the console shows |
 |---|---|---|---|
-| `alcohol_level` | number | **mg/L**, MQ-3; over 0.05 is flagged | 0 |
+| `alcohol_detected` | boolean | The helmet's verdict: vapour above its own clean-air baseline (§3.7). **Leave it out when there is no verdict** | "Not measured". Never "not detected", and never 0 |
+| `alcohol_level` | number | mg/L, if the study ever calibrates the sensor. Not sent by firmware 0.4 | stored, not displayed |
 | `alcohol_raw` | number (`integerValue`) | ADC counts, 0–4095, uncalibrated; **not mg/L** | stored, not displayed |
 | `imu_ok` | boolean | `false` while the MPU6050 is not answering at ±16 g. Crash detection needs both sensors, so it is **off** while this is false | stored, not displayed |
 | `ax`, `ay`, `az` | number | **m/s²**, MPU6050 axes | stored, not displayed |
@@ -430,7 +456,7 @@ The console also accepts camelCase spellings of every field above
       "update": {
         "name": "projects/demo-novaride/databases/(default)/documents/devices/NR-H1-001",
         "fields": {
-          "alcohol_level":    { "doubleValue": 0.02 },
+          "alcohol_detected": { "booleanValue": false },
           "ax":               { "doubleValue": 0.12 },
           "ay":               { "doubleValue": -0.34 },
           "az":               { "doubleValue": 9.79 },
@@ -445,7 +471,7 @@ The console also accepts camelCase spellings of every field above
       },
       "updateMask": {
         "fieldPaths": [
-          "alcohol_level", "ax", "ay", "az", "vector_magnitude",
+          "alcohol_detected", "ax", "ay", "az", "vector_magnitude",
           "latitude", "longitude", "speed_kmh", "battery_pct", "gps_fix",
           "firmware_version"
         ]
@@ -605,7 +631,7 @@ role, requires email/password sign-in, and can target the emulator
 
 What this contract does not settle yet:
 
-1. **The console does not display `severity`, `alcoholLevel` or
+1. **The console does not display `severity`, `alcoholRaw` or
    `impactMagnitude` yet.** The rules check them and the database stores
    them, so write them now. The console's alert reader, including the
    snake_case aliases, is a pending change on the app side. Until then the

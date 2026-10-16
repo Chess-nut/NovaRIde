@@ -5,7 +5,7 @@
 
 #include <stdint.h>
 
-static const char FIRMWARE_VERSION[] = "0.4.0";
+static const char FIRMWARE_VERSION[] = "0.4.1";
 
 // ---------------------------------------------------------------- pins
 
@@ -115,6 +115,17 @@ static const uint32_t GPS_FIX_STALE_MS = 3000;
 static const uint32_t MQ3_WARMUP_MS = 180000;
 static const uint32_t MQ3_SAMPLE_PERIOD_MS = 500;
 static const int MQ3_SAMPLES_PER_READING = 16;
+
+// Alcohol is "detected" when the reading sits MQ3_DETECT_MARGIN_RAW counts
+// above this helmet's clean-air baseline (MQ3_BASELINE_RAW, secrets.h) for
+// MQ3_DETECT_READINGS readings in a row, and clears below half the margin.
+// It is detection above a measured baseline, not a legal-limit comparison:
+// RA 10586 is zero tolerance for motorcycle riders, and the sensor measures
+// vapour in the helmet, not breath. The margin is a placeholder: set it to
+// several times the spread of the clean-air bench readings.
+static const int MQ3_DETECT_MARGIN_RAW = 200;
+static const uint8_t MQ3_DETECT_READINGS = 4;  // 2 s at 500 ms
+static const uint32_t ALCOHOL_ALERT_REFRACTORY_MS = 600000;
 
 // ------------------------------------------------------- telemetry
 

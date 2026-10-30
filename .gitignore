@@ -1,11 +1,19 @@
 # Miscellaneous
 *.class
+# Lockfiles, except pubspec.lock. This is an application, not a library:
+# the lockfile is committed so every checkout — and the build on defence
+# day — resolves the same package versions.
 *.lock
+!pubspec.lock
 *.log
 *.pyc
 *.swp
 .buildlog/
 .history
+
+# IntelliJ / Android Studio per-user state. The rest of .idea/ (SDK
+# libraries, modules, run configurations) is shared on purpose.
+.idea/workspace.xml
 
 
 
@@ -117,12 +125,20 @@ app.*.symbols
 !**/ios/**/default.perspectivev3
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
 !/dev/ci/**/Gemfile.lock
-# Firebase — never commit credentials or generated config.
+# Firebase.
 # The admin console reads its web config from assets/config/firebase.json;
-# copy assets/config/firebase.example.json and fill it in locally.
+# copy assets/config/firebase.example.json and fill it in locally. Its
+# absence is what drops the console back to the simulation, which is why
+# this one stays out of the tree.
 assets/config/firebase.json
-lib/firebase_options.dart
-**/android/app/google-services.json
+
+# lib/firebase_options.dart and android/app/google-services.json are NOT
+# ignored. Neither is a credential — both are compiled into every APK, so
+# anyone holding the app holds them, and Firebase's protection is the
+# security rules (rules_test/, 108 tests), not these files. Unlike the
+# console's web config, their absence does not degrade gracefully: the
+# Gradle build fails outright, which is a worse thing to hand a teammate
+# or a defence-day laptop than a project id in a private repository.
 **/ios/Runner/GoogleService-Info.plist
 **/macos/Runner/GoogleService-Info.plist
 .firebase/
@@ -134,3 +150,16 @@ firebase-debug.log
 *service-account*.json
 *-key.json
 *firebase-adminsdk*.json
+# Google Maps keys. Supplied at build time, never from a tracked file:
+#   flutter run --dart-define-from-file=dart_defines.local.json
+# (copy dart_defines.example.json). iOS reads ios/Flutter/Secrets.xcconfig
+# (copy Secrets.example.xcconfig). See lib/shared/maps/google_maps_key.dart.
+dart_defines.local.json
+**/ios/Flutter/Secrets.xcconfig
+
+# Node packages for the operator scripts (tool/) and the rules tests
+# (rules_test/). The lockfiles are committed; the trees are not.
+node_modules/
+
+# Helmet firmware: per-helmet Wi-Fi and Firebase credentials.
+firmware/**/secrets.h

@@ -102,6 +102,17 @@ abstract class FleetRepository {
   /// carries a stale copy of the rider's other fields over a concurrent edit.
   Future<void> setRiderStatus(String riderId, RiderStatus status);
 
+  /// Links a roster entry to the rider's own app account, found by the
+  /// username they signed up with, and resolves to that account's email so
+  /// the operator can confirm it is the right person. Replaces any earlier
+  /// link. The store accepts only an account whose role is rider, and one
+  /// account per rider: the second is checked here against the roster, the
+  /// way helmet serials are, because rules cannot query for it.
+  Future<String> linkAppAccount(String riderId, String username);
+
+  /// Removes the link. The account stops seeing this rider's alerts.
+  Future<void> unlinkAppAccount(String riderId);
+
   /// Moves an alert to [action.toStatus] and appends [action] to its audit
   /// trail. The two happen together — an alert must never claim a status its
   /// history does not account for.

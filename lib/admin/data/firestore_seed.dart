@@ -51,7 +51,7 @@ Future<void> seedFirestore({FirebaseFirestore? firestore}) async {
       'firmware_version': 'seed',
       'paired_at': Timestamp.fromDate(rider.registeredAt),
       // Firmware-shaped readings, matching devices/helmet01.
-      'alcohol_level': t.alcoholLevel,
+      if (t.alcoholDetected != null) 'alcohol_detected': t.alcoholDetected,
       'ax': 0,
       'ay': 0,
       'az': 0,

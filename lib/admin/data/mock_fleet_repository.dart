@@ -105,7 +105,7 @@ class MockFleetRepository implements FleetRepository {
         speedKmh: rider.status == RiderStatus.riding
             ? 24 + _rng.nextDouble() * 20
             : 0,
-        alcoholLevel: 0,
+        alcoholDetected: null,
         batteryPct: 80 + _rng.nextInt(20),
         gpsFix: true,
         lat: district.lat + _signed(0.006),
@@ -137,6 +137,19 @@ class MockFleetRepository implements FleetRepository {
     );
     _publishRiders();
   }
+
+  /// The simulation has no app accounts behind it, so there is nothing to
+  /// link to. Saying so beats pretending a link worked.
+  @override
+  Future<String> linkAppAccount(String riderId, String username) async {
+    throw const FleetWriteException(
+      'Simulation mode has no app accounts to link. Link riders on the '
+      'Firestore console.',
+    );
+  }
+
+  @override
+  Future<void> unlinkAppAccount(String riderId) async {}
 
   @override
   Future<void> setRiderStatus(String riderId, RiderStatus status) async {

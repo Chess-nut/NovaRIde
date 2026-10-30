@@ -368,6 +368,7 @@ class FirestoreFleetRepository implements FleetRepository {
       registeredAt:
           _date(d, ['registeredAt', 'registered_at', 'createdAt']) ??
               DateTime.now(),
+      authUid: _str(d, ['authUid']),
     );
   }
 
@@ -386,7 +387,8 @@ class FirestoreFleetRepository implements FleetRepository {
     return HelmetTelemetry(
       riderId: rider.id,
       speedKmh: _num(d, ['speed_kmh', 'speedKmh', 'speed']) ?? 0,
-      alcoholLevel: _num(d, ['alcohol_level', 'alcoholLevel']) ?? 0,
+      // No default: absent is "not measured", not "not detected".
+      alcoholDetected: _bool(d, ['alcohol_detected', 'alcoholDetected']),
       batteryPct: (_num(d, ['battery_pct', 'batteryPct', 'battery']) ?? 0)
           .round()
           .clamp(0, 100),
@@ -764,11 +766,59 @@ class FirestoreFleetRepository implements FleetRepository {
   }
 
   @override
-  Future<void> setRiderStatus(String riderId, RiderStatus status) {
-    return _db.collection('riders').doc(riderId).update({
-      'status': status.name,
-    });
-  }
+  Future<String> linkAppAccount(String riderId, String username) =>
+      _guard(() async {
+        final key = username.trim().replaceFirst(RegExp(r'^@'), '').toLowerCase();
+        // usernames/ is the one index anyone may `get`: it is how login
+        // turns a username into an email, and here how a username becomes
+        // the uid to link.
+        final claim = await _db.collection('usernames').doc(key).get();
+        final uid = _str(claim.data() ?? const {}, ['uid']);
+        if (uid == null) {
+          throw FleetWriteException(
+            'No app account is called @$key. Check the spelling with the rider.',
+          );
+        }
+        for (final r in _riders) {
+          if (r.id != riderId && r.authUid == uid) {
+            throw FleetWriteException(
+              '@$key is already linked to ${r.id}. Unlink it there first.',
+            );
+          }
+        }
+        try {
+          await _db.collection('riders').doc(riderId).update({
+            'authUid': uid,
+            'authLinkedAt': FieldValue.serverTimestamp(),
+          });
+        } on FirebaseException catch (error) {
+          // The rules refuse an account whose role is not rider: a guardian
+          // linked here would read this rider's alerts.
+          if (error.code == 'permission-denied') {
+            throw FleetWriteException(
+              '@$key was not linked: only a rider\'s own account can be '
+              'linked, and only by a Super Admin.',
+            );
+          }
+          rethrow;
+        }
+        return _str(claim.data()!, ['email']) ?? '@$key';
+      });
+
+  @override
+  Future<void> unlinkAppAccount(String riderId) => _guard(
+        () => _db.collection('riders').doc(riderId).update({
+          'authUid': FieldValue.delete(),
+          'authLinkedAt': FieldValue.delete(),
+        }),
+      );
+
+  @override
+  Future<void> setRiderStatus(String riderId, RiderStatus status) => _guard(
+        () => _db.collection('riders').doc(riderId).update({
+          'status': status.name,
+        }),
+      );
 
   /// Status change and audit entry go in one batch so neither can land
   /// without the other. `at` is the server clock: response-time metrics are
@@ -776,22 +826,24 @@ class FirestoreFleetRepository implements FleetRepository {
   /// source for them. The `<status>At` stamp on the alert itself lets the
   /// Reports tab query response times without reading every history entry.
   @override
-  Future<void> transitionAlert(String alertId, AlertAction action) {
-    final alertRef = _db.collection('alerts').doc(alertId);
-    final batch = _db.batch();
-    batch.update(alertRef, {
-      'status': action.toStatus.name,
-      '${action.toStatus.name}At': FieldValue.serverTimestamp(),
-    });
-    batch.set(alertRef.collection('history').doc(), {
-      'toStatus': action.toStatus.name,
-      'actorName': action.actorName,
-      'note': action.note,
-      'responder': action.responder?.name,
-      'at': FieldValue.serverTimestamp(),
-    });
-    return batch.commit();
-  }
+  Future<void> transitionAlert(String alertId, AlertAction action) => _guard(
+        () {
+          final alertRef = _db.collection('alerts').doc(alertId);
+          final batch = _db.batch();
+          batch.update(alertRef, {
+            'status': action.toStatus.name,
+            '${action.toStatus.name}At': FieldValue.serverTimestamp(),
+          });
+          batch.set(alertRef.collection('history').doc(), {
+            'toStatus': action.toStatus.name,
+            'actorName': action.actorName,
+            'note': action.note,
+            'responder': action.responder?.name,
+            'at': FieldValue.serverTimestamp(),
+          });
+          return batch.commit();
+        },
+      );
 
   @override
   void dispose() {

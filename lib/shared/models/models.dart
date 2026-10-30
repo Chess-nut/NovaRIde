@@ -7,7 +7,15 @@ enum RiderStatus { riding, idle, offline, emergency }
 
 enum AlertType { crash, alcoholWarning, lowBattery, sos }
 
-enum AlertStatus { open, acknowledged, dispatched, resolved }
+/// `pending` is a crash inside its false-positive countdown, which its
+/// rider may still cancel in the app; `cancelled` is one they did. Both are
+/// docs/FIRMWARE_CONTRACT.md §3.8.
+enum AlertStatus { pending, open, acknowledged, dispatched, resolved, cancelled }
+
+/// How long a rider has to cancel a pending crash, from its server
+/// timestamp. The rules enforce the same 15 s (firestore.rules,
+/// countdownOpen); after it the alert is open whatever the app does.
+const Duration kCrashCountdown = Duration(seconds: 15);
 
 /// Emergency service an operator can dispatch to an incident.
 enum ResponderType { medical, police, fireRescue, barangay }
@@ -25,6 +33,11 @@ class Rider {
 
   final DateTime registeredAt;
 
+  /// The rider's own app account (`riders/{id}.authUid`), once a Super Admin
+  /// has linked it. Null until then. The link is what lets the rider read
+  /// their own alerts, and so answer the false-positive countdown.
+  final String? authUid;
+
   Rider({
     required this.id,
     required this.fullName,
@@ -33,6 +46,7 @@ class Rider {
     required this.status,
     this.isActive = true,
     DateTime? registeredAt,
+    this.authUid,
   }) : registeredAt = registeredAt ?? DateTime.now();
 
   Rider copyWith({
@@ -52,6 +66,7 @@ class Rider {
         status: status ?? this.status,
         isActive: isActive ?? this.isActive,
         registeredAt: registeredAt ?? this.registeredAt,
+        authUid: authUid,
       );
 }
 
@@ -59,8 +74,15 @@ class HelmetTelemetry {
   final String riderId;
   final double speedKmh;
 
-  /// MQ-3 breath alcohol reading, 0.00–1.00 mg/L. Above 0.05 is a warning.
-  final double alcoholLevel;
+  /// The helmet's own verdict: MQ-3 vapour above that helmet's measured
+  /// clean-air baseline (`alcohol_detected`). Null when the helmet sends no
+  /// verdict — no baseline yet, sensor warming up, older firmware — which
+  /// means "not measured" and must never be shown as sober.
+  ///
+  /// There is deliberately no number and no legal-limit comparison: RA 10586
+  /// is zero tolerance for motorcycle riders, and a sensor inside a helmet
+  /// measures the vapour in the helmet, not breath.
+  final bool? alcoholDetected;
   final int batteryPct;
   final bool gpsFix;
   final double lat;
@@ -70,7 +92,7 @@ class HelmetTelemetry {
   const HelmetTelemetry({
     required this.riderId,
     required this.speedKmh,
-    required this.alcoholLevel,
+    this.alcoholDetected,
     required this.batteryPct,
     required this.gpsFix,
     required this.lat,
@@ -87,7 +109,7 @@ class HelmetTelemetry {
       HelmetTelemetry(
         riderId: riderId,
         speedKmh: speedKmh ?? this.speedKmh,
-        alcoholLevel: alcoholLevel,
+        alcoholDetected: alcoholDetected,
         batteryPct: batteryPct,
         gpsFix: gpsFix,
         lat: lat ?? this.lat,
@@ -183,8 +205,15 @@ class AlertEvent {
   }
 }
 
-/// Threshold above which a breath alcohol reading is flagged in amber.
-const double kAlcoholWarningLevel = 0.05;
+/// The only three things the console may say about alcohol. "Not measured"
+/// is its own state, so a helmet that sends nothing never reads as sober.
+extension AlcoholReadout on HelmetTelemetry {
+  String get alcoholLabel => switch (alcoholDetected) {
+        true => 'Detected',
+        false => 'Not detected',
+        null => 'Not measured',
+      };
+}
 
 extension RiderStatusLabel on RiderStatus {
   String get label => switch (this) {
@@ -209,17 +238,26 @@ extension AlertTypeLabel on AlertType {
 
 extension AlertStatusLabel on AlertStatus {
   String get label => switch (this) {
+        AlertStatus.pending => 'Awaiting rider',
         AlertStatus.open => 'Open',
         AlertStatus.acknowledged => 'Acknowledged',
         AlertStatus.dispatched => 'Dispatched',
         AlertStatus.resolved => 'Resolved',
+        AlertStatus.cancelled => 'Cancelled by rider',
       };
 
-  bool get isOpen => this == AlertStatus.open || this == AlertStatus.acknowledged;
+  /// Needs a dispatcher. A pending crash counts: it is on the board, and a
+  /// dispatcher may act on it before the countdown ends.
+  bool get isOpen =>
+      this == AlertStatus.pending ||
+      this == AlertStatus.open ||
+      this == AlertStatus.acknowledged;
 
   /// Still consuming dispatch attention. Unlike [isOpen] this counts
   /// `dispatched` — responders are rolling but the incident is not closed.
-  bool get isActive => this != AlertStatus.resolved;
+  /// A cancelled alert is over: the rider said it was a false positive.
+  bool get isActive =>
+      this != AlertStatus.resolved && this != AlertStatus.cancelled;
 
   /// The alert lifecycle is strictly linear:
   ///
@@ -228,10 +266,12 @@ extension AlertStatusLabel on AlertStatus {
   /// Skipping a step or moving backwards is rejected, so the audit trail can
   /// never claim a responder was sent to an alert nobody had acknowledged.
   AlertStatus? get nextStatus => switch (this) {
+        AlertStatus.pending => AlertStatus.acknowledged,
         AlertStatus.open => AlertStatus.acknowledged,
         AlertStatus.acknowledged => AlertStatus.dispatched,
         AlertStatus.dispatched => AlertStatus.resolved,
         AlertStatus.resolved => null,
+        AlertStatus.cancelled => null,
       };
 
   bool canTransitionTo(AlertStatus target) => nextStatus == target;

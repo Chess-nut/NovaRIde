@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/admin/console_format.dart';
+import 'package:novaride/admin/data/fleet_repository.dart';
 import 'package:novaride/admin/state/admin_session.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/state/fleet_controller.dart';
@@ -544,14 +545,24 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   /// Every mutation goes through here: the controller rejects an illegal
   /// transition with a descriptive [StateError], and the operator sees why
   /// instead of watching a button do nothing. A store that refuses the write
-  /// after the rule check passed is surfaced the same way.
+  /// after the rule check passed arrives as a [FleetWriteException] whose
+  /// message was written for the operator. Anything else is a bug, not a
+  /// message: it is logged with its stack and the operator gets one fixed
+  /// sentence — never the exception's own text, which would put a provider
+  /// error code or a document path on screen.
   Future<void> _run(Future<void> Function() action) async {
     try {
       await action();
     } on StateError catch (error) {
       _toast(error.message);
-    } catch (error) {
-      _toast('The change was not saved: $error');
+    } on FleetWriteException catch (error) {
+      _toast(error.message);
+    } catch (error, stack) {
+      debugPrint('AdminAlertsPage: alert action threw $error\n$stack');
+      _toast(
+        'The change was not saved. Try again, and tell a Super Admin if it '
+        'keeps happening.',
+      );
     }
   }
 
@@ -660,10 +671,12 @@ class _AlertDetailPanel extends StatelessWidget {
             _row('Battery', '${telemetry.batteryPct}%'),
             _row(
               'Alcohol',
-              telemetry.alcoholLevel.toStringAsFixed(2),
-              valueColor: telemetry.alcoholLevel > kAlcoholWarningLevel
-                  ? NovaColors.amber
-                  : null,
+              telemetry.alcoholLabel,
+              valueColor: switch (telemetry.alcoholDetected) {
+                true => NovaColors.amber,
+                false => null,
+                null => NovaColors.secondaryText,
+              },
             ),
             _row('GPS fix', telemetry.gpsFix ? 'Locked' : 'No fix'),
           ],

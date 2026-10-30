@@ -80,6 +80,8 @@ class _RiderFormDialogState extends State<RiderFormDialog> {
       status: _status,
       isActive: existing?.isActive ?? true,
       registeredAt: existing?.registeredAt ?? DateTime.now(),
+      // Not on the form: linking has its own action, and an edit keeps it.
+      authUid: existing?.authUid,
     );
 
     Navigator.of(context).pop(rider);

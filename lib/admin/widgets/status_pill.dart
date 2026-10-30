@@ -27,10 +27,12 @@ class StatusPill extends StatelessWidget {
       };
 
   static Color colorForAlert(AlertStatus status) => switch (status) {
+        AlertStatus.pending => NovaColors.amber,
         AlertStatus.open => NovaColors.red,
         AlertStatus.acknowledged => NovaColors.cyan,
         AlertStatus.dispatched => NovaColors.pink,
         AlertStatus.resolved => NovaColors.green,
+        AlertStatus.cancelled => NovaColors.secondaryText,
       };
 
   @override

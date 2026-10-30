@@ -72,9 +72,12 @@ the transaction is what makes them safe with more than one console open.
 | `fullName` | string | yes | console | A document without it is skipped. |
 | `helmetId` | string | yes | console | Helmet serial; **this is the join key to `devices/`** (see §3). Unique across riders: the console checks its roster in the form and the store re-checks `devices/{helmetId}.assigned_rider_id` inside the write transaction, so two operators cannot pair the same helmet. Cannot become a rule (§4). |
 | `phone` | string | | console | Normalised to `+63 9XX XXX XXXX` by the form. |
-| `status` | string | | shared | `riding` \| `idle` \| `offline` \| `emergency`. Default `idle`. The console sets it on register/edit, on deactivate (`offline`) and on the stand-down after a critical alert resolves (`idle`); the helmet service may set `emergency` (§4). |
+| `status` | string | | shared | `riding` \| `idle` \| `offline` \| `emergency`. Default `idle`. The console sets it on register/edit, on deactivate (`offline`) and on the stand-down after a critical alert resolves (`idle`); the helmet service may set `emergency` (§4); the rider's own linked account may set `riding` after cancelling a crash (FIRMWARE_CONTRACT.md §3.8). |
+| `statusClearedBy` | string | | rider app | The alert a rider cancelled when they stood themself down from `emergency`. The rules check it against that alert. |
 | `isActive` | bool | | console | Default `true`. Deactivated riders are kept, never deleted — alert history references them. |
 | `registeredAt` | timestamp | | console | Written once at registration. |
+| `authUid` | string | | console | The rider's own app account (Firebase Auth uid). Super Admin only, and the rules accept only a uid whose `users/{uid}.role` is `rider`. One account per rider is the console's check, like helmet ids. Once set, that account may read this document and the alerts filed under this id. |
+| `authLinkedAt` | timestamp | | console | Server time of the link; removed with it. |
 
 Written only by the console, always with explicit field paths: `set` on
 create (the id was just proven free), `update` on edit, and a two-field
@@ -91,7 +94,8 @@ fields — the pairing — when a Super Admin registers or edits a rider.
 
 | Field | Type | Owner | Notes |
 |---|---|---|---|
-| `alcohol_level` | number | firmware | MQ-3, mg/L. Warning above 0.05. |
+| `alcohol_detected` | bool | firmware | Vapour above the helmet's clean-air baseline. **Absent means not measured**, and the console says so. No legal-limit comparison anywhere (FIRMWARE_CONTRACT.md §3.7). |
+| `alcohol_raw` | number | firmware | MQ-3 ADC counts. Not a concentration; not displayed. |
 | `ax`, `ay`, `az` | number | firmware | MPU6050 axes. |
 | `vector_magnitude` | number | firmware | √(ax² + ay² + az²). |
 | `severity` | string | firmware | Firmware's own classification; not interpreted by the console yet. |
@@ -117,18 +121,26 @@ firmware or app that writes `speedKmh` still renders. Pick one and stay on it.
 
 ### `alerts/{alertId}` — created by firmware, worked by the console, camelCase
 
+**The firmware side of this collection and of `devices/` — exact payloads,
+authentication, what a malformed write returns — is
+[FIRMWARE_CONTRACT.md](FIRMWARE_CONTRACT.md).** The table below is the
+console's view.
+
 Document id: any. The seed uses `A-101`; firmware should use auto-ids.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `riderId` | string | yes | `riders/{riderId}`. |
 | `riderName` | string | | Denormalised for the feed; the console fills it from `riders/` if empty. |
-| `deviceId` | string | | Helmet that raised it. |
+| `deviceId` | string | helmet: yes | Helmet that raised it. |
+| `severity` | string | helmet: yes | `low` | `moderate` | `high`, exactly. Not read by the console yet. |
+| `alcoholRaw`, `impactMagnitude` | number | | MQ-3 ADC counts; m/s². Not read by the console yet. `alcoholLevel` (mg/L) is accepted by the rules but not sent: FIRMWARE_CONTRACT.md §3.7. |
 | `type` | string | yes | `crash` \| `sos` \| `alcoholWarning` \| `lowBattery`. Aliases accepted: `fall`, `impact`, `collision` → crash; `alcohol` → alcoholWarning; `battery` → lowBattery; `panic`, `emergency` → sos. Anything else is shown as SOS and logged — a live alert with an odd label beats a hidden one. |
 | `lat`, `lng` | number | yes | Also accepted: `latitude`/`longitude`, or a `location` GeoPoint / map. |
 | `address` | string | | Street-level label. Falls back to the nearest district's address. |
-| `timestamp` | timestamp | **yes** | When the helmet raised it. **The board is `orderBy('timestamp')` — a document without this field is invisible.** |
-| `status` | string | | `open` \| `acknowledged` \| `dispatched` \| `resolved`. Default `open`. Only the console changes it. |
+| `timestamp` | timestamp | **yes** | When the alert reached the database — a server timestamp from the helmet, enforced. **The board is `orderBy('timestamp')` — a document without this field would be invisible, so the rules refuse one.** |
+| `status` | string | | `pending` \| `open` \| `acknowledged` \| `dispatched` \| `resolved` \| `cancelled`. A crash arrives `pending`; for 15 s its linked rider may set `cancelled`, and after that the console shows it as `open` (FIRMWARE_CONTRACT.md §3.8). Otherwise only the console changes it. |
+| `cancelledAt` | timestamp | rider app | Server time of the rider's cancel. The rules require it with `cancelled`. |
 | `acknowledgedAt`, `dispatchedAt`, `resolvedAt` | timestamp | console | Server timestamps stamped on each transition, for Reports queries. |
 
 The console listens to the newest **100** alerts. Response-time averages are
@@ -188,6 +200,68 @@ claim with `tool/set_admin_claims.mjs` (§4). To remove one: disable the Auth
 account (the SDK signs them out at the next token refresh and the shell
 returns to the login page) and delete or re-role the document.
 
+### The mobile app's account collections — camelCase
+
+Added in Phase 3 of the mobile redesign. Four collections, all keyed by the
+**Firebase Auth uid** except the username index, and all written by one
+idempotent transaction (`FirebaseAuthRepository.ensureProfile`) that runs
+after every sign-up *and* every sign-in.
+
+They are deliberately separate from the console's `riders/` roster. The
+roster is an operator's record of a person; these are a person's own
+account. The link between them is `riders/{R-xxx}.authUid`, written by a
+Super Admin from User Management → *Link app account*, by the username the
+rider signed up with (resolved through `usernames/`).
+
+#### `users/{uid}` — one per account, whatever the role
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `email` | string | yes | Must equal the address on the ID token. The rules check it. |
+| `username` | string | yes | Display case. The lowercased form is the id under `usernames/`. |
+| `fullName` | string | yes | |
+| `role` | string | yes | `rider` \| `guardian`. **Immutable.** It decides the home screen and, in later phases, what the account may read. |
+| `phoneNumber` | string | | Optional at sign-up. |
+| `address` | string | | Where the person lives. On `users/` rather than `riderProfiles/` because a guardian has one too, and it belongs beside `phoneNumber` — both are how somebody is reached, whatever their role. Optional: sign-up does not ask for it, Personal Information does. |
+| `photoUrl` | string | | Unused so far. |
+| `fcmToken` | string | | Push address. Refreshed by `ensureProfile`. |
+| `createdAt` | timestamp | yes | Server clock. **Immutable.** |
+| `updatedAt` | timestamp | yes | Server clock, on every write. |
+| `lastLoginAt` | timestamp | | Server clock. Written by `ensureProfile` on sign-in. |
+
+Never written here, and refused by the rules: `password`, `passwordHash`,
+`passwordSalt`, `idToken`, `accessToken`, `refreshToken`, `token`,
+`secret`, `apiKey`, `privateKey`. Firebase Auth holds the credential and
+nothing else needs a copy of it. `fcmToken` is allowed — a push address is
+not a secret.
+
+#### `riderProfiles/{uid}` and `guardianProfiles/{uid}`
+
+Role-specific fields, split so a rider's document and a guardian's never
+share a shape. Both carry `createdAt` and `updatedAt` on the server clock;
+everything else is added by the phase that needs it. A rider may only hold
+a `riderProfiles` document and a guardian only a `guardianProfiles` one —
+the rules read `users/{uid}.role` to enforce it.
+
+#### `usernames/{usernameLower}` — the uniqueness index
+
+Document id is the lowercased username. Exactly three fields, and the
+rules refuse a fourth: `uid`, `email`, `createdAt`.
+
+**This is the only path in the database an unauthenticated client can
+read.** Logging in with a username means turning it into an email address
+before Firebase Auth will accept it, and whoever is doing that is not
+signed in yet. `get` is therefore open; `list` is not, so the collection
+cannot be enumerated. The cost is that somebody who guesses an exact
+username learns the email on it. The alternative — a Cloud Function doing
+the lookup server-side — needs the Blaze plan; revisit if this project
+moves to it.
+
+Uniqueness is enforced by the rules, not only by the app: a claim is a
+`create`, and writing over a name somebody holds is an `update`, which is
+denied. Two people racing for one name means the second write fails rather
+than overwrites. A username is never transferred and never released.
+
 ### `emergencyContacts/{id}` — reserved
 
 Not read or written yet. Intended shape:
@@ -240,12 +314,29 @@ firebase deploy --only firestore:rules
 The CLI compiles the file before releasing it; a syntax error aborts the
 deploy and leaves the live ruleset untouched.
 
+**The Phase 3 account rules in this file are not deployed yet** — the live
+ruleset on `novaride-7a68c` is the one from 29 Sep 2026, before `users/`,
+`riderProfiles/`, `guardianProfiles/` and `usernames/` were opened. Sign-up
+and sign-in return `permission-denied` until the deploy above is run.
+
+### Tested
+
+`rules_test/` holds 141 tests over this file, run against the Firestore
+emulator with no credentials and no reach into the real project
+(`cd rules_test && npm install && npm test`). They cover role resolution,
+each collection's write narrowing, the alert lifecycle and its server-clock
+stamps, the append-only history, what the phone app's four account
+collections permit, and that every path without a rule of its own is still
+closed. Run them before a deploy; see
+[rules_test/README.md](../rules_test/README.md).
+
 ### Principals
 
 | Principal | How it authenticates | How the rules know its role |
 |---|---|---|
 | **Operator** (`superAdmin` \| `dispatcher` \| `viewer`) | Firebase Auth email/password, from the console | `request.auth.token.role` (custom claim) first; if absent or not one of the three, `admins/{uid}.role`. Aliases `administrator`/`admin` → `superAdmin`, `operator` → `dispatcher` are read-tolerated. |
-| **Helmet service** | A Firebase Auth user the ESP32 will sign in as, carrying the claim `role: helmetService` | The claim only. It is not a console role; the console rejects it as unprovisioned. **No such account exists yet** — how the firmware authenticates is an open item (§7). A bridge using the Admin SDK bypasses these rules and needs nothing here. |
+| **Mobile account** (`rider` \| `guardian`) | Firebase Auth email/password, from the phone app | No claim at all. The account is whoever `request.auth.uid` says it is; `users/{uid}.role` decides what the app shows it, not what the rules let it reach. It may read and write its own `users/`, `riderProfiles/` or `guardianProfiles/` document and claim a `usernames/` entry — and nothing else in the database. |
+| **Helmet service** | A Firebase Auth user the ESP32 will sign in as, carrying the claim `role: helmetService`, granted by `tool/provision_helmet_service.mjs` | The claim only. It is not a console role; the console rejects it as unprovisioned, and it must never have an `admins/` document (the script refuses one). Provisioning steps: [FIRMWARE_CONTRACT.md §7](FIRMWARE_CONTRACT.md#7-for-the-project-owner-provisioning-the-helmet-identity). A bridge using the Admin SDK bypasses these rules and needs nothing here. |
 | Anyone else | — | Denied everywhere. |
 
 **No custom claims are set today.** All three operators resolve through
@@ -261,7 +352,7 @@ places. Keep them in step.
 |---|---|---|---|---|
 | `riders/{id}` | operator | superAdmin | superAdmin; dispatcher **or** helmet service if only `status` changes | never (deactivate instead) |
 | `devices/{id}` | operator | helmet service; superAdmin (registering a helmet; the seed) | helmet service; superAdmin **only if nothing but `assigned_rider_id` / `paired_at` changes** (the pairing) | never |
-| `alerts/{id}` | operator | helmet service; superAdmin (the seed) | superAdmin / dispatcher, **one lifecycle step forward**, touching only `status` + the matching `<status>At`, which must be the server clock | never |
+| `alerts/{id}` | operator | helmet service, **only with the contract's fields and a server-clock `timestamp`**; superAdmin (the seed), with any `timestamp` but never none | superAdmin / dispatcher, **one lifecycle step forward**, touching only `status` + the matching `<status>At`, which must be the server clock | never |
 | `alerts/{id}/history/{e}` | operator (single alert and collection group) | superAdmin / dispatcher, `at` must be the server clock | never | never |
 | `admins/{uid}` | own document: any signed-in user; all: superAdmin | never from a client | never | never |
 | everything else (incl. `emergencyContacts/`) | — | — | — | — |
@@ -322,12 +413,17 @@ ruleset and one deploy command.
 
 ### Still to write
 
-The rider app does not authenticate yet, so the draft's rider-facing clauses
-(`request.auth.uid == resource.data.authUid`, `ownsHelmet(...)`) have nothing
-to bind to — `riders/` has no `authUid` field and the app has no Firebase
-sign-in. They are deliberately absent rather than present-but-dead. When the
-rider app lands: add `authUid` to `riders/`, decide the helmet's identity
-(§7), and extend the `riders/`, `devices/` and `alerts/` reads here first.
+Phase 3 gave the phone app its own four collections (§2), so the rider now
+has an authenticated identity. What is still absent, deliberately:
+
+- **A rider reading their own telemetry.** A linked rider now reads their
+  own roster entry and alerts (`rider_link.test.js`); `devices/` is still
+  refused to every mobile account. An unlinked account reaches none of the
+  three, which `accounts.test.js` asserts.
+- **A guardian reading their rider's anything.** There is no link model yet
+  — `riderLinks/` is named in `closed.test.js` as the path that would carry
+  it, and is denied to everybody.
+- **Binding a helmet account to its serial** — see FIRMWARE_CONTRACT.md §8.
 
 ---
 
@@ -384,14 +480,14 @@ firebase apps:sdkconfig WEB 1:885956155129:web:21670e7270e1ccc7dc3428 > assets/c
 #    free id. There is deliberately no "merge" flag: the seed is fixture
 #    data for an empty project, not a reset, and merging it over real
 #    riders would raise the question of which record wins on R-001.
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173 --dart-define=SEED_FIRESTORE=true
+flutter run -t lib/main_admin.dart -d edge --web-port 5173 --dart-define=SEED_FIRESTORE=true
 
 # Day to day. With the config present the top bar shows FIRESTORE; sign in
 # with one of the operator accounts (§2, admins/).
-flutter run -t lib/main_admin.dart -d chrome --web-port 5173
+flutter run -t lib/main_admin.dart -d edge --web-port 5173
 
 # Rehearse offline on a configured machine (simulation + local demo login):
-flutter run -t lib/main_admin.dart -d chrome --dart-define=NOVARIDE_FORCE_SIMULATION=true
+flutter run -t lib/main_admin.dart -d edge --dart-define=NOVARIDE_FORCE_SIMULATION=true
 
 # Optional: put the role in the ID token as a custom claim (see §4 and the
 # header of tool/set_admin_claims.mjs — the key lives OUTSIDE the repo).
@@ -436,10 +532,14 @@ Still open:
    `assigned_rider_id` and `paired_at` in the same transaction as the rider
    (§2). The rider app has no part in pairing; a helmet that reports before
    it is paired is joined by `riders.helmetId` until a Super Admin pairs it.
-4. **How does the ESP32 authenticate?** The rules reserve a Firebase Auth
+4. ~~How does the ESP32 authenticate?~~ **Settled:** a Firebase Auth
+   email/password account per helmet carrying `role: helmetService`, provisioned
+   with `tool/provision_helmet_service.mjs`; see FIRMWARE_CONTRACT.md §2 and §7.
+   Previously: The rules reserve a Firebase Auth
    identity carrying the claim `role: helmetService` (one account for the
    fleet, or one per helmet — the rules do not care). The alternative is a
    bridge that writes through the Admin SDK, which bypasses the rules. Either
    way the firmware team decides; nothing exists yet.
-5. Rider-app access: `riders/` needs an `authUid` field before any rider can
-   read their own record or alerts (§4, "Still to write").
+5. ~~Rider-app access: `riders/` needs an `authUid` field before any rider
+   can read their own record or alerts.~~ **Settled:** `riders/{id}.authUid`,
+   linked by a Super Admin; the rider reads their roster entry and alerts.

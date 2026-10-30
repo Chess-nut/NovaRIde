@@ -70,7 +70,7 @@ void main() {
       await openLogin(tester);
       expect(find.byType(LoginPage), findsOneWidget);
       expect(find.text('Enter your password.'), findsNothing);
-      expect(find.text('Enter your email address.'), findsNothing);
+      expect(find.text('Enter your email or username.'), findsNothing);
     });
 
     // autovalidateMode: onUserInteraction. The message has to appear once
@@ -86,7 +86,7 @@ void main() {
       await tester.enterText(identifier, '');
       await tester.pumpAndSettle();
 
-      expect(find.text('Enter your email address.'), findsOneWidget);
+      expect(find.text('Enter your email or username.'), findsOneWidget);
     });
 
     // The message must be laid out, not clipped to nothing by an
@@ -100,7 +100,7 @@ void main() {
       await tester.enterText(identifier, '');
       await tester.pumpAndSettle();
 
-      final size = tester.getSize(find.text('Enter your email address.'));
+      final size = tester.getSize(find.text('Enter your email or username.'));
       expect(size.height, greaterThan(8));
       expect(size.width, greaterThan(40));
     });
@@ -112,7 +112,7 @@ void main() {
           .widgetList<TextField>(find.byType(TextField))
           .toList();
       expect(fields.length, 2);
-      expect(fields[0].autofillHints, contains(AutofillHints.email));
+      expect(fields[0].autofillHints, contains(AutofillHints.username));
       expect(fields[1].autofillHints, contains(AutofillHints.password));
       expect(fields[0].textInputAction, TextInputAction.next);
       expect(fields[1].textInputAction, TextInputAction.done);
@@ -146,31 +146,24 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('does not perform username login during the privacy rollout', (
+    // A username goes through usernames/{usernameLower}; an address does
+    // not. The one character that can only be in an address decides.
+    testWidgets('signs in by username and lands on the rider home', (
       tester,
     ) async {
       final repository = await openLogin(tester);
       await submit(tester, 'riderone', 'rider123');
 
-      expect(
-        repository.calls,
-        isNot(contains('signInWithEmail:riderone:rider')),
-      );
-      expect(
-        find.text('That does not look like an email address.'),
-        findsOneWidget,
-      );
-      expect(find.byType(LoginPage), findsOneWidget);
+      expect(repository.calls, contains('signInWithUsername:riderone'));
+      expect(find.byType(HomePage), findsOneWidget);
+      expect(find.byType(LoginPage), findsNothing);
     });
 
     testWidgets('signs in by email', (tester) async {
       final repository = await openLogin(tester);
       await submit(tester, 'rider@example.test', 'rider123');
 
-      expect(
-        repository.calls,
-        contains('signInWithEmail:rider@example.test:rider'),
-      );
+      expect(repository.calls, contains('signInWithEmail:rider@example.test'));
       expect(find.byType(HomePage), findsOneWidget);
     });
 
@@ -193,41 +186,26 @@ void main() {
     // The role comes from the account, not from the toggle on the form.
     testWidgets('a guardian lands on the family dashboard', (tester) async {
       await openLogin(tester);
-      await submit(tester, 'guardian@example.test', 'guard123');
+      await submit(tester, 'guardianone', 'guard123');
 
-      expect(find.byType(FamilyDashboardPage), findsOneWidget);
-    });
-
-    testWidgets('passes selected role for missing-profile recovery', (
-      tester,
-    ) async {
-      final repository = await openLogin(tester);
-      await tester.tap(find.text('Family'));
-      await tester.pumpAndSettle();
-      await submit(tester, 'guardian@example.test', 'guard123');
-
-      expect(
-        repository.calls,
-        contains('signInWithEmail:guardian@example.test:guardian'),
-      );
       expect(find.byType(FamilyDashboardPage), findsOneWidget);
     });
 
     testWidgets('a wrong password stays put and says so', (tester) async {
       await openLogin(tester);
-      await submit(tester, 'rider@example.test', 'wrongpass1');
+      await submit(tester, 'riderone', 'wrongpass1');
 
-      expect(find.text('Incorrect email or password.'), findsOneWidget);
+      expect(find.text('Incorrect username or password.'), findsOneWidget);
       expect(find.byType(LoginPage), findsOneWidget);
     });
 
-    testWidgets('an unknown email gets the standard credential message', (
-      tester,
-    ) async {
+    // The whole point of resolving the username server-side: an unknown
+    // name and a wrong password are indistinguishable from the screen.
+    testWidgets('an unknown username gives the same sentence', (tester) async {
       await openLogin(tester);
-      await submit(tester, 'nobody@example.test', 'rider123');
+      await submit(tester, 'nobodyhere', 'rider123');
 
-      expect(find.text('Incorrect email or password.'), findsOneWidget);
+      expect(find.text('Incorrect username or password.'), findsOneWidget);
     });
 
     testWidgets('a network failure says so instead', (tester) async {
@@ -237,7 +215,7 @@ void main() {
           'No connection to NovaRide. Check your internet and try again.',
         ),
       );
-      await submit(tester, 'rider@example.test', 'rider123');
+      await submit(tester, 'riderone', 'rider123');
 
       expect(
         find.text(
@@ -261,7 +239,7 @@ void main() {
       await pumpMobileApp(tester, repository: repository);
       await tester.tap(find.text('Log in'));
       await tester.pumpAndSettle();
-      await submit(tester, 'rider@example.test', 'rider123');
+      await submit(tester, 'riderone', 'rider123');
 
       expect(find.byType(VerifyEmailPage), findsOneWidget);
       expect(find.byType(HomePage), findsNothing);

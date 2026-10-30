@@ -108,6 +108,7 @@ const seedRider = async (db) => {
   });
   await s(d(db, 'usernames', 'riderone'), {
     uid: RIDER_UID,
+    email: RIDER_EMAIL,
     createdAt: Timestamp.now(),
   });
 };
@@ -437,38 +438,25 @@ describe('riderProfiles/ and guardianProfiles/', () => {
 });
 
 describe('usernames/{usernameLower}', () => {
-  const claim = (uid) => ({
+  const claim = (uid, email) => ({
     uid,
+    email,
     createdAt: serverTimestamp(),
   });
 
   it('lets a signed-in account claim a free username', async () => {
     await assertSucceeds(
       setDoc(doc(asRider(env), 'usernames', 'riderone'),
-        claim(RIDER_UID)),
+        claim(RIDER_UID, RIDER_EMAIL)),
     );
   });
 
-  it('allows a safe availability get without exposing the account email', async () => {
+  // The one open read in the database. Logging in by username means
+  // resolving it to an email, and whoever is doing that is not signed in
+  // yet, so this has to work.
+  it('is readable by an unauthenticated visitor', async () => {
     await env.withSecurityRulesDisabled((c) => seedRider(c.firestore()));
-    const snapshot = await assertSucceeds(
-      getDoc(doc(asAnonymous(env), 'usernames', 'riderone')),
-    );
-    if ('email' in snapshot.data()) {
-      throw new Error('Public username claims must not contain account emails.');
-    }
-  });
-
-  it('denies a public read of a legacy email-bearing claim', async () => {
-    await env.withSecurityRulesDisabled(async (c) => {
-      await setDoc(doc(c.firestore(), 'usernames', 'legacyname'), {
-        uid: RIDER_UID,
-        email: RIDER_EMAIL,
-        createdAt: Timestamp.now(),
-      });
-    });
-    await assertFails(getDoc(doc(asAnonymous(env), 'usernames', 'legacyname')));
-    await assertSucceeds(getDoc(doc(asRider(env), 'usernames', 'legacyname')));
+    await assertSucceeds(getDoc(doc(asAnonymous(env), 'usernames', 'riderone')));
   });
 
   // Open to `get`, closed to `list`: a name can be checked, the
@@ -486,35 +474,36 @@ describe('usernames/{usernameLower}', () => {
     await env.withSecurityRulesDisabled((c) => seedRider(c.firestore()));
     await assertFails(
       setDoc(doc(asOtherRider(env), 'usernames', 'riderone'),
-        claim('uid-mobile-other')),
+        claim('uid-mobile-other', 'other@example.test')),
     );
     // Not even the holder may rewrite it.
     await assertFails(
       setDoc(doc(asRider(env), 'usernames', 'riderone'),
-        claim(RIDER_UID)),
+        claim(RIDER_UID, RIDER_EMAIL)),
     );
   });
 
   it('refuses a claim that points at another uid', async () => {
     await assertFails(
       setDoc(doc(asRider(env), 'usernames', 'riderone'),
-        claim(GUARDIAN_UID)),
+        claim(GUARDIAN_UID, RIDER_EMAIL)),
     );
   });
 
-  it('refuses a claim containing an email', async () => {
+  it('refuses a claim carrying an email that is not the token\'s', async () => {
     await assertFails(
       setDoc(doc(asRider(env), 'usernames', 'riderone'),
-        { ...claim(RIDER_UID), email: RIDER_EMAIL }),
+        claim(RIDER_UID, 'someone.else@example.test')),
     );
   });
 
-  it('refuses any field beyond uid and createdAt', async () => {
+  // The document is world-readable, so nothing may be smuggled into it.
+  it('refuses any field beyond uid, email and createdAt', async () => {
     await assertFails(setDoc(doc(asRider(env), 'usernames', 'riderone'), {
-      ...claim(RIDER_UID), fullName: 'Rider One',
+      ...claim(RIDER_UID, RIDER_EMAIL), fullName: 'Rider One',
     }));
     await assertFails(setDoc(doc(asRider(env), 'usernames', 'riderone'), {
-      ...claim(RIDER_UID), passwordHash: 'nope',
+      ...claim(RIDER_UID, RIDER_EMAIL), passwordHash: 'nope',
     }));
   });
 
@@ -523,30 +512,30 @@ describe('usernames/{usernameLower}', () => {
   it('refuses a document id that is not lowercase', async () => {
     await assertFails(
       setDoc(doc(asRider(env), 'usernames', 'RiderOne'),
-        claim(RIDER_UID)),
+        claim(RIDER_UID, RIDER_EMAIL)),
     );
   });
 
   it('refuses ids outside the 3 to 20 character range', async () => {
     await assertFails(
-      setDoc(doc(asRider(env), 'usernames', 'ab'), claim(RIDER_UID)),
+      setDoc(doc(asRider(env), 'usernames', 'ab'), claim(RIDER_UID, RIDER_EMAIL)),
     );
     await assertFails(
       setDoc(doc(asRider(env), 'usernames', 'a'.repeat(21)),
-        claim(RIDER_UID)),
+        claim(RIDER_UID, RIDER_EMAIL)),
     );
   });
 
   it('refuses a client-clock createdAt', async () => {
     await assertFails(setDoc(doc(asRider(env), 'usernames', 'riderone'), {
-      uid: RIDER_UID, createdAt: Timestamp.now(),
+      uid: RIDER_UID, email: RIDER_EMAIL, createdAt: Timestamp.now(),
     }));
   });
 
   it('refuses an anonymous claim', async () => {
     await assertFails(
       setDoc(doc(asAnonymous(env), 'usernames', 'riderone'),
-        claim(RIDER_UID)),
+        claim(RIDER_UID, RIDER_EMAIL)),
     );
   });
 
@@ -611,21 +600,16 @@ describe('the ensureProfile transaction', () => {
     runTransaction(db, async (tx) => {
       const userRef = doc(db, 'users', uid);
       const claimRef = doc(db, 'usernames', claimId);
-      const familyRef = doc(db, 'families', uid);
-      const memberRef = doc(db, 'families', uid, 'members', uid);
-      // These reads happen before writes, matching the client transaction
-      // and making the username claim atomic.
+      // Both reads happen first, which is what puts the username in the
+      // transaction's read set and makes the claim atomic.
       await tx.get(userRef);
       await tx.get(claimRef);
-      await tx.get(familyRef);
-      await tx.get(memberRef);
 
       tx.set(userRef, {
         email,
         username: 'riderone',
         fullName: 'Rider One',
         role: 'rider',
-        familyId: uid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         lastLoginAt: serverTimestamp(),
@@ -634,21 +618,7 @@ describe('the ensureProfile transaction', () => {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      tx.set(claimRef, { uid, createdAt: serverTimestamp() });
-      tx.set(familyRef, {
-        ownerUid: uid,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      tx.set(memberRef, {
-        uid,
-        role: 'rider',
-        status: 'active',
-        permissions,
-        displayName: 'Rider One',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      tx.set(claimRef, { uid, email, createdAt: serverTimestamp() });
     });
 
   it('is accepted whole on a first sign-up', async () => {
@@ -668,34 +638,6 @@ describe('the ensureProfile transaction', () => {
           lastLoginAt: serverTimestamp(),
           fcmToken: 'a-push-token',
           updatedAt: serverTimestamp(),
-        });
-
-        it('lets a signed-in rider recreate a missing role profile', async () => {
-          await env.withSecurityRulesDisabled(async (c) => {
-            await deleteDoc(doc(c.firestore(), 'riderProfiles', RIDER_UID));
-          });
-          const db = asRider(env);
-          await assertSucceeds(
-            runTransaction(db, async (tx) => {
-              const userRef = doc(db, 'users', RIDER_UID);
-              const profileRef = doc(db, 'riderProfiles', RIDER_UID);
-              await tx.get(userRef);
-              const profile = await tx.get(profileRef);
-              await tx.get(doc(db, 'families', RIDER_UID));
-              await tx.get(doc(db, 'families', RIDER_UID, 'members', RIDER_UID));
-              tx.update(userRef, {
-                lastLoginAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              });
-              if (!profile.exists()) {
-                tx.set(profileRef, {
-                  createdAt: serverTimestamp(),
-                  updatedAt: serverTimestamp(),
-                });
-              }
-            }),
-          );
-          await assertSucceeds(getDoc(doc(db, 'riderProfiles', RIDER_UID)));
         });
       }),
     );

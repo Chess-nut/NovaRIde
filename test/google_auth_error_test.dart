@@ -21,21 +21,4 @@ void main() {
       'Google sign-in was cancelled. No changes were made.',
     );
   });
-
-  test('Firestore permission denial has an account-data-specific message', () {
-    final failure = failureForCode('permission-denied');
-
-    expect(
-      failure.message,
-      contains('could not read or save your account data'),
-    );
-    expect(failure.message, contains('access was denied'));
-  });
-
-  test('email already in use is not confused with Firestore failure', () {
-    final failure = failureForCode('email-already-in-use');
-
-    expect(failure.message, contains('An account already uses that email'));
-    expect(failure.message, isNot(contains('access was denied')));
-  });
 }

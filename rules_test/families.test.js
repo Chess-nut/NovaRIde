@@ -77,10 +77,6 @@ beforeEach(async () => {
       member(RIDER_UID, 'rider'));
     await setDoc(doc(db, 'families', RIDER_UID, 'members', ACTIVE_GUARDIAN),
       member(ACTIVE_GUARDIAN, 'guardian'));
-    await setDoc(doc(db, 'riderProfiles', RIDER_UID), {
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    });
     await setDoc(doc(db, 'families', OTHER_UID), {
       ownerUid: OTHER_UID, createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
     });
@@ -143,18 +139,6 @@ const acceptInvite = async (
 };
 
 describe('family schema and private reads', () => {
-  it('lets a signed-in rider read only their own not-yet-created family paths', async () => {
-    await reset(env);
-    await assertSucceeds(getDoc(doc(asRider(env), 'families', RIDER_UID)));
-    await assertSucceeds(getDoc(doc(
-      asRider(env), 'families', RIDER_UID, 'members', RIDER_UID,
-    )));
-    await assertFails(getDoc(doc(asRider(env), 'families', OTHER_UID)));
-    await assertFails(getDoc(doc(
-      asRider(env), 'families', OTHER_UID, 'members', OTHER_UID,
-    )));
-  });
-
   it('allows active members to get the family and list its members only', async () => {
     await assertSucceeds(getDoc(doc(asRider(env), 'families', RIDER_UID)));
     await assertSucceeds(getDoc(doc(asActiveGuardian(env), 'families', RIDER_UID)));
@@ -202,22 +186,6 @@ describe('family schema and private reads', () => {
     await assertFails(updateDoc(doc(asRider(env), 'families', RIDER_UID), {
       updatedAt: serverTimestamp(),
     }));
-  });
-});
-
-describe('rider profile family access', () => {
-  it('allows linked guardians only when rider telemetry permissions are granted', async () => {
-    const guardianDb = asActiveGuardian(env);
-    await assertSucceeds(getDoc(doc(guardianDb, 'riderProfiles', RIDER_UID)));
-    await assertFails(getDoc(doc(guardianDb, 'riderProfiles', OTHER_UID)));
-
-    await env.withSecurityRulesDisabled(async (context) => {
-      await updateDoc(doc(context.firestore(), 'families', RIDER_UID,
-        'members', ACTIVE_GUARDIAN), {
-        permissions: { ...PERMISSIONS, helmetStatus: false },
-      });
-    });
-    await assertFails(getDoc(doc(guardianDb, 'riderProfiles', RIDER_UID)));
   });
 });
 

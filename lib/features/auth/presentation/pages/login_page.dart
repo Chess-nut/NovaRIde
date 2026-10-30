@@ -20,9 +20,11 @@ import '../../../../core/errors/failure.dart';
 
 /// Sign in.
 ///
-/// Signs in with Firebase Auth through [AuthRepository] using an email
-/// address. Username login is disabled until a private server-side lookup
-/// can replace the old public username-to-email mapping.
+/// Signs in with Firebase Auth through [AuthRepository], by email or by
+/// username — `usernames/{usernameLower}` resolves the second to the
+/// first. A username nobody holds and a wrong password produce the same
+/// sentence on purpose; telling them apart would say which accounts
+/// exist.
 ///
 /// It does not navigate. It signs in, the repository's auth stream
 /// updates [authStateProvider], and the router's gate decides where that
@@ -68,11 +70,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final identifier = _identifier.text.trim();
     try {
       final repository = ref.read(authRepositoryProvider);
-      final profile = await repository.signInWithEmail(
-        email: identifier,
-        password: _password.text,
-        role: _role,
-      );
+      // An address or a username, decided by the one character that can
+      // only be in one of them. Both land on the same failure sentence,
+      // so a wrong guess here costs nothing.
+      final profile = identifier.contains('@')
+          ? await repository.signInWithEmail(
+              email: identifier,
+              password: _password.text,
+            )
+          : await repository.signInWithUsername(
+              username: identifier,
+              password: _password.text,
+            );
 
       AppLogger.i(
         'Signed in as ${profile.username} '
@@ -146,13 +155,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ),
               const SizedBox(height: AppSpacing.xxl),
               NovaTextField(
-                label: 'Email address',
+                label: 'Email or username',
                 controller: _identifier,
                 enabled: !_busy,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
-                autofillHints: const [AutofillHints.email],
-                validator: Validators.email,
+                autofillHints: const [AutofillHints.username],
+                validator: Validators.emailOrUsername,
               ),
               const SizedBox(height: AppSpacing.xl),
               NovaTextField(

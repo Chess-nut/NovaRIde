@@ -1,29 +1,23 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:novaride/features/guardian/data/family_repository.dart';
 import 'package:novaride/features/guardian/domain/models/rider_location.dart';
 
 void main() {
-  test('parses Firebase-style rider location data', () {
-    final location = RiderLocation.fromMap('rider-001', {
-      'latitude': 14.5995,
-      'longitude': 120.9842,
-      'speed': 42,
-      'heading': 90,
-      'timestamp': '2026-09-14T10:00:00Z',
-      'status': 'RIDING',
-      'address': 'EDSA, Quezon City',
-    });
+  test('location readings do not invent missing telemetry', () {
+    const location = RiderLocation(
+      riderId: 'R-001',
+      latitude: 14.5995,
+      longitude: 120.9842,
+      speedKmh: null,
+      heading: null,
+      timestamp: null,
+      status: 'RIDING',
+      address: null,
+    );
 
-    expect(location.riderId, 'rider-001');
+    expect(location.riderId, 'R-001');
     expect(location.latitude, 14.5995);
-    expect(location.speedKmh, 42);
-    expect(location.heading, 90);
-    expect(location.status, 'RIDING');
-  });
-
-  test('repository exposes only a permission-gated location stream', () async {
-    final repository = FamilyRepository();
-    expect(repository.canMonitorLocation, isTrue);
-    expect(await repository.watchRiderLocation().first, isA<RiderLocation>());
+    expect(location.speedKmh, isNull);
+    expect(location.timestamp, isNull);
+    expect(location.address, isNull);
   });
 }

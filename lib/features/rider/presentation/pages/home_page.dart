@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import 'package:novaride/core/utils/initials.dart';
 import 'package:novaride/core/widgets/unavailable.dart';
 import 'package:novaride/features/auth/domain/entities/user_profile.dart';
 import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
+import 'package:novaride/features/guardian/data/family_repository.dart';
+import 'package:novaride/features/guardian/domain/models/family_models.dart';
 import 'package:novaride/shared/theme.dart';
 import '../widgets/nova_bottom_nav_bar.dart';
 import 'alerts_page.dart';
@@ -27,6 +30,8 @@ class HomePage extends ConsumerWidget {
               _buildHeader(context),
               const SizedBox(height: 20),
               _buildProfileCard(context, ref.watch(authStateProvider).profile),
+              const SizedBox(height: 16),
+              const _FamilyAccessCard(),
               const SizedBox(height: 16),
               _buildQuickStatsRow(),
               const SizedBox(height: 16),
@@ -87,7 +92,11 @@ class HomePage extends ConsumerWidget {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              const Icon(Icons.notifications_none, color: Colors.white, size: 26),
+              const Icon(
+                Icons.notifications_none,
+                color: Colors.white,
+                size: 26,
+              ),
               Positioned(
                 right: -1,
                 top: -1,
@@ -134,7 +143,11 @@ class HomePage extends ConsumerWidget {
             radius: 22,
             backgroundColor: NovaColors.pink,
             child: initials.isEmpty
-                ? const Icon(Icons.person_outline, color: Colors.white, size: 20)
+                ? const Icon(
+                    Icons.person_outline,
+                    color: Colors.white,
+                    size: 20,
+                  )
                 : Text(
                     initials,
                     style: const TextStyle(
@@ -161,7 +174,9 @@ class HomePage extends ConsumerWidget {
                 Text(
                   profile == null ? '' : '@${profile.username}',
                   style: const TextStyle(
-                      color: NovaColors.secondaryText, fontSize: 12),
+                    color: NovaColors.secondaryText,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -169,11 +184,15 @@ class HomePage extends ConsumerWidget {
           // No helmet reports to this account, so there is nothing to be
           // connected to. Saying "Connected" was the most misleading
           // thing on the screen.
-          const _StatusPill(label: 'No helmet', color: NovaColors.secondaryText),
+          const _StatusPill(
+            label: 'No helmet',
+            color: NovaColors.secondaryText,
+          ),
         ],
       ),
     );
   }
+
   // ---- Battery / Hardware / Signal row ----
   //
   // All three came from the helmet, and no helmet reports to a mobile
@@ -247,9 +266,9 @@ class HomePage extends ConsumerWidget {
             statusText: 'NO FIX',
             statusColor: NovaColors.secondaryText,
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const GpsMapPage()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const GpsMapPage()));
             },
           ),
         ),
@@ -310,27 +329,43 @@ class HomePage extends ConsumerWidget {
             children: [
               Expanded(
                 child: _TripMetric(
-                    value: Unavailable.dash, unit: 'km/h', label: 'SPEED'),
+                  value: Unavailable.dash,
+                  unit: 'km/h',
+                  label: 'SPEED',
+                ),
               ),
               Expanded(
                 child: _TripMetric(
-                    value: Unavailable.dash, unit: 'km', label: 'DISTANCE'),
+                  value: Unavailable.dash,
+                  unit: 'km',
+                  label: 'DISTANCE',
+                ),
               ),
               Expanded(
                 child: _TripMetric(
-                    value: Unavailable.dash, unit: 'min', label: 'DURATION'),
+                  value: Unavailable.dash,
+                  unit: 'min',
+                  label: 'DURATION',
+                ),
               ),
             ],
           ),
           const SizedBox(height: 16),
           Row(
             children: const [
-              Icon(Icons.location_on, color: NovaColors.secondaryText, size: 16),
+              Icon(
+                Icons.location_on,
+                color: NovaColors.secondaryText,
+                size: 16,
+              ),
               SizedBox(width: 6),
               Expanded(
                 child: Text(
                   'No trip in progress',
-                  style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
+                  style: TextStyle(
+                    color: NovaColors.secondaryText,
+                    fontSize: 12,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -363,9 +398,9 @@ class HomePage extends ConsumerWidget {
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AlertsPage()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const AlertsPage()));
             },
             child: const Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -385,6 +420,132 @@ class HomePage extends ConsumerWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _FamilyAccessCard extends ConsumerWidget {
+  const _FamilyAccessCard();
+
+  Future<void> _createInvite(
+    BuildContext context,
+    FamilyRepository repository,
+  ) async {
+    try {
+      final code = await repository.createInvite();
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Guardian invite code'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('This one-use code expires in 24 hours.'),
+              const SizedBox(height: 12),
+              SelectableText(
+                code,
+                style: const TextStyle(
+                  color: NovaColors.cyan,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: code));
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: const Text('Copy code'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repository = ref.watch(familyRepositoryProvider);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: NovaColors.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: NovaColors.cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'FAMILY ACCESS',
+            style: TextStyle(
+              color: NovaColors.secondaryText,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Invite a guardian to your family group. You control what they can view.',
+            style: TextStyle(color: NovaColors.primaryText, fontSize: 13),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _createInvite(context, repository),
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Create guardian invite'),
+            ),
+          ),
+          StreamBuilder<List<FamilyMember>>(
+            stream: repository.watchFamilyMembers(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    snapshot.error.toString(),
+                    style: const TextStyle(color: NovaColors.red, fontSize: 11),
+                  ),
+                );
+              }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox.shrink();
+              }
+              final guardianCount = (snapshot.data ?? const [])
+                  .where((member) => member.role == 'guardian')
+                  .length;
+              return Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '$guardianCount active guardian${guardianCount == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    color: NovaColors.secondaryText,
+                    fontSize: 12,
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -412,7 +573,11 @@ class _StatusPill extends StatelessWidget {
           const SizedBox(width: 5),
           Text(
             label,
-            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),

@@ -83,6 +83,22 @@ class FakeAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<UserProfile> signInWithGoogle({required UserRole role}) async {
+    calls.add('signInWithGoogle:${role.wireName}');
+    if (failWith != null) _fail();
+    final profile = UserProfile(
+      uid: 'uid-google',
+      email: 'google@example.test',
+      username: 'google_user',
+      fullName: 'Google User',
+      role: role,
+      emailVerified: true,
+    );
+    emit(profile);
+    return profile;
+  }
+
+  @override
   Future<UserProfile> signInWithUsername({
     required String username,
     required String password,
@@ -168,8 +184,10 @@ class FakeAuthRepository implements AuthRepository {
     String? phoneNumber,
     String? address,
   }) async {
-    calls.add('updateProfile:${fullName ?? ''}|${phoneNumber ?? ''}|'
-        '${address ?? ''}');
+    calls.add(
+      'updateProfile:${fullName ?? ''}|${phoneNumber ?? ''}|'
+      '${address ?? ''}',
+    );
     if (failWith != null) _fail();
     final current = _current;
     if (current == null) throw const AuthFailure('You are not signed in.');

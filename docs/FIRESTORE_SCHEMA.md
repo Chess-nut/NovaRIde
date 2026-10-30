@@ -221,10 +221,13 @@ rider signed up with (resolved through `usernames/`).
 | `username` | string | yes | Display case. The lowercased form is the id under `usernames/`. |
 | `fullName` | string | yes | |
 | `role` | string | yes | `rider` \| `guardian`. **Immutable.** It decides the home screen and, in later phases, what the account may read. |
+| `familyId` | string | riders | A rider's initial family id is its own uid. A guardian starts without it and receives it only in the invite-acceptance transaction. It is immutable except for a guardian whose previous membership is revoked. |
 | `phoneNumber` | string | | Optional at sign-up. |
 | `address` | string | | Where the person lives. On `users/` rather than `riderProfiles/` because a guardian has one too, and it belongs beside `phoneNumber` — both are how somebody is reached, whatever their role. Optional: sign-up does not ask for it, Personal Information does. |
 | `photoUrl` | string | | Unused so far. |
 | `fcmToken` | string | | Push address. Refreshed by `ensureProfile`. |
+| `notificationSettings` | map | | Optional owner-written booleans: `emergencyAlerts`, `accidentDetection`, `tripStarted`, `riderOffline`, `gpsSignalLost`. Unknown keys and non-boolean values are refused. |
+| `familyInviteCode` | string | guardians after acceptance | Private acceptance receipt used by rules to bind invite, membership and `familyId` atomically; it is stored only on the private user document. |
 | `createdAt` | timestamp | yes | Server clock. **Immutable.** |
 | `updatedAt` | timestamp | yes | Server clock, on every write. |
 | `lastLoginAt` | timestamp | | Server clock. Written by `ensureProfile` on sign-in. |
@@ -262,9 +265,65 @@ Uniqueness is enforced by the rules, not only by the app: a claim is a
 denied. Two people racing for one name means the second write fails rather
 than overwrites. A username is never transferred and never released.
 
+### `families/{familyId}` and `families/{familyId}/members/{uid}`
+
+The family document id is the rider owner's Firebase Auth uid. `ownerUid`
+must equal that id; only a rider can own a family. The owner's family and
+active rider member record are created atomically with the rider's first
+account/profile. Existing rider accounts that predate family membership may
+create the same owner family/member pair in one first-time migration write.
+The family document carries `createdAt` and `updatedAt`, both server
+timestamps; family documents are not client-editable afterward.
+
+Each member document is keyed by its Firebase Auth uid and contains:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `uid` | string | yes | Must equal the member document id. |
+| `role` | string | yes | `rider` for the owner; `guardian` for invited members. A guardian rejoin may rewrite this only as `guardian`. |
+| `status` | string | yes | `active` \| `revoked`. A revoked guardian may become active again only by accepting a new invite. |
+| `permissions` | map | yes | Exactly the five boolean permissions below. |
+| `displayName` | string | yes | Non-sensitive display label; no email or phone is stored here. |
+| `createdAt`, `updatedAt` | timestamp | yes | Server timestamps. |
+
+Permissions are `liveLocation`, `emergencyAlerts`, `tripStatus`,
+`helmetStatus` and `incidentHistory`. Only the rider owner can change another
+guardian's permissions or revoke that guardian. A guardian accepted or
+rejoined through an invite starts with every permission disabled; the owner
+must grant permissions separately. A guardian may revoke their
+own membership. No client can create a guardian membership except in the
+transaction that accepts its pending invite. A guardian's leave updates
+membership to `revoked` and removes `users/{uid}.familyId` in one
+transaction. If the owner revokes a guardian, that guardian may unlink the
+old family afterward or accept a later invite. Rejoining the same family
+updates the existing member's role, display name, permissions, status and
+updatedAt while preserving createdAt; while active the user family link is
+immutable.
+
+Active guardians may read the linked rider roster and device documents only
+when `liveLocation`, `tripStatus` and `helmetStatus` are all enabled: rules
+cannot redact phone/helmet identifiers or separate coordinates from other
+device telemetry. Alert reads require `emergencyAlerts` and `liveLocation`;
+history reads require `incidentHistory` and `liveLocation`, because alert
+records/history may contain location-bearing fields. These permissions
+grant no writes to `riders/`, `devices/` or `alerts/`.
+
+### `familyInvites/{code}`
+
+The document id is a high-entropy invite code (at least 16 characters);
+invite documents expire within 24 hours. An owner creates a pending invite
+with `familyId`, `invitedBy`, optional `invitedEmail`, `createdAt` and
+`expiresAt`. A signed-in client may `get` only a pending, unexpired invite;
+when `invitedEmail` is set, the ID-token email must match. Listing is always
+denied. Acceptance atomically changes the invite to `accepted` with
+`acceptedBy`/`acceptedAt`, creates the guardian member, and links the
+guardian's `users/{uid}.familyId`. Accepted or expired invites cannot be
+replayed.
+
 ### `emergencyContacts/{id}` — reserved
 
-Not read or written yet. Intended shape:
+Not read or written yet. The family membership model above replaces the
+previously proposed `riderLinks/` path. Intended shape:
 
 ```
 emergencyContacts/{id}    { riderId, name, phone, relationship }
@@ -321,13 +380,13 @@ and sign-in return `permission-denied` until the deploy above is run.
 
 ### Tested
 
-`rules_test/` holds 141 tests over this file, run against the Firestore
-emulator with no credentials and no reach into the real project
+`rules_test/` holds tests over this file, run against the Firestore emulator
+with no credentials and no reach into the real project
 (`cd rules_test && npm install && npm test`). They cover role resolution,
 each collection's write narrowing, the alert lifecycle and its server-clock
 stamps, the append-only history, what the phone app's four account
-collections permit, and that every path without a rule of its own is still
-closed. Run them before a deploy; see
+collections permit, family invites and permission gates, and that every
+path without a rule of its own is still closed. Run them before a deploy; see
 [rules_test/README.md](../rules_test/README.md).
 
 ### Principals
@@ -335,7 +394,7 @@ closed. Run them before a deploy; see
 | Principal | How it authenticates | How the rules know its role |
 |---|---|---|
 | **Operator** (`superAdmin` \| `dispatcher` \| `viewer`) | Firebase Auth email/password, from the console | `request.auth.token.role` (custom claim) first; if absent or not one of the three, `admins/{uid}.role`. Aliases `administrator`/`admin` → `superAdmin`, `operator` → `dispatcher` are read-tolerated. |
-| **Mobile account** (`rider` \| `guardian`) | Firebase Auth email/password, from the phone app | No claim at all. The account is whoever `request.auth.uid` says it is; `users/{uid}.role` decides what the app shows it, not what the rules let it reach. It may read and write its own `users/`, `riderProfiles/` or `guardianProfiles/` document and claim a `usernames/` entry — and nothing else in the database. |
+| **Mobile account** (`rider` \| `guardian`) | Firebase Auth email/password, from the phone app | No claim at all. The account is whoever `request.auth.uid` says it is; its active family membership grants only the family reads in the table below. It may also read/update its own account/profile and claim a `usernames/` entry. |
 | **Helmet service** | A Firebase Auth user the ESP32 will sign in as, carrying the claim `role: helmetService`, granted by `tool/provision_helmet_service.mjs` | The claim only. It is not a console role; the console rejects it as unprovisioned, and it must never have an `admins/` document (the script refuses one). Provisioning steps: [FIRMWARE_CONTRACT.md §7](FIRMWARE_CONTRACT.md#7-for-the-project-owner-provisioning-the-helmet-identity). A bridge using the Admin SDK bypasses these rules and needs nothing here. |
 | Anyone else | — | Denied everywhere. |
 
@@ -350,10 +409,12 @@ places. Keep them in step.
 
 | Path | read | create | update | delete |
 |---|---|---|---|---|
-| `riders/{id}` | operator | superAdmin | superAdmin; dispatcher **or** helmet service if only `status` changes | never (deactivate instead) |
-| `devices/{id}` | operator | helmet service; superAdmin (registering a helmet; the seed) | helmet service; superAdmin **only if nothing but `assigned_rider_id` / `paired_at` changes** (the pairing) | never |
-| `alerts/{id}` | operator | helmet service, **only with the contract's fields and a server-clock `timestamp`**; superAdmin (the seed), with any `timestamp` but never none | superAdmin / dispatcher, **one lifecycle step forward**, touching only `status` + the matching `<status>At`, which must be the server clock | never |
-| `alerts/{id}/history/{e}` | operator (single alert and collection group) | superAdmin / dispatcher, `at` must be the server clock | never | never |
+| `riders/{id}` | operator; linked rider; active guardians with `liveLocation`, `tripStatus` **and** `helmetStatus` | superAdmin | superAdmin; dispatcher **or** helmet service if only `status` changes | never (deactivate instead) |
+| `devices/{id}` | operator; active guardians with `liveLocation`, `tripStatus` **and** `helmetStatus` for its assigned rider | helmet service; superAdmin (registering a helmet; the seed) | helmet service; superAdmin **only if nothing but `assigned_rider_id` / `paired_at` changes** (the pairing) | never |
+| `alerts/{id}` | operator; linked rider; active family members with `emergencyAlerts` **and** `liveLocation` | helmet service, **only with the contract's fields and a server-clock `timestamp`**; superAdmin (the seed), with any `timestamp` but never none | superAdmin / dispatcher, **one lifecycle step forward**, touching only `status` + the matching `<status>At`, which must be the server clock | never |
+| `alerts/{id}/history/{e}` | operator (single alert and collection group); active family members with `incidentHistory` **and** `liveLocation` on a direct alert-history read | superAdmin / dispatcher, `at` must be the server clock | never | never |
+| `families/{familyId}` and `members/{uid}` | active members of that family; member data contains no email, phone or invite code | owner rider + self as part of initial account setup; guardian only by invite acceptance | owner may update guardian permissions/revoke; guardian may revoke self or rejoin by new invite | never |
+| `familyInvites/{code}` | authenticated get only while pending/unexpired; matching ID-token email when bound | family owner | invited guardian accepts once in the same transaction that links their account and creates membership | never |
 | `admins/{uid}` | own document: any signed-in user; all: superAdmin | never from a client | never | never |
 | everything else (incl. `emergencyContacts/`) | — | — | — | — |
 
@@ -411,19 +472,15 @@ expiring escape hatch in the repo is an invitation to deploy it later and then
 debug a silent `permission-denied` after the date passes. There is one
 ruleset and one deploy command.
 
-### Still to write
+### Family access boundaries
 
-Phase 3 gave the phone app its own four collections (§2), so the rider now
-has an authenticated identity. What is still absent, deliberately:
-
-- **A rider reading their own telemetry.** A linked rider now reads their
-  own roster entry and alerts (`rider_link.test.js`); `devices/` is still
-  refused to every mobile account. An unlinked account reaches none of the
-  three, which `accounts.test.js` asserts.
-- **A guardian reading their rider's anything.** There is no link model yet
-  — `riderLinks/` is named in `closed.test.js` as the path that would carry
-  it, and is denied to everybody.
-- **Binding a helmet account to its serial** — see FIRMWARE_CONTRACT.md §8.
+The family model is enforced by `families.test.js`: a guardian must have an
+active member record in the rider's family, and each data permission is
+checked independently. The rider's existing `authUid` read/cancel contracts
+remain in place; family membership grants reads only and never grants a
+guardian write path. `riderLinks/` remains closed because the family member
+subcollection is the approved link model. Binding a helmet account to its
+serial remains future work — see FIRMWARE_CONTRACT.md §8.
 
 ---
 

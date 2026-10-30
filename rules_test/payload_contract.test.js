@@ -45,6 +45,41 @@ const revive = (payload) => Object.fromEntries(
   ),
 );
 
+const ownerPermissions = {
+  liveLocation: true,
+  emergencyAlerts: true,
+  tripStatus: true,
+  helmetStatus: true,
+  incidentHistory: true,
+};
+
+const riderSignup = (db, user, { includeFamilyId = true } = {}) => runTransaction(db, async (tx) => {
+  const userRef = doc(db, 'users', payloads.riderUid);
+  const claimRef = doc(db, 'usernames', payloads.usernameLower);
+  await tx.get(userRef);
+  await tx.get(claimRef);
+  tx.set(userRef, includeFamilyId
+    ? { ...user, familyId: payloads.riderUid }
+    : user);
+  tx.set(doc(db, 'riderProfiles', payloads.riderUid), revive(payloads.profile));
+  tx.set(doc(db, 'families', payloads.riderUid), {
+    ownerUid: payloads.riderUid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  tx.set(doc(db, 'families', payloads.riderUid, 'members', payloads.riderUid),
+    {
+      uid: payloads.riderUid,
+      role: 'rider',
+      status: 'active',
+      permissions: ownerPermissions,
+      displayName: user.fullName || 'Rider One',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  tx.set(claimRef, revive(payloads.usernameClaim));
+});
+
 let env;
 before(async () => { env = await newTestEnv(); });
 after(async () => { await env.cleanup(); });
@@ -68,17 +103,7 @@ describe('the payloads FirebaseAuthRepository sends', () => {
   // is the test that would have caught a missing fullName.
   it('are accepted as a sign-up transaction', async () => {
     const db = asRider(env);
-    await assertSucceeds(runTransaction(db, async (tx) => {
-      const userRef = doc(db, 'users', payloads.riderUid);
-      const claimRef = doc(db, 'usernames', payloads.usernameLower);
-      await tx.get(userRef);
-      await tx.get(claimRef);
-
-      tx.set(userRef, revive(payloads.user));
-      tx.set(doc(db, 'riderProfiles', payloads.riderUid),
-        revive(payloads.profile));
-      tx.set(claimRef, revive(payloads.usernameClaim));
-    }));
+    await assertSucceeds(riderSignup(db, revive(payloads.user)));
 
     // And the documents are really there afterwards, with the field the
     // guardian dashboards need during an SOS.
@@ -86,6 +111,12 @@ describe('the payloads FirebaseAuthRepository sends', () => {
     if (written.data().fullName !== 'Rider One') {
       throw new Error('users/ landed without a usable fullName.');
     }
+  });
+
+  it('refuses the current rider payload without the required familyId', async () => {
+    await assertFails(riderSignup(asRider(env), revive(payloads.user), {
+      includeFamilyId: false,
+    }));
   });
 
   it('are accepted for a guardian too', async () => {
@@ -106,7 +137,7 @@ describe('the payloads FirebaseAuthRepository sends', () => {
         await env.withSecurityRulesDisabled(async (context) => {
           await setDoc(
             doc(context.firestore(), 'users', payloads.riderUid),
-            { ...payloads.user, createdAt: Timestamp.now(),
+            { ...payloads.user, familyId: payloads.riderUid, createdAt: Timestamp.now(),
               updatedAt: Timestamp.now(), lastLoginAt: Timestamp.now() },
           );
         });
@@ -128,11 +159,7 @@ describe('the payloads FirebaseAuthRepository sends', () => {
     delete withoutFullName.fullName;
 
     const db = asRider(env);
-    await assertFails(runTransaction(db, async (tx) => {
-      const userRef = doc(db, 'users', payloads.riderUid);
-      await tx.get(userRef);
-      tx.set(userRef, revive(withoutFullName));
-    }));
+    await assertFails(riderSignup(db, revive(withoutFullName)));
   });
 });
 
@@ -148,31 +175,19 @@ describe('the server-timestamp marker', () => {
   it('is refused by the rules when it reaches them unrevived', async () => {
     const db = asRider(env);
     // Deliberately not revived: the raw string goes to Firestore.
-    await assertFails(runTransaction(db, async (tx) => {
-      const userRef = doc(db, 'users', payloads.riderUid);
-      await tx.get(userRef);
-      tx.set(userRef, payloads.user);
-    }));
+    await assertFails(riderSignup(db, payloads.user));
   });
 
   // And the same payload with the swap applied is accepted, which is
   // what makes the case above meaningful rather than merely true.
   it('is accepted once revived', async () => {
     const db = asRider(env);
-    await assertSucceeds(runTransaction(db, async (tx) => {
-      const userRef = doc(db, 'users', payloads.riderUid);
-      await tx.get(userRef);
-      tx.set(userRef, revive(payloads.user));
-    }));
+    await assertSucceeds(riderSignup(db, revive(payloads.user)));
   });
 
   it('really does produce a timestamp, not a string', async () => {
     const db = asRider(env);
-    await runTransaction(db, async (tx) => {
-      const userRef = doc(db, 'users', payloads.riderUid);
-      await tx.get(userRef);
-      tx.set(userRef, revive(payloads.user));
-    });
+    await riderSignup(db, revive(payloads.user));
     const written = await getDoc(doc(asRider(env), 'users', payloads.riderUid));
     const createdAt = written.data().createdAt;
     if (!(createdAt instanceof Timestamp)) {

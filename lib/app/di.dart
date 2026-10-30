@@ -17,9 +17,9 @@ import '../features/rider/domain/repositories/rider_profile_repository.dart';
 
 /// The identity provider.
 ///
-/// Phase 3 put the Firebase implementation behind it; until then this
-/// threw, on purpose. A test overrides it at the [ProviderScope] with a
-/// fake — nothing above this line knows Firebase exists.
+/// Firebase implementation behind the interface. A test can override it at
+/// the [ProviderScope] with a fake — nothing above this line knows Firebase
+/// exists.
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return FirebaseAuthRepository();
 });

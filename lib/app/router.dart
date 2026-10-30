@@ -3,10 +3,7 @@
 /// Shape: **splash → auth gate → role home.** The splash is where the app
 /// sits while the session is still unknown; the gate decides, once it is
 /// known, whether the viewer belongs in the signed-out screens or in their
-/// role's home. Both halves are driven by [authStateProvider], which is a
-/// placeholder in Phase 1 — which is the point: the redirect is finished
-/// and testable before real auth exists, so Phase 3 is a change of one
-/// provider rather than a change of navigation.
+/// role's home. Both halves are driven by [authStateProvider].
 ///
 /// The moved screens still navigate imperatively
 /// (`Navigator.push(MaterialPageRoute(...))`). That keeps working: those
@@ -28,6 +25,7 @@ import '../features/auth/presentation/pages/signup_page.dart';
 import '../features/auth/presentation/pages/verify_email_page.dart';
 import '../features/auth/presentation/providers/auth_state.dart';
 import '../features/guardian/presentation/pages/family_dashboard_page.dart';
+import '../features/guardian/presentation/pages/family_connect_rider_page.dart';
 import '../features/guardian/presentation/pages/family_emergency_alert_page.dart';
 import '../features/guardian/presentation/pages/family_incident_history_page.dart';
 import '../features/guardian/presentation/pages/family_live_location_page.dart';
@@ -147,7 +145,8 @@ final List<RouteBase> _routes = [
     // `?role=guardian` so a deep link can land on the right copy. Anything
     // unrecognised falls back to rider, which is the screen's own default.
     builder: (context, state) => LoginPage(
-      role: UserRole.fromWireName(state.uri.queryParameters['role']) ??
+      role:
+          UserRole.fromWireName(state.uri.queryParameters['role']) ??
           UserRole.rider,
     ),
   ),
@@ -155,7 +154,8 @@ final List<RouteBase> _routes = [
     path: AppRoutes.signupPath,
     name: AppRoutes.signup,
     builder: (context, state) => SignupPage(
-      role: UserRole.fromWireName(state.uri.queryParameters['role']) ??
+      role:
+          UserRole.fromWireName(state.uri.queryParameters['role']) ??
           UserRole.rider,
     ),
   ),
@@ -198,6 +198,11 @@ final List<RouteBase> _routes = [
     path: AppRoutes.guardianHistoryPath,
     name: AppRoutes.guardianHistory,
     builder: (context, state) => const FamilyIncidentHistoryPage(),
+  ),
+  GoRoute(
+    path: AppRoutes.guardianConnectPath,
+    name: AppRoutes.guardianConnect,
+    builder: (context, state) => const FamilyConnectRiderPage(),
   ),
   GoRoute(
     path: AppRoutes.guardianProfilePath,

@@ -23,8 +23,8 @@ const closedPaths = [
   // Reserved in docs/FIRESTORE_SCHEMA.md §2 and still unbuilt. The rider
   // app's emergency contacts live on riderProfiles/ for now.
   ['emergencyContacts', 'some-id'],
-  // The guardian-to-rider link Phase 7 will need. Named here so the day
-  // it is added, this line is what has to change.
+  // The family member subcollection is the approved link model; the
+  // superseded top-level riderLinks path must remain closed.
   ['riderLinks', 'some-id'],
   ['anythingElse', 'some-id'],
 ];

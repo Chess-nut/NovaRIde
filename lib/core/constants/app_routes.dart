@@ -53,6 +53,9 @@ abstract final class AppRoutes {
   static const guardianProfile = 'guardianProfile';
   static const guardianProfilePath = '/guardian/profile';
 
+  static const guardianConnect = 'guardianConnect';
+  static const guardianConnectPath = '/guardian/connect';
+
   /// Reachable from the old route table but linked from nowhere in the UI.
   /// Carried over so the move to go_router drops no destination; Phase 7
   /// decides whether the screen survives.

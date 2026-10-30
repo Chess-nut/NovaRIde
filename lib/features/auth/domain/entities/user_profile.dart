@@ -4,9 +4,9 @@ import 'user_role.dart';
 ///
 /// This is the domain shape, not the document shape: it holds no
 /// `Timestamp`, no `DocumentSnapshot`, and nothing from `firebase_auth`. The
-/// data layer Phase 3 adds is what reads `users/{uid}` and its
-/// role-specific profile and assembles one of these; everything above that
-/// boundary can be built and tested without Firebase running.
+/// data layer reads `users/{uid}` and its role-specific profile and assembles
+/// one of these; everything above that boundary can be built and tested
+/// without Firebase running.
 ///
 /// It is deliberately the union of what both roles need. Fields that only
 /// one role has — a rider's helmet id, a guardian's linked riders — belong
@@ -120,14 +120,14 @@ class UserProfile {
   /// with a server timestamp, and a client clock has no business setting
   /// it. `emailVerified` is also absent, because Firebase Auth owns it.
   Map<String, dynamic> toMap() => {
-        'email': email,
-        'username': username,
-        'fullName': fullName,
-        'role': role.wireName,
-        if (phoneNumber != null) 'phoneNumber': phoneNumber,
-        if (address != null) 'address': address,
-        if (photoUrl != null) 'photoUrl': photoUrl,
-      };
+    'email': email,
+    'username': username,
+    'fullName': fullName,
+    'role': role.wireName,
+    if (phoneNumber != null) 'phoneNumber': phoneNumber,
+    if (address != null) 'address': address,
+    if (photoUrl != null) 'photoUrl': photoUrl,
+  };
 
   /// Accepts an ISO-8601 string or anything with a `toDate()` — which is
   /// what a Firestore `Timestamp` has, without this file importing one.
@@ -159,8 +159,18 @@ class UserProfile {
           other.createdAt == createdAt;
 
   @override
-  int get hashCode => Object.hash(uid, email, username, fullName, role,
-      emailVerified, phoneNumber, address, photoUrl, createdAt);
+  int get hashCode => Object.hash(
+    uid,
+    email,
+    username,
+    fullName,
+    role,
+    emailVerified,
+    phoneNumber,
+    address,
+    photoUrl,
+    createdAt,
+  );
 
   @override
   String toString() => 'UserProfile($uid, $username, ${role.wireName})';

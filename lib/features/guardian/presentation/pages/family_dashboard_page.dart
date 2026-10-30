@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:novaride/core/constants/app_routes.dart';
@@ -9,324 +9,214 @@ import 'package:novaride/features/guardian/presentation/widgets/family_bottom_na
 import 'package:novaride/features/guardian/presentation/widgets/family_status_badge.dart';
 import 'package:novaride/shared/theme.dart';
 
-class FamilyDashboardPage extends StatelessWidget {
-  const FamilyDashboardPage({super.key});
+class FamilyDashboardPage extends ConsumerWidget {
+  const FamilyDashboardPage({super.key, this.repository});
+
+  final FamilyRepository? repository;
 
   @override
-  Widget build(BuildContext context) {
-    final repo = FamilyRepository();
-
-    return StreamBuilder<FamilyConnectedRider>(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final FamilyRepository repo =
+        repository ?? ref.watch(familyRepositoryProvider);
+    return StreamBuilder<FamilyConnectedRider?>(
       stream: repo.watchRiderStatus(),
-      initialData: repo.connectedRider,
       builder: (context, snapshot) {
-        final rider = snapshot.data ?? repo.connectedRider;
-
         return Scaffold(
           backgroundColor: NovaColors.background,
           body: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(),
-                  const SizedBox(height: 20),
-                  _buildConnectedRiderCard(rider),
-                  const SizedBox(height: 18),
-                  _buildStatusCard(rider),
-                  const SizedBox(height: 24),
-                  const FamilySectionTitle(label: 'CURRENT TRIP'),
-                  const SizedBox(height: 12),
-                  _buildTripCard(rider),
-                  const SizedBox(height: 24),
-                  const FamilySectionTitle(label: 'LIVE LOCATION', showLiveBadge: true),
-                  const SizedBox(height: 12),
-                  _buildLiveLocationCard(rider, context),
-                  const SizedBox(height: 24),
-                  const FamilySectionTitle(label: 'HELMET STATUS'),
-                  const SizedBox(height: 12),
-                  _buildHelmetStatusCard(rider),
-                  const SizedBox(height: 24),
-                  const FamilySectionTitle(label: 'SAFETY SUMMARY'),
-                  const SizedBox(height: 12),
-                  _buildSafetySummaryCard(rider),
-                ],
+            child: switch ((snapshot.connectionState, snapshot.hasError, snapshot.data)) {
+              (_, true, _) => _MessageState(
+                title: 'Family data unavailable',
+                message: snapshot.error.toString(),
+                icon: Icons.cloud_off_outlined,
               ),
-            ),
+              (ConnectionState.waiting, false, _) => const Center(
+                child: CircularProgressIndicator(color: NovaColors.cyan),
+              ),
+              (_, false, null) => const _MessageState(
+                title: 'No rider connected',
+                message:
+                    'Ask the rider to share a family invite code, then connect it from Profile.',
+                icon: Icons.family_restroom,
+              ),
+              (_, false, final rider?) => _DashboardContent(rider: rider),
+            },
           ),
           bottomNavigationBar: FamilyBottomNavBar(
             selectedIndex: 0,
-            showAlertBadge: repo.hasActiveEmergency,
+            showAlertBadge: snapshot.data?.activeEmergency ?? false,
           ),
         );
       },
     );
   }
+}
 
-  Widget _buildHeader() {
-    return const Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          'Family Safety',
-          style: TextStyle(
-            color: NovaColors.primaryText,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        Icon(Icons.notifications_none, color: Colors.white, size: 24),
-      ],
-    );
-  }
+class _DashboardContent extends StatelessWidget {
+  const _DashboardContent({required this.rider});
 
-  Widget _buildConnectedRiderCard(FamilyConnectedRider rider) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: NovaColors.cyan,
-            child: Text(
-              rider.avatarLetters,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  rider.name,
-                  style: const TextStyle(
-                    color: NovaColors.primaryText,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 18,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  rider.relationship,
-                  style: const TextStyle(
-                    color: NovaColors.secondaryText,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          FamilyStatusBadge(
-            status: rider.status,
-            isCompact: true,
-          ),
-        ],
-      ),
-    );
-  }
+  final FamilyConnectedRider rider;
 
-  Widget _buildStatusCard(FamilyConnectedRider rider) {
-    final status = rider.status;
-    final color = status.color;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Rider Status',
+          const Text(
+            'Family Safety',
             style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Icon(Icons.circle, color: color, size: 14),
-              const SizedBox(width: 10),
-              Text(
-                status.label,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Last updated: ${rider.lastUpdatedSeconds} seconds ago',
-            style: const TextStyle(
-              color: NovaColors.secondaryText,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTripCard(FamilyConnectedRider rider) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            rider.isCurrentlyRiding ? 'Currently Riding' : 'Currently Safe',
-            style: const TextStyle(
               color: NovaColors.primaryText,
-              fontWeight: FontWeight.w700,
-              fontSize: 16,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _MetricTile(label: 'Speed', value: '${rider.speedKmh.toInt()} km/h'),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _MetricTile(label: 'Trip Duration', value: '${rider.tripDurationMinutes} min'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Icon(Icons.location_on, color: NovaColors.cyan, size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  rider.destination,
-                  style: const TextStyle(
-                    color: NovaColors.secondaryText,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLiveLocationCard(FamilyConnectedRider rider, BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Column(
-        children: [
-          Container(
-            height: 150,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              color: const Color(0xFF0E1D2E),
-            ),
-            child: Stack(
+          const SizedBox(height: 20),
+          _Card(
+            child: Row(
               children: [
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _MapGridPainter(),
-                  ),
-                ),
-                Positioned(
-                  left: 170,
-                  top: 54,
-                  child: Container(
-                    width: 18,
-                    height: 18,
-                    decoration: BoxDecoration(
-                      color: NovaColors.green,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
+                CircleAvatar(
+                  backgroundColor: NovaColors.cyan,
+                  child: Text(
+                    rider.avatarLetters,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              children: [
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Current location',
-                        style: TextStyle(
-                          color: NovaColors.secondaryText,
-                          fontSize: 11,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
                       Text(
-                        rider.address,
+                        rider.name,
                         style: const TextStyle(
                           color: NovaColors.primaryText,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
                         ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        rider.relationship,
+                        style: const TextStyle(color: NovaColors.secondaryText),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () {
-                    context.push(AppRoutes.guardianMapPath);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: NovaColors.cyan,
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                FamilyStatusBadge(status: rider.status, isCompact: true),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          const _SectionTitle('RIDER STATUS'),
+          const SizedBox(height: 10),
+          _Card(
+            child: Row(
+              children: [
+                Icon(Icons.circle, size: 12, color: rider.status.color),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    rider.status.label,
+                    style: TextStyle(
+                      color: rider.status.color,
+                      fontSize: 21,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  child: const Text('Open Live Map'),
                 ),
+                if (rider.lastUpdated != null)
+                  Text(
+                    _relativeTime(rider.lastUpdated!),
+                    style: const TextStyle(
+                      color: NovaColors.secondaryText,
+                      fontSize: 11,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+          const _SectionTitle('CURRENT TRIP'),
+          const SizedBox(height: 10),
+          _Card(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  rider.isCurrentlyRiding == null
+                      ? 'Trip status unavailable'
+                      : rider.isCurrentlyRiding!
+                      ? 'Currently riding'
+                      : 'No active trip',
+                  style: const TextStyle(
+                    color: NovaColors.primaryText,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Metric(
+                        label: 'Speed',
+                        value: _formatNumber(rider.speedKmh, ' km/h'),
+                      ),
+                    ),
+                    Expanded(
+                      child: _Metric(
+                        label: 'Trip duration',
+                        value: _formatNumber(rider.tripDurationMinutes, ' min'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  rider.destination ?? 'Destination unavailable',
+                  style: const TextStyle(color: NovaColors.secondaryText),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+          const _SectionTitle('LIVE LOCATION'),
+          const SizedBox(height: 10),
+          _Card(
+            child: Row(
+              children: [
+                const Icon(Icons.location_on_outlined, color: NovaColors.cyan),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    rider.address ?? 'No GPS location available',
+                    style: const TextStyle(color: NovaColors.primaryText),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => context.go(AppRoutes.guardianMapPath),
+                  child: const Text('Open map'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+          const _SectionTitle('HELMET & SAFETY STATUS'),
+          const SizedBox(height: 10),
+          _Card(
+            child: Column(
+              children: [
+                _StatusRow('Helmet', _booleanStatus(rider.helmetConnected)),
+                _StatusRow('GPS', _booleanStatus(rider.gpsActive)),
+                _StatusRow('Internet', _booleanStatus(rider.internetConnected)),
+                _StatusRow('Battery', _formatNumber(rider.batteryPct, '%')),
+                _StatusRow('Impact', _booleanStatus(rider.impactNormal)),
+                _StatusRow('Alcohol sensor', _booleanStatus(rider.alcoholSafe)),
               ],
             ),
           ),
@@ -335,166 +225,141 @@ class FamilyDashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildHelmetStatusCard(FamilyConnectedRider rider) {
-    final rows = <_StatusRowData>[
-      _StatusRowData('Helmet', rider.helmetConnected ? 'Connected' : 'Disconnected', NovaColors.green),
-      _StatusRowData('GPS', rider.gpsActive ? 'Active' : 'Inactive', NovaColors.cyan),
-      _StatusRowData('Internet', rider.internetConnected ? 'Connected' : 'Offline', NovaColors.green),
-      _StatusRowData('Battery', '${rider.batteryPct}%', NovaColors.amber),
-    ];
+  static String _booleanStatus(bool? value) => switch (value) {
+    true => 'Normal',
+    false => 'Warning',
+    null => 'Unavailable',
+  };
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Column(
-        children: rows.map((row) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                row.label,
-                style: const TextStyle(
-                  color: NovaColors.secondaryText,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Text(
-                row.value,
-                style: TextStyle(
-                  color: row.color,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        )).toList(),
-      ),
-    );
-  }
+  static String _formatNumber(num? value, String suffix) =>
+      value == null ? 'Unavailable' : '${value.toStringAsFixed(0)}$suffix';
 
-  Widget _buildSafetySummaryCard(FamilyConnectedRider rider) {
-    final rows = <_StatusRowData>[
-      _StatusRowData('Impact', rider.impactNormal ? 'Normal' : 'High', rider.impactNormal ? NovaColors.green : NovaColors.red),
-      _StatusRowData('Alcohol', rider.alcoholSafe ? 'Safe' : 'Warning', rider.alcoholSafe ? NovaColors.green : NovaColors.amber),
-      _StatusRowData('GPS', rider.gpsLocked ? 'Locked' : 'Lost', rider.gpsLocked ? NovaColors.green : NovaColors.red),
-      _StatusRowData('Helmet', rider.helmetConnected ? 'Connected' : 'Disconnected', rider.helmetConnected ? NovaColors.green : NovaColors.red),
-    ];
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Column(
-        children: rows.map((row) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  row.label,
-                  style: const TextStyle(
-                    color: NovaColors.secondaryText,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Text(
-                row.value,
-                style: TextStyle(
-                  color: row.color,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        )).toList(),
-      ),
-    );
+  static String _relativeTime(DateTime timestamp) {
+    final seconds = DateTime.now().difference(timestamp).inSeconds;
+    if (seconds < 0) return 'Updated recently';
+    if (seconds < 60) return 'Updated $seconds seconds ago';
+    final minutes = seconds ~/ 60;
+    return 'Updated $minutes minutes ago';
   }
 }
 
-class _MetricTile extends StatelessWidget {
+class _MessageState extends StatelessWidget {
+  const _MessageState({
+    required this.title,
+    required this.message,
+    required this.icon,
+  });
+
+  final String title;
+  final String message;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 42, color: NovaColors.cyan),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: NovaColors.primaryText,
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: NovaColors.secondaryText),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _Card extends StatelessWidget {
+  const _Card({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: NovaColors.card,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: NovaColors.cardBorder),
+    ),
+    child: child,
+  );
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    label,
+    style: const TextStyle(
+      color: NovaColors.secondaryText,
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1,
+    ),
+  );
+}
+
+class _Metric extends StatelessWidget {
+  const _Metric({required this.label, required this.value});
+
   final String label;
   final String value;
 
-  const _MetricTile({required this.label, required this.value});
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(color: NovaColors.secondaryText, fontSize: 11),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        value,
+        style: const TextStyle(
+          color: NovaColors.primaryText,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ],
+  );
+}
+
+class _StatusRow extends StatelessWidget {
+  const _StatusRow(this.label, this.value);
+
+  final String label;
+  final String value;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 7),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: NovaColors.secondaryText,
-            fontSize: 11,
-            letterSpacing: 0.6,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            color: NovaColors.primaryText,
-            fontWeight: FontWeight.w800,
-            fontSize: 18,
-          ),
-        ),
+        Text(label, style: const TextStyle(color: NovaColors.secondaryText)),
+        Text(value, style: const TextStyle(color: NovaColors.primaryText)),
       ],
-    );
-  }
-}
-
-class _StatusRowData {
-  final String label;
-  final String value;
-  final Color color;
-
-  const _StatusRowData(this.label, this.value, this.color);
-}
-
-class _MapGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.08)
-      ..strokeWidth = 1;
-
-    for (double x = 0; x <= size.width; x += 28) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-
-    for (double y = 0; y <= size.height; y += 28) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-
-    final roadPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.12)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4;
-
-    final path = Path();
-    path.moveTo(0, 110);
-    path.quadraticBezierTo(size.width * 0.25, 90, size.width * 0.45, 130);
-    path.quadraticBezierTo(size.width * 0.7, 170, size.width, 110);
-    canvas.drawPath(path, roadPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+    ),
+  );
 }

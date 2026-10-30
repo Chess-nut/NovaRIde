@@ -2,11 +2,14 @@
 
 // Local prototype config. This file is ignored by Git.
 
-#define WIFI_SSID "YOUR_WIFI_NAME"
-#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+#define WIFI_SSID "Converge_5GHz_z7W4"
+#define WIFI_PASSWORD "bzmnmTA8"
 
 #define TRACKER_AP_SSID "SmartGPS-Setup"
 #define TRACKER_AP_PASSWORD "12345678"
+
+// 1 = Cloud Firestore devices/{DEVICE_ID}. Set to 0 to fall back to the Realtime Database.
+#define USE_FIRESTORE 1
 
 #define FIREBASE_DATABASE_URL "https://novaride-7a68c-default-rtdb.asia-southeast1.firebasedatabase.app/"
 #define FIREBASE_AUTH_TOKEN ""

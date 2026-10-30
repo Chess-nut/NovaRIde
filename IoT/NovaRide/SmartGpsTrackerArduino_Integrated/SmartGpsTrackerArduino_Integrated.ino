@@ -36,6 +36,15 @@
 #define CELLULAR_PDP_TYPE "IPV4V6"
 #endif
 
+// 1 = Cloud Firestore devices/{DEVICE_ID}; 0 = legacy Realtime Database paths.
+#ifndef USE_FIRESTORE
+#define USE_FIRESTORE 1
+#endif
+
+#ifndef FIRMWARE_VERSION
+#define FIRMWARE_VERSION "2026.10.30-fs"
+#endif
+
 // Seeed XIAO ESP32-C3 current project pinout
 constexpr int AIR_RX = 5;      // ESP32 RX <- AIR780E TXD
 constexpr int AIR_TX = 4;      // ESP32 TX -> AIR780E RXD
@@ -237,6 +246,10 @@ void updateBootIndicator();
 void uploadSafetyTelemetryIfDue();
 bool writeMpuRegister(uint8_t reg, uint8_t value);
 bool readMpuBytes(uint8_t reg, uint8_t *buffer, size_t length);
+#if USE_FIRESTORE
+bool firestoreWriteTelemetry(bool overCellular, int &httpStatus, String &statusText);
+String buildFirestoreTelemetryCommit();
+#endif
 
 void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
@@ -502,6 +515,10 @@ bool uploadLocationToFirebase(const LocationFix &fix, const char *reason) {
     return false;
   }
 
+#if USE_FIRESTORE
+  firebaseConnected = firestoreWriteTelemetry(false, lastFirebaseHttpStatus, lastFirebaseStatus);
+  return firebaseConnected;
+#else
   String latestPayload = buildLocationJson(fix, reason, "wifi");
   String latestUrl = firebaseUrl("/devices/" + String(DEVICE_ID) + "/latest.json");
 
@@ -554,6 +571,7 @@ bool uploadLocationToFirebase(const LocationFix &fix, const char *reason) {
   firebaseConnected = true;
   lastFirebaseHttpStatus = logStatus;
   return true;
+#endif
 }
 
 bool uploadLocationToFirebaseOverCellular(const LocationFix &fix, const char *reason) {
@@ -562,6 +580,15 @@ bool uploadLocationToFirebaseOverCellular(const LocationFix &fix, const char *re
     return false;
   }
 
+#if USE_FIRESTORE
+  if (!firestoreWriteTelemetry(true, lastFirebaseHttpStatus, lastFirebaseStatus)) {
+    return false;
+  }
+  lastCellularStatus = "Cellular Firestore upload OK";
+  firebaseConnected = true;
+  cellularDataReady = true;
+  return true;
+#else
   String latestPayload = buildLocationJson(fix, reason, "cellular");
   String latestUrl = firebaseUrlWithMethodOverride("/devices/" + String(DEVICE_ID) + "/latest.json", "PUT");
   int latestStatus = 0;
@@ -592,6 +619,7 @@ bool uploadLocationToFirebaseOverCellular(const LocationFix &fix, const char *re
   cellularDataReady = true;
   lastFirebaseHttpStatus = logStatus;
   return true;
+#endif
 }
 
 bool uploadPeriodicLocationToFirebase(const LocationFix &fix) {
@@ -600,6 +628,10 @@ bool uploadPeriodicLocationToFirebase(const LocationFix &fix) {
     return false;
   }
 
+#if USE_FIRESTORE
+  int status = 0;
+  return firestoreWriteTelemetry(false, status, lastTrackingStatus);
+#else
   String payload = buildTrackingLocationJson(fix);
   String latestUrl = firebaseUrl("/devices/" + String(DEVICE_ID) + "/tracking.json");
 
@@ -641,6 +673,7 @@ bool uploadPeriodicLocationToFirebase(const LocationFix &fix) {
 
   lastTrackingStatus = "Periodic GPS uploaded over Wi-Fi";
   return true;
+#endif
 }
 
 bool uploadPeriodicLocationToFirebaseOverCellular(const LocationFix &fix) {
@@ -649,6 +682,14 @@ bool uploadPeriodicLocationToFirebaseOverCellular(const LocationFix &fix) {
     return false;
   }
 
+#if USE_FIRESTORE
+  int status = 0;
+  if (!firestoreWriteTelemetry(true, status, lastTrackingStatus)) {
+    return false;
+  }
+  cellularDataReady = true;
+  return true;
+#else
   String payload = buildTrackingLocationJson(fix);
   String latestUrl = firebaseUrlWithMethodOverride("/devices/" + String(DEVICE_ID) + "/tracking.json", "PUT");
   int latestStatus = 0;
@@ -673,6 +714,7 @@ bool uploadPeriodicLocationToFirebaseOverCellular(const LocationFix &fix) {
   lastTrackingStatus = "Periodic GPS uploaded over AIR780E cellular";
   cellularDataReady = true;
   return true;
+#endif
 }
 
 void handlePeriodicLocationUpload() {
@@ -878,6 +920,10 @@ bool checkFirebaseConnection(bool force) {
     return checkFirebaseConnectionOverCellular();
   }
 
+#if USE_FIRESTORE
+  firebaseConnected = firestoreWriteTelemetry(false, lastFirebaseHttpStatus, lastFirebaseStatus);
+  return firebaseConnected;
+#else
   String payload = buildDeviceStatusJson("wifi");
 
   WiFiClientSecure client;
@@ -909,6 +955,7 @@ bool checkFirebaseConnection(bool force) {
   }
 
   return firebaseConnected;
+#endif
 }
 
 bool checkFirebaseConnectionOverCellular() {
@@ -923,6 +970,13 @@ bool checkFirebaseConnectionOverCellular() {
     return false;
   }
 
+#if USE_FIRESTORE
+  firebaseConnected = firestoreWriteTelemetry(true, lastFirebaseHttpStatus, lastFirebaseStatus);
+  if (firebaseConnected) {
+    lastCellularStatus = "Cellular data and Firestore OK";
+  }
+  return firebaseConnected;
+#else
   String payload = buildDeviceStatusJson("cellular");
   String statusUrl = firebaseUrlWithMethodOverride("/deviceStatus/" + String(DEVICE_ID) + ".json", "PUT");
   int status = 0;
@@ -948,6 +1002,7 @@ bool checkFirebaseConnectionOverCellular() {
   }
 
   return ok;
+#endif
 }
 
 bool sendSmsLocation(const LocationFix &fix, const char *reason) {
@@ -1149,6 +1204,112 @@ String appendUrlParam(const String &url, const String &key, const String &value)
   result += value;
   return result;
 }
+
+#if USE_FIRESTORE
+// Firestore transport. One documents:commit write updates only the fields in
+// its updateMask, so console-owned fields (assigned_rider_id, paired_at) are
+// never touched. commit is used rather than PATCH because it is a plain POST
+// (the AIR780E HTTP stack only does GET/POST) and because only commit can set
+// last_update to the server's clock.
+String firestoreCommitUrl() {
+  return String("https://firestore.googleapis.com/v1/projects/") + FIREBASE_PROJECT_ID +
+         "/databases/(default)/documents:commit";
+}
+
+// Appends one typed field and its mask entry together so the two cannot drift.
+void addFirestoreField(String &fields, String &mask, const char *name, const String &typedValue) {
+  if (fields.length() > 0) fields += ",";
+  fields += "\"" + String(name) + "\":" + typedValue;
+  if (mask.length() > 0) mask += ",";
+  mask += "\"" + String(name) + "\"";
+}
+
+void addFirestoreDouble(String &fields, String &mask, const char *name, double value, int decimals) {
+  if (!isfinite(value)) return;  // "nan" is not JSON; leave the stored value alone
+  addFirestoreField(fields, mask, name, "{\"doubleValue\":" + String(value, decimals) + "}");
+}
+
+String buildFirestoreTelemetryCommit() {
+  String fields;
+  String mask;
+  bool gpsFix = lastKnownFix.valid && gps.location.isValid() && gps.location.age() < 10000;
+
+  addFirestoreField(fields, mask, "gps_fix", gpsFix ? "{\"booleanValue\":true}" : "{\"booleanValue\":false}");
+  if (lastKnownFix.valid) {
+    // Last known position; gps_fix says whether it is current.
+    addFirestoreDouble(fields, mask, "latitude", lastKnownFix.lat, 6);
+    addFirestoreDouble(fields, mask, "longitude", lastKnownFix.lng, 6);
+  }
+  if (gpsFix && gps.speed.isValid()) {
+    addFirestoreDouble(fields, mask, "speed_kmh", lastKnownFix.speedKmph, 2);
+  } else {
+    mask += ",\"speed_kmh\"";  // masked with no value = deleted, so no stale speed is shown
+  }
+  if (adxl345Ready && latestAccel.valid) {
+    addFirestoreDouble(fields, mask, "ax", latestAccel.xG, 3);
+    addFirestoreDouble(fields, mask, "ay", latestAccel.yG, 3);
+    addFirestoreDouble(fields, mask, "az", latestAccel.zG, 3);
+    addFirestoreDouble(fields, mask, "vector_magnitude", latestAccel.magnitudeG, 3);
+  }
+  // Uncalibrated MQ-3 readings, not mg/L, so alcohol_level is deliberately not written.
+  addFirestoreDouble(fields, mask, "alcohol_raw", mq3Raw, 0);
+  addFirestoreDouble(fields, mask, "alcohol_voltage", mq3Voltage, 3);
+
+  const char *state = crashAlertLatched ? "crash_alert" : (alcoholAlertActive ? "alcohol_alert" : "monitoring");
+  addFirestoreField(fields, mask, "state", "{\"stringValue\":\"" + String(state) + "\"}");
+  addFirestoreField(fields, mask, "firmware_version", "{\"stringValue\":\"" FIRMWARE_VERSION "\"}");
+
+  String body = "{\"writes\":[{\"update\":{\"name\":\"projects/";
+  body += FIREBASE_PROJECT_ID;
+  body += "/databases/(default)/documents/devices/";
+  body += DEVICE_ID;
+  body += "\",\"fields\":{" + fields + "}},";
+  body += "\"updateMask\":{\"fieldPaths\":[" + mask + "]},";
+  body += "\"updateTransforms\":[{\"fieldPath\":\"last_update\",\"setToServerValue\":\"REQUEST_TIME\"}]}]}";
+  return body;
+}
+
+bool firestoreWriteTelemetry(bool overCellular, int &httpStatus, String &statusText) {
+  String body = buildFirestoreTelemetryCommit();
+  String response;
+  httpStatus = 0;
+
+  if (overCellular) {
+    air780eHttpPost(firestoreCommitUrl(), body, httpStatus, response);
+  } else {
+    WiFiClientSecure client;
+    client.setInsecure();  // Prototype only. For production, validate Google's CA certificate.
+    HTTPClient http;
+    http.begin(client, firestoreCommitUrl());
+    http.addHeader("Content-Type", "application/json");
+    http.setTimeout(FIREBASE_HTTP_TIMEOUT_MS);
+    httpStatus = http.POST(body);
+    response = http.getString();
+    http.end();
+  }
+
+  bool ok = httpStatus >= 200 && httpStatus < 300;
+  const char *via = overCellular ? "cellular" : "wifi";
+  Serial.printf("Firestore %s write devices/%s: HTTP %d\n", via, DEVICE_ID, httpStatus);
+
+  if (ok) {
+    statusText = "Connected: Firestore devices/" + String(DEVICE_ID) + " updated over " + via;
+  } else {
+    if (httpStatus == 401 || httpStatus == 403) {
+      statusText = "Firestore rules denied HTTP " + String(httpStatus);
+    } else if (httpStatus < 0) {
+      statusText = "Firestore HTTPS error " + String(httpStatus);
+    } else {
+      statusText = "Firestore write failed: HTTP " + String(httpStatus);
+    }
+    Serial.println("Firestore request body:");
+    Serial.println(body);
+    Serial.println("Firestore response:");
+    Serial.println(response);
+  }
+  return ok;
+}
+#endif
 
 String buildDeviceStatusJson(const char *transport) {
   String payload = "{";
@@ -1471,6 +1632,12 @@ void updateBootIndicator() {
 void uploadSafetyTelemetryIfDue() {
   if (millis()-lastSafetyUploadMs<10000UL) return;
   lastSafetyUploadMs=millis();
+#if USE_FIRESTORE
+  int status=0; String statusText;
+  bool ok = WiFi.status()==WL_CONNECTED && firestoreWriteTelemetry(false,status,statusText);
+  if (!ok && ensureAir780eGprs(false)) ok=firestoreWriteTelemetry(true,status,statusText);
+  if (ok) lastTrackingStatus="Safety telemetry uploaded";
+#else
   String payload="{";
   payload += "\"deviceId\":\""+String(DEVICE_ID)+"\",";
   payload += "\"mq3Raw\":"+String(mq3Raw)+",";
@@ -1498,6 +1665,7 @@ void uploadSafetyTelemetryIfDue() {
     ok=air780eHttpPost(url,payload,status,response);
   }
   if (ok) lastTrackingStatus="Safety telemetry uploaded";
+#endif
 }
 
 void loadWifiSettings() {

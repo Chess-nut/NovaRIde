@@ -151,7 +151,7 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                 label: 'Username',
                 controller: _username,
                 enabled: !_busy,
-                helper: 'How you will log in. 3 to 20 characters.',
+                helper: 'Your NovaRide username. 3 to 20 characters.',
                 maxLength: 20,
                 autofillHints: const [AutofillHints.newUsername],
                 validator: (value) =>

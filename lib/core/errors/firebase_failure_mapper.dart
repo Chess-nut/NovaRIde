@@ -125,8 +125,8 @@ Failure failureForCode(String code, {Object? cause, StackTrace? stackTrace}) {
     // Not the person's fault and not something they can fix, so the sentence
     // does not ask them to do anything except report it.
     'permission-denied' => PermissionFailure(
-      'This account is not allowed to see that yet. Nothing is wrong on '
-      'your side — please report it.',
+      'NovaRide could not read or save your account data because access was '
+      'denied. Please contact support if this continues.',
       cause: cause,
       stackTrace: stackTrace,
     ),

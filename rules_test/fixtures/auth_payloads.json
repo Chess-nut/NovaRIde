@@ -30,7 +30,6 @@
   },
   "usernameClaim": {
     "uid": "uid-mobile-rider",
-    "email": "rider@example.test",
     "createdAt": "__SERVER_TIMESTAMP__"
   },
   "loginTouch": {

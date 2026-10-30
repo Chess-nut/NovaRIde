@@ -2,7 +2,7 @@
 // compromised operator session must not be able to mint an operator.
 
 import { after, before, beforeEach, describe, it } from 'node:test';
-import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
+import { assertFails } from '@firebase/rules-unit-testing';
 import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import {
   asAnonymous, asDispatcher, asSuperAdmin, asUnprovisioned, asViewer,
@@ -15,30 +15,16 @@ after(async () => { await env.cleanup(); });
 beforeEach(async () => { await reset(env); });
 
 describe('admins/', () => {
-  // This is the read sign-in depends on, before any claim exists.
-  it('lets an operator read their own document', async () => {
-    await assertSucceeds(getDoc(doc(asDispatcher(env), 'admins', DISPATCHER)));
-    await assertSucceeds(getDoc(doc(asViewer(env), 'admins', VIEWER)));
-  });
-
-  // A signed-in rider resolving to nothing: the get is allowed because the
-  // uid matches, and returns a document that does not exist. That is how the
-  // console learns the account is unprovisioned.
-  it('lets any signed-in user look for their own document', async () => {
-    await assertSucceeds(getDoc(doc(asUnprovisioned(env), 'admins', UNPROVISIONED)));
-  });
-
-  it('refuses one operator reading another', async () => {
+  it('denies document reads to all client principals', async () => {
     await assertFails(getDoc(doc(asDispatcher(env), 'admins', VIEWER)));
     await assertFails(getDoc(doc(asViewer(env), 'admins', DISPATCHER)));
+    await assertFails(getDoc(doc(asSuperAdmin(env), 'admins', DISPATCHER)));
+    await assertFails(getDoc(doc(asUnprovisioned(env), 'admins', UNPROVISIONED)));
+    await assertFails(getDoc(doc(asAnonymous(env), 'admins', SUPER_ADMIN)));
   });
 
-  it('lets a Super Admin read and list them all', async () => {
-    await assertSucceeds(getDoc(doc(asSuperAdmin(env), 'admins', DISPATCHER)));
-    await assertSucceeds(getDocs(collection(asSuperAdmin(env), 'admins')));
-  });
-
-  it('refuses the list to a dispatcher, a viewer and an anonymous caller', async () => {
+  it('denies collection listing to every client principal', async () => {
+    await assertFails(getDocs(collection(asSuperAdmin(env), 'admins')));
     await assertFails(getDocs(collection(asDispatcher(env), 'admins')));
     await assertFails(getDocs(collection(asViewer(env), 'admins')));
     await assertFails(getDocs(collection(asAnonymous(env), 'admins')));
@@ -52,9 +38,5 @@ describe('admins/', () => {
     await assertFails(
       updateDoc(doc(asDispatcher(env), 'admins', DISPATCHER), { role: 'superAdmin' }),
     );
-  });
-
-  it('refuses an anonymous read of a known operator', async () => {
-    await assertFails(getDoc(doc(asAnonymous(env), 'admins', SUPER_ADMIN)));
   });
 });

@@ -180,11 +180,11 @@ are, this document says what you may do. An account with no document and no
 | `email` | string | | Informational; the Auth record is authoritative. |
 | `role` | string | **yes** | `superAdmin` \| `dispatcher` \| `viewer` — the `AdminRole` enum names verbatim. `administrator`/`admin` and `operator` are tolerated on read (→ `superAdmin` / `dispatcher`) so a hand-typed document degrades rather than locks someone out; never write them. Anything else is "not provisioned". |
 
-Written only from the Firebase console or the Admin SDK — the rules refuse
-every client write to `admins/`, so a compromised operator session cannot
-mint operators. Read by the console at sign-in (`get`, from the server, never
-the cache) and by the rules whenever a request carries no usable `role`
-claim.
+Written only from the Firebase console or the Admin SDK. Direct client reads
+and writes are denied by these rules. The current operator console still
+reads `admins/{uid}` directly during sign-in, so its document-fallback login
+will fail until that code is moved to custom claims or a trusted server
+lookup. Rules may still consult this document internally for authorization.
 
 The three provisioned operators (20 Sep 2026):
 
@@ -211,7 +211,7 @@ They are deliberately separate from the console's `riders/` roster. The
 roster is an operator's record of a person; these are a person's own
 account. The link between them is `riders/{R-xxx}.authUid`, written by a
 Super Admin from User Management → *Link app account*, by the username the
-rider signed up with (resolved through `usernames/`).
+rider signed up with (resolved to its uid through `usernames/`).
 
 #### `users/{uid}` — one per account, whatever the role
 
@@ -248,17 +248,17 @@ the rules read `users/{uid}.role` to enforce it.
 
 #### `usernames/{usernameLower}` — the uniqueness index
 
-Document id is the lowercased username. Exactly three fields, and the
-rules refuse a fourth: `uid`, `email`, `createdAt`.
+Document id is the lowercased username. New claims contain only `uid` and
+`createdAt`; no email or other account data is exposed. A client can get a
+safe claim for an availability check, but cannot list claims. Legacy
+email-bearing claims are readable only by their owner and should be migrated
+to remove the email field using a trusted Admin SDK before public checks are
+re-enabled for those names.
 
-**This is the only path in the database an unauthenticated client can
-read.** Logging in with a username means turning it into an email address
-before Firebase Auth will accept it, and whoever is doing that is not
-signed in yet. `get` is therefore open; `list` is not, so the collection
-cannot be enumerated. The cost is that somebody who guesses an exact
-username learns the email on it. The alternative — a Cloud Function doing
-the lookup server-side — needs the Blaze plan; revisit if this project
-moves to it.
+Username/password login is temporarily disabled because resolving a username
+to a Firebase Auth email before sign-in would expose that email to anyone
+who guesses the username. A trusted server-side lookup is required to restore
+that login method without exposing private data.
 
 Uniqueness is enforced by the rules, not only by the app: a claim is a
 `create`, and writing over a name somebody holds is an `update`, which is
@@ -303,7 +303,8 @@ immutable.
 Active guardians may read the linked rider roster and device documents only
 when `liveLocation`, `tripStatus` and `helmetStatus` are all enabled: rules
 cannot redact phone/helmet identifiers or separate coordinates from other
-device telemetry. Alert reads require `emergencyAlerts` and `liveLocation`;
+device telemetry. Rider profile reads use the same three-permission gate.
+Alert reads require `emergencyAlerts` and `liveLocation`;
 history reads require `incidentHistory` and `liveLocation`, because alert
 records/history may contain location-bearing fields. These permissions
 grant no writes to `riders/`, `devices/` or `alerts/`.
@@ -393,17 +394,16 @@ path without a rule of its own is still closed. Run them before a deploy; see
 
 | Principal | How it authenticates | How the rules know its role |
 |---|---|---|
-| **Operator** (`superAdmin` \| `dispatcher` \| `viewer`) | Firebase Auth email/password, from the console | `request.auth.token.role` (custom claim) first; if absent or not one of the three, `admins/{uid}.role`. Aliases `administrator`/`admin` → `superAdmin`, `operator` → `dispatcher` are read-tolerated. |
+| **Operator** (`superAdmin` \| `dispatcher` \| `viewer`) | Firebase Auth email/password, from the console | `request.auth.token.role` (custom claim) first; if absent or not one of the three, rules consult `admins/{uid}.role`. Direct client reads of `admins/` are denied. |
 | **Mobile account** (`rider` \| `guardian`) | Firebase Auth email/password, from the phone app | No claim at all. The account is whoever `request.auth.uid` says it is; its active family membership grants only the family reads in the table below. It may also read/update its own account/profile and claim a `usernames/` entry. |
 | **Helmet service** | A Firebase Auth user the ESP32 will sign in as, carrying the claim `role: helmetService`, granted by `tool/provision_helmet_service.mjs` | The claim only. It is not a console role; the console rejects it as unprovisioned, and it must never have an `admins/` document (the script refuses one). Provisioning steps: [FIRMWARE_CONTRACT.md §7](FIRMWARE_CONTRACT.md#7-for-the-project-owner-provisioning-the-helmet-identity). A bridge using the Admin SDK bypasses these rules and needs nothing here. |
 | Anyone else | — | Denied everywhere. |
 
-**No custom claims are set today.** All three operators resolve through
-`admins/{uid}`, which costs the rules one document read per request (cached
-within a request). Setting the claim with `tool/set_admin_claims.mjs` is
-optional and removes that read; the console resolves the role in the same
-order, so a claim and a document that disagree resolve to the claim in both
-places. Keep them in step.
+**No custom claims are set today.** Rules may resolve operator roles from
+`admins/{uid}`, but direct client access is denied. The current operator
+console's direct document fallback is therefore incompatible with these
+rules until its authentication flow is migrated. The rider/guardian auth
+flows do not read `admins/`.
 
 ### What each principal may do
 
@@ -415,7 +415,7 @@ places. Keep them in step.
 | `alerts/{id}/history/{e}` | operator (single alert and collection group); active family members with `incidentHistory` **and** `liveLocation` on a direct alert-history read | superAdmin / dispatcher, `at` must be the server clock | never | never |
 | `families/{familyId}` and `members/{uid}` | active members of that family; member data contains no email, phone or invite code | owner rider + self as part of initial account setup; guardian only by invite acceptance | owner may update guardian permissions/revoke; guardian may revoke self or rejoin by new invite | never |
 | `familyInvites/{code}` | authenticated get only while pending/unexpired; matching ID-token email when bound | family owner | invited guardian accepts once in the same transaction that links their account and creates membership | never |
-| `admins/{uid}` | own document: any signed-in user; all: superAdmin | never from a client | never | never |
+| `admins/{uid}` | never from a client | never from a client | never | never |
 | everything else (incl. `emergencyContacts/`) | — | — | — | — |
 
 Beyond "who", the rules enforce three of the schema's promises that used to
@@ -456,12 +456,10 @@ who can write those fields anyway.
    and it would be refused if a `devices/` document already existed, since
    `set` on an existing document is an update and only the helmet service
    may update telemetry.
-3. **The role lookup reads from the server.** If the rules are not deployed
-   yet, sign-in succeeds at Firebase Auth and then fails at
-   `get(admins/{uid})`; the console shows *"the console was not allowed to
-   read this account's role. The Firestore security rules may not be
-   deployed yet."* and signs the session out. That message means: run the
-   deploy above.
+3. **The operator role lookup remains out of scope here.** The current
+   console directly reads `admins/{uid}`, which these rules now deny to all
+   clients. Its sign-in fallback must move to custom claims or a trusted
+   server endpoint before operators can rely on document-based role lookup.
 
 ### Removed: the demo window
 

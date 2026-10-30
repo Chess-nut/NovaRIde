@@ -122,13 +122,21 @@ class FirebaseAuthRepository implements AuthRepository {
   Future<UserProfile> signInWithEmail({
     required String email,
     required String password,
+    required UserRole role,
   }) {
     return _guard(() async {
-      final credential = await _auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
-      return _finishSignIn(credential.user);
+      final gate = Completer<void>();
+      _profileSetupGate = gate;
+      try {
+        final credential = await _auth.signInWithEmailAndPassword(
+          email: email.trim(),
+          password: password,
+        );
+        return await _finishSignIn(credential.user, missingProfileRole: role);
+      } finally {
+        _profileSetupGate = null;
+        if (!gate.isCompleted) gate.complete();
+      }
     });
   }
 
@@ -207,92 +215,6 @@ class FirebaseAuthRepository implements AuthRepository {
     return (user.email ?? '').split('@').first;
   }
 
-  /// Sign in with a username.
-  ///
-  /// Two things can go wrong here and they must be indistinguishable: the
-  /// username belongs to nobody, or it belongs to someone and the
-  /// password is wrong. If those produced different sentences, the screen
-  /// would be a way to find out which usernames are registered — which is
-  /// the same reason a wrong password and an unknown email share a
-  /// sentence in the failure mapper.
-  ///
-  /// Getting this right takes more than throwing one string in the
-  /// not-found branch: the other branch goes through Firebase, whose
-  /// `invalid-credential` maps to "Incorrect email or password" — a
-  /// *different* sentence, and one that says "email" to somebody who
-  /// typed a username. So every credential-shaped refusal is folded into
-  /// the one message below.
-  ///
-  /// `user-disabled` is deliberately left alone. It does reveal that an
-  /// account exists, and it is worth it: "this account has been turned
-  /// off" is something the person can act on, and an attacker learns only
-  /// about accounts already switched off.
-  @override
-  Future<UserProfile> signInWithUsername({
-    required String username,
-    required String password,
-  }) {
-    return _guard(() async {
-      const generic = AuthFailure('Incorrect username or password.');
-
-      final email = await _emailForUsername(username);
-      if (email == null) throw generic;
-
-      final fb.UserCredential credential;
-      try {
-        credential = await _auth.signInWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
-      } on fb.FirebaseAuthException catch (error) {
-        if (_credentialCodes.contains(error.code)) throw generic;
-        rethrow;
-      }
-      return _finishSignIn(credential.user);
-    });
-  }
-
-  /// Every code that means "those details did not work", across the
-  /// spellings Firebase has used. They all collapse to one sentence.
-  static const _credentialCodes = {
-    'wrong-password',
-    'user-not-found',
-    'invalid-credential',
-    'invalid-login-credentials',
-    'INVALID_LOGIN_CREDENTIALS',
-    'invalid-email',
-    'missing-password',
-  };
-
-  /// Resolves a username to the address Firebase Auth will accept.
-  ///
-  /// `usernames/{usernameLower}` is the one document an unauthenticated
-  /// client may read — see the note above that rule in firestore.rules.
-  Future<String?> _emailForUsername(String username) async {
-    final key = username.trim().toLowerCase();
-    if (key.isEmpty) return null;
-    final snapshot = await _firestore
-        .collection(FirestoreCollections.usernames)
-        .doc(key)
-        .get();
-    if (!snapshot.exists) return null;
-    final email = snapshot.data()?['email'];
-    return email is String && email.isNotEmpty ? email : null;
-  }
-
-  @override
-  Future<bool> isUsernameAvailable(String username) {
-    return _guard(() async {
-      final key = username.trim().toLowerCase();
-      if (key.isEmpty) return false;
-      final snapshot = await _firestore
-          .collection(FirestoreCollections.usernames)
-          .doc(key)
-          .get();
-      return !snapshot.exists;
-    });
-  }
-
   // ------------------------------------------------------------- sign-up
 
   @override
@@ -334,80 +256,49 @@ class FirebaseAuthRepository implements AuthRepository {
     required UserRole role,
     String? phoneNumber,
   }) async {
-    {
-      final key = username.trim().toLowerCase();
-
-      // A pre-check, so the common case fails before an Auth account is
-      // created and has to be cleaned up. It is not the guarantee — the
-      // transaction below re-reads inside its own read set, which is what
-      // actually makes the claim atomic. Anything checked before a write
-      // can be taken between the two.
-      if (!await isUsernameAvailable(key)) {
-        throw const ValidationFailure(
-          'That username is taken. Try another.',
-          field: 'username',
-        );
-      }
-
-      final credential = await _auth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
-      final user = credential.user;
-      if (user == null) {
-        throw const AuthFailure('The account was not created. Try again.');
-      }
-
-      try {
-        final profile = await ensureProfile(
-          user,
-          username: username.trim(),
-          fullName: fullName.trim(),
-          role: role,
-          phoneNumber: phoneNumber?.trim(),
-        );
-        await user.sendEmailVerification();
-        _cached = profile;
-        _cachedUid = user.uid;
-        return profile;
-      } catch (error, stack) {
-        // The Auth account exists and its documents do not. Signing out
-        // is not enough: it leaves an account behind that can never be
-        // used, because signing into it finds no users/ document and
-        // fails the same way. Two of those were created for real before
-        // this branch deleted anything.
-        //
-        // So the account goes too. It was created seconds ago by this
-        // same call, which is what makes `delete()` legal without a
-        // re-authentication, and nothing else can have started depending
-        // on it yet. The person retries and gets a clean attempt rather
-        // than "that email is already in use" on an account they cannot
-        // reach.
-        AppLogger.e(
-          'Sign-up for ${user.uid} failed after the Auth account '
-          'was created; removing it.',
-          error: error,
-          stackTrace: stack,
-        );
-        try {
-          await user.delete();
-        } catch (deleteError, deleteStack) {
-          // Out of options: the account is orphaned and only an operator
-          // with the Admin SDK can clear it. Say so loudly rather than
-          // swallowing it — this is the line that explains a mystery
-          // account in the console later.
-          AppLogger.e(
-            'Could not remove the orphaned Auth account ${user.uid}. It has '
-            'no profile documents and cannot be signed into; delete it in '
-            'the Firebase console.',
-            error: deleteError,
-            stackTrace: deleteStack,
-          );
-          await signOut();
-        }
-        rethrow;
-      }
+    final credential = await _auth.createUserWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
+    );
+    final user = credential.user;
+    if (user == null) {
+      throw const AuthFailure('The account was not created. Try again.');
     }
+
+    late final UserProfile profile;
+    try {
+      profile = await ensureProfile(
+        user,
+        username: username.trim(),
+        fullName: fullName.trim(),
+        role: role,
+        phoneNumber: phoneNumber?.trim(),
+      );
+    } catch (error, stack) {
+      AppLogger.e(
+        'Sign-up for ${user.uid} failed while creating its profile; '
+        'removing the Auth account.',
+        error: error,
+        stackTrace: stack,
+      );
+      try {
+        await user.delete();
+      } catch (deleteError, deleteStack) {
+        AppLogger.e(
+          'Could not remove the incomplete Auth account ${user.uid}. '
+          'Delete it in the Firebase console.',
+          error: deleteError,
+          stackTrace: deleteStack,
+        );
+        await signOut();
+      }
+      rethrow;
+    }
+
+    _cached = profile;
+    _cachedUid = user.uid;
+    await user.sendEmailVerification();
+    return profile;
   }
 
   // ------------------------------------------------------- verification
@@ -501,7 +392,10 @@ class FirebaseAuthRepository implements AuthRepository {
     await _auth.signOut();
   }
 
-  Future<UserProfile> _finishSignIn(fb.User? user) async {
+  Future<UserProfile> _finishSignIn(
+    fb.User? user, {
+    required UserRole missingProfileRole,
+  }) async {
     if (user == null) {
       // The SDK contract says this cannot happen for a successful
       // email/password sign-in; treat it as a failed one rather than
@@ -509,7 +403,18 @@ class FirebaseAuthRepository implements AuthRepository {
       throw const AuthFailure('Sign-in did not complete. Try again.');
     }
     try {
-      final profile = await ensureProfile(user);
+      final email = user.email?.trim() ?? '';
+      if (email.isEmpty) {
+        throw const AuthFailure(
+          'This account has no email address. Contact NovaRide support.',
+        );
+      }
+      final profile = await ensureProfile(
+        user,
+        username: _recoveryUsername(user),
+        fullName: _recoveryDisplayName(user),
+        role: missingProfileRole,
+      );
       _cached = profile;
       _cachedUid = user.uid;
       return profile;
@@ -524,6 +429,27 @@ class FirebaseAuthRepository implements AuthRepository {
     }
   }
 
+  static String _recoveryUsername(fb.User user) {
+    final emailName = (user.email ?? '').split('@').first.toLowerCase();
+    final safeName = emailName.replaceAll(RegExp(r'[^a-z0-9_]'), '');
+    final safeUid = user.uid.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final suffix = safeUid.length > 8
+        ? safeUid.substring(safeUid.length - 8)
+        : safeUid;
+    final name = safeName.isEmpty ? 'user' : safeName;
+    final prefixLength = 20 - suffix.length - 1;
+    final prefix = name.length > prefixLength
+        ? name.substring(0, prefixLength)
+        : name;
+    return '${prefix}_$suffix';
+  }
+
+  static String _recoveryDisplayName(fb.User user) {
+    final displayName = user.displayName?.trim() ?? '';
+    if (displayName.isNotEmpty) return displayName;
+    return (user.email ?? '').split('@').first;
+  }
+
   // -------------------------------------------------------- the profile
 
   /// Brings an account's documents up to date, in one transaction, and
@@ -535,7 +461,7 @@ class FirebaseAuthRepository implements AuthRepository {
   ///
   /// When the documents are absent it creates them:
   /// `users/{uid}`, the matching `riderProfiles/{uid}` or
-  /// `guardianProfiles/{uid}`, and — on sign-up only — the
+  /// `guardianProfiles/{uid}`, and the
   /// `usernames/{usernameLower}` claim, all keyed by the Auth uid.
   ///
   /// When they are present it touches `lastLoginAt`, `fcmToken` and
@@ -549,9 +475,9 @@ class FirebaseAuthRepository implements AuthRepository {
   /// reaches Firestore; the rules require `request.time` and would refuse
   /// a `DateTime.now()` anyway.
   ///
-  /// [username], [fullName] and [role] are supplied on sign-up, where
-  /// there is nothing to read them from yet. On sign-in they are absent
-  /// and the existing document is the source of truth.
+  /// [username], [fullName] and [role] are supplied on sign-up, or as
+  /// recovery values when a signed-in account has no user document. For
+  /// an existing document, its stored values remain the source of truth.
   Future<UserProfile> ensureProfile(
     fb.User user, {
     String? username,
@@ -601,6 +527,11 @@ class FirebaseAuthRepository implements AuthRepository {
     final data = existing.data()!;
     final role = UserRole.fromWireName(data['role'] as String?);
     final familyId = data['familyId'] as String?;
+    final profileCollection = role == UserRole.rider
+        ? FirestoreCollections.riderProfiles
+        : FirestoreCollections.guardianProfiles;
+    final profileRef = _firestore.collection(profileCollection).doc(user.uid);
+    final profile = await transaction.get(profileRef);
     if (role == UserRole.rider && familyId != null && familyId != user.uid) {
       throw const ValidationFailure(
         'This rider account is linked to an invalid family. Contact support.',
@@ -626,16 +557,19 @@ class FirebaseAuthRepository implements AuthRepository {
       touch['familyId'] = user.uid;
     }
     transaction.update(userRef, touch);
+    if (!profile.exists) {
+      transaction.set(
+        profileRef,
+        buildProfileDocument(serverTimestamp: FieldValue.serverTimestamp()),
+      );
+    }
 
     if (role == UserRole.rider) {
       final timestamp = FieldValue.serverTimestamp();
       if (!family!.exists) {
         transaction.set(
           familyRef,
-          buildFamilyDocument(
-            ownerUid: user.uid,
-            serverTimestamp: timestamp,
-          ),
+          buildFamilyDocument(ownerUid: user.uid, serverTimestamp: timestamp),
         );
       }
       if (!member!.exists) {
@@ -689,15 +623,24 @@ class FirebaseAuthRepository implements AuthRepository {
         ? FirestoreCollections.riderProfiles
         : FirestoreCollections.guardianProfiles;
 
-    // The claim is read inside the transaction, so it is part of the read
-    // set: if anyone takes the username between the pre-check and the
-    // commit, this transaction is retried or aborted rather than
-    // overwriting them. The rules also refuse a write over an existing
-    // claim, which is the second line of defence.
+    // The claim is checked inside the transaction, making username
+    // uniqueness atomic. The rules also refuse any write over an existing
+    // claim, so racing sign-ups cannot overwrite the first owner.
     final usernameRef = _firestore
         .collection(FirestoreCollections.usernames)
         .doc(usernameKey);
-    final claim = await transaction.get(usernameRef);
+    final DocumentSnapshot<Map<String, dynamic>> claim;
+    try {
+      claim = await transaction.get(usernameRef);
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied') {
+        throw const ValidationFailure(
+          'That username is taken. Try another.',
+          field: 'username',
+        );
+      }
+      rethrow;
+    }
     if (claim.exists && claim.data()?['uid'] != user.uid) {
       throw const ValidationFailure(
         'That username is taken. Try another.',
@@ -724,7 +667,6 @@ class FirebaseAuthRepository implements AuthRepository {
     );
     final claimDoc = buildUsernameClaim(
       uid: user.uid,
-      email: email,
       serverTimestamp: FieldValue.serverTimestamp(),
     );
     final familyRef = _firestore.collection('families').doc(user.uid);
@@ -889,15 +831,14 @@ class FirebaseAuthRepository implements AuthRepository {
     serverTimestamp: serverTimestamp,
   );
 
-  /// `usernames/{usernameLower}`. Exactly three fields — the rules use
-  /// `hasOnly`, because this document is world-readable.
+  /// `usernames/{usernameLower}`. It contains no account email or other
+  /// private field because availability checks can happen before sign-in.
   @visibleForTesting
   static Map<String, Object?> buildUsernameClaim({
     required String uid,
-    required String email,
     required Object serverTimestamp,
   }) {
-    return {'uid': uid, 'email': email, 'createdAt': serverTimestamp};
+    return {'uid': uid, 'createdAt': serverTimestamp};
   }
 
   /// The update on every later sign-in. Three keys and no others: `role`

@@ -23,12 +23,10 @@ class FakeAuthRepository implements AuthRepository {
     this.failWith,
   });
 
-  /// email -> (password, profile). Username sign-in resolves through
-  /// [usernames] first, exactly as the real one resolves through
-  /// `usernames/{usernameLower}`.
+  /// email -> (password, profile).
   final Map<String, (String, UserProfile)> accounts;
 
-  /// usernameLower -> email.
+  /// Claimed usernames, used by the sign-up fake.
   final Map<String, String> usernames;
 
   /// When set, every call throws it. For the error paths.
@@ -71,8 +69,9 @@ class FakeAuthRepository implements AuthRepository {
   Future<UserProfile> signInWithEmail({
     required String email,
     required String password,
+    required UserRole role,
   }) async {
-    calls.add('signInWithEmail:$email');
+    calls.add('signInWithEmail:$email:${role.wireName}');
     if (failWith != null) _fail();
     final match = accounts[email.trim().toLowerCase()];
     if (match == null || match.$1 != password) {
@@ -96,27 +95,6 @@ class FakeAuthRepository implements AuthRepository {
     );
     emit(profile);
     return profile;
-  }
-
-  @override
-  Future<UserProfile> signInWithUsername({
-    required String username,
-    required String password,
-  }) async {
-    calls.add('signInWithUsername:$username');
-    if (failWith != null) _fail();
-    // One sentence for both halves, exactly as the real repository does
-    // it: an unknown username and a wrong password must not be
-    // distinguishable from the screen. Delegating to signInWithEmail
-    // here would be wrong — that path says "Incorrect email or
-    // password", a different string, which is the leak.
-    const generic = AuthFailure('Incorrect username or password.');
-    final email = usernames[username.trim().toLowerCase()];
-    if (email == null) throw generic;
-    final match = accounts[email.trim().toLowerCase()];
-    if (match == null || match.$1 != password) throw generic;
-    emit(match.$2);
-    return match.$2;
   }
 
   @override
@@ -149,12 +127,6 @@ class FakeAuthRepository implements AuthRepository {
     );
     emit(profile);
     return profile;
-  }
-
-  @override
-  Future<bool> isUsernameAvailable(String username) async {
-    calls.add('isUsernameAvailable:$username');
-    return !usernames.containsKey(username.trim().toLowerCase());
   }
 
   @override

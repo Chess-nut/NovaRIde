@@ -67,7 +67,6 @@ void main() {
       ),
       'usernameClaim': FirebaseAuthRepository.buildUsernameClaim(
         uid: riderUid,
-        email: riderEmail,
         serverTimestamp: serverTimestampMarker,
       ),
       'loginTouch': FirebaseAuthRepository.buildLoginTouch(
@@ -164,15 +163,14 @@ void main() {
       }
     });
 
-    // The rules use hasOnly here, because the document is readable by
-    // anyone. A fourth key would be refused — and would be exposed.
-    test('the username claim has exactly three keys', () {
+    // The claim is safe for a pre-auth availability check: it has no email
+    // or other account data.
+    test('the username claim contains only uid and createdAt', () {
       final claim = FirebaseAuthRepository.buildUsernameClaim(
         uid: riderUid,
-        email: riderEmail,
         serverTimestamp: serverTimestampMarker,
       );
-      expect(claim.keys.toSet(), {'uid', 'email', 'createdAt'});
+      expect(claim.keys.toSet(), {'uid', 'createdAt'});
     });
 
     // The rules refuse an update that changes either. Keeping them out
@@ -206,7 +204,7 @@ void main() {
         FirebaseAuthRepository.buildProfileDocument(
             serverTimestamp: serverTimestampMarker),
         FirebaseAuthRepository.buildUsernameClaim(
-            uid: riderUid, email: riderEmail,
+            uid: riderUid,
             serverTimestamp: serverTimestampMarker),
         FirebaseAuthRepository.buildLoginTouch(
             serverTimestamp: serverTimestampMarker, fcmToken: 'a-push-token'),

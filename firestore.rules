@@ -384,15 +384,9 @@ service cloud.firestore {
       allow read: if isOperator();
     }
 
-    // Provisioning. Each operator may read their own document — that is
-    // how the console resolves a role before any claim exists — and Super
-    // Admins may read them all. Nothing writes here from a client:
-    // provisioning happens in the Firebase console or through the Admin
-    // SDK, so a compromised operator session cannot mint operators.
+    // Provisioning is managed by the Firebase Console or Admin SDK only.
     match /admins/{uid} {
-      allow get: if signedIn() && (request.auth.uid == uid || hasRole(['superAdmin']));
-      allow list: if hasRole(['superAdmin']);
-      allow write: if false;
+      allow read, write: if false;
     }
 
 
@@ -490,6 +484,24 @@ service cloud.firestore {
       let memberData = exists(memberPath) ? get(memberPath).data : {};
       let permissions = memberData.get('permissions', {});
       return activeFamilyMemberForRider(riderId)
+          && memberData.get('role', '') == 'guardian'
+          && permissions.get('liveLocation', false) == true
+          && permissions.get('tripStatus', false) == true
+          && permissions.get('helmetStatus', false) == true;
+    }
+
+    function guardianCanReadRiderProfile(riderUid) {
+      let riderPath = /databases/$(database)/documents/users/$(riderUid);
+      let callerUid = signedIn() ? request.auth.uid : '_anonymous_';
+      let memberPath = familyMemberPath(riderUid, callerUid);
+      let memberData = exists(memberPath) ? get(memberPath).data : {};
+      let permissions = memberData.get('permissions', {});
+      return signedIn()
+          && request.auth.uid != riderUid
+          && exists(riderPath)
+          && get(riderPath).data.get('role', '') == 'rider'
+          && get(riderPath).data.get('familyId', '') == riderUid
+          && activeFamilyMember(riderUid)
           && memberData.get('role', '') == 'guardian'
           && permissions.get('liveLocation', false) == true
           && permissions.get('tripStatus', false) == true
@@ -701,7 +713,8 @@ service cloud.firestore {
     // Family membership. The owner and guardian member documents are created
     // with the account setup and invite-acceptance transactions respectively.
     match /families/{familyId} {
-      allow get: if activeFamilyMember(familyId);
+      allow get: if activeFamilyMember(familyId)
+                 || (signedIn() && familyId == request.auth.uid);
       allow list: if false;
       allow create: if signedIn()
                     && familyId == request.auth.uid
@@ -725,7 +738,11 @@ service cloud.firestore {
       allow update, delete: if false;
 
       match /members/{uid} {
-        allow get, list: if activeFamilyMember(familyId);
+        allow get: if activeFamilyMember(familyId)
+                   || (signedIn()
+                       && familyId == request.auth.uid
+                       && uid == request.auth.uid);
+        allow list: if activeFamilyMember(familyId);
         allow create: if request.resource.data.keys()
                           .hasAll([
                             'uid', 'role', 'status', 'permissions',
@@ -877,7 +894,7 @@ service cloud.firestore {
     // so a rider's fields and a guardian's never share a document and
     // never have to be told apart at read time.
     match /riderProfiles/{uid} {
-      allow get: if isOwner(uid);
+      allow get: if isOwner(uid) || guardianCanReadRiderProfile(uid);
       allow list: if false;
       allow create: if isOwner(uid)
                     && noCredentialFields()
@@ -912,35 +929,26 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // The username index. Document id is the lowercased username.
+    // Username claims use a lowercased document id and expose only a safe uid.
     //
-    // ** This is the one path in the database an unauthenticated client
-    // can read, and it is a deliberate trade-off. ** Logging in with a
-    // username means turning that username into an email address before
-    // Firebase Auth will look at it, and the person doing it is by
-    // definition not signed in yet. So `get` is open to anyone.
-    //
-    // What that costs: somebody who guesses an exact username learns the
-    // email address on it. What it does not cost: `list` is denied, so
-    // the collection cannot be enumerated, and `hasOnly` below keeps the
-    // document to three fields so nothing else is ever exposed here.
-    //
-    // The alternative is a Cloud Function doing the lookup server-side,
-    // which needs the Blaze plan. Revisit if this project moves to it.
-    //
-    // Uniqueness is enforced by the rules, not just by the app: a claim
-    // is a `create`, and `set` on a name somebody already holds is an
-    // `update`, which is denied. Two people racing for one username means
-    // the second write fails rather than overwrites.
+    // Safe claims are readable for availability checks; legacy claims with
+    // email are owner-only. Username login needs a trusted lookup backend.
     match /usernames/{usernameLower} {
-      allow get: if true;
+      allow get: if resource == null
+                 || (resource.data.keys().hasAll(['uid', 'createdAt'])
+                     && resource.data.keys().hasOnly(['uid', 'createdAt'])
+                     && resource.data.get('uid', '') is string
+                     && resource.data.get('createdAt', null) is timestamp)
+                 || (signedIn()
+                     && resource.data.get('uid', '') == request.auth.uid);
       allow list: if false;
 
       allow create: if signedIn()
                     && request.resource.data.keys()
-                         .hasOnly(['uid', 'email', 'createdAt'])
+                         .hasAll(['uid', 'createdAt'])
+                    && request.resource.data.keys()
+                         .hasOnly(['uid', 'createdAt'])
                     && request.resource.data.get('uid', '') == request.auth.uid
-                    && matchesTokenEmail()
                     && usernameLower == usernameLower.lower()
                     && usernameLower.size() >= 3
                     && usernameLower.size() <= 20

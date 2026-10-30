@@ -29,23 +29,17 @@ abstract interface class AuthRepository {
   UserProfile? get currentUser;
 
   /// Email and password. [email] is trimmed by the implementation.
+  /// [role] is used only if this Auth account has no Firestore user profile;
+  /// an existing profile's stored role is authoritative.
   Future<UserProfile> signInWithEmail({
     required String email,
     required String password,
+    required UserRole role,
   });
 
   /// Google OAuth. A new account is created with [role]; existing accounts
   /// keep the role already stored in their profile.
   Future<UserProfile> signInWithGoogle({required UserRole role});
-
-  /// Username and password. Resolves the username to an email through
-  /// `usernames/{usernameLower}` first, then signs in. A username that does
-  /// not exist and a wrong password must fail identically — see the
-  /// enumeration note in `core/errors/firebase_failure_mapper.dart`.
-  Future<UserProfile> signInWithUsername({
-    required String username,
-    required String password,
-  });
 
   /// Creates the account, claims the username and writes the profile
   /// documents. All of it or none of it: a uid with no `users/` document,
@@ -62,12 +56,6 @@ abstract interface class AuthRepository {
     required UserRole role,
     String? phoneNumber,
   });
-
-  /// True when nothing holds [username] yet. Case-insensitive. For the
-  /// live check on the sign-up form; [signUp] re-checks inside its
-  /// transaction, because anything checked before a write can be taken
-  /// between the two.
-  Future<bool> isUsernameAvailable(String username);
 
   /// Sends the verification email to the signed-in account. Throws if
   /// nobody is signed in.

@@ -237,6 +237,10 @@ rewritten, and the security rules refuse those changes too. Every
 timestamp is `FieldValue.serverTimestamp()` — no client clock reaches
 Firestore, and the rules would refuse one anyway.
 
+Email/password login currently requires the email address. Username login is
+temporarily unavailable so username claims do not expose account emails;
+claims contain only the account uid and creation timestamp.
+
 If it throws, the account is signed out rather than left in the app with
 no profile. `unavailable` and `deadline-exceeded` get one retry, which is
 safe precisely because the transaction is idempotent.

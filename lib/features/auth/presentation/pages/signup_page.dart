@@ -19,8 +19,9 @@ import 'legal_document_page.dart';
 
 /// Create an account.
 ///
-/// Creates the Firebase account, claims the username and writes profile
-/// documents through [AuthRepository].
+/// **No backend yet.** `_submit` still waits and pops, as it did before;
+/// Phase 3 replaces it with `AuthRepository.signUp`, which claims the
+/// username and writes the profile documents in one transaction.
 ///
 /// The consent copy is the part to leave alone without asking. It names
 /// GPS sharing with emergency contacts and the operator during an SOS,
@@ -81,9 +82,7 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     });
 
     try {
-      await ref
-          .read(authRepositoryProvider)
-          .signUp(
+      await ref.read(authRepositoryProvider).signUp(
             email: _email.text.trim(),
             password: _password.text,
             username: _username.text.trim(),
@@ -135,7 +134,8 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                 isRider
                     ? 'This is the account your helmet reports to.'
                     : 'You will connect to your rider once you are signed in.',
-                style: AppTypography.body.copyWith(color: colors.textSecondary),
+                style:
+                    AppTypography.body.copyWith(color: colors.textSecondary),
               ),
               const SizedBox(height: AppSpacing.xxxl),
               NovaTextField(
@@ -154,8 +154,7 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                 helper: 'How you will log in. 3 to 20 characters.',
                 maxLength: 20,
                 autofillHints: const [AutofillHints.newUsername],
-                validator: (value) =>
-                    _usernameError ?? Validators.username(value),
+                validator: (value) => _usernameError ?? Validators.username(value),
                 onChanged: (_) {
                   if (_usernameError != null) {
                     setState(() => _usernameError = null);
@@ -215,17 +214,16 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                 onChanged: _busy
                     ? null
                     : (value) => setState(() {
-                        _agreedToTerms = value;
-                        if (value) _showConsentError = false;
-                      }),
+                          _agreedToTerms = value;
+                          if (value) _showConsentError = false;
+                        }),
               ),
               const SizedBox(height: AppSpacing.xxl),
               NovaInlineError(
-                message:
-                    _formError ??
+                message: _formError ??
                     (_showConsentError
                         ? 'You need to accept the terms before we can '
-                              'create the account.'
+                            'create the account.'
                         : null),
               ),
               NovaPrimaryButton(
@@ -273,8 +271,10 @@ class _ConsentCheckbox extends StatelessWidget {
     );
 
     void open(LegalDocument document) => Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => LegalDocumentPage(document: document)),
-    );
+          MaterialPageRoute(
+            builder: (_) => LegalDocumentPage(document: document),
+          ),
+        );
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -284,7 +284,8 @@ class _ConsentCheckbox extends StatelessWidget {
           height: 24,
           child: Checkbox(
             value: value,
-            onChanged: onChanged == null ? null : (v) => onChanged!(v ?? false),
+            onChanged:
+                onChanged == null ? null : (v) => onChanged!(v ?? false),
             side: BorderSide(
               color: showError ? colors.critical : colors.borderStrong,
               width: 1.5,
@@ -297,10 +298,8 @@ class _ConsentCheckbox extends StatelessWidget {
             padding: const EdgeInsets.only(top: 2),
             child: RichText(
               text: TextSpan(
-                style: AppTypography.caption.copyWith(
-                  color: colors.textSecondary,
-                  height: 1.5,
-                ),
+                style: AppTypography.caption
+                    .copyWith(color: colors.textSecondary, height: 1.5),
                 children: [
                   const TextSpan(text: 'I agree to the '),
                   TextSpan(
@@ -317,8 +316,7 @@ class _ConsentCheckbox extends StatelessWidget {
                       ..onTap = () => open(LegalDocument.privacy),
                   ),
                   const TextSpan(
-                    text:
-                        ', including sharing my GPS location with my '
+                    text: ', including sharing my GPS location with my '
                         'emergency contacts and ride-hailing operator '
                         'during an SOS.',
                   ),

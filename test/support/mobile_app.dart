@@ -19,10 +19,8 @@ import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
 
 import 'package:novaride/features/rider/domain/repositories/rider_alert_repository.dart';
 import 'package:novaride/features/rider/domain/repositories/rider_profile_repository.dart';
-import 'package:novaride/features/guardian/data/family_repository.dart';
 
 import 'fake_auth_repository.dart';
-import 'fake_family_repository.dart';
 import 'fake_rider_alert_repository.dart';
 import 'fake_rider_profile_repository.dart';
 
@@ -62,18 +60,14 @@ Future<void> pumpMobileApp(
         // FirebaseAuth.instance and fails on "no Firebase app". A test
         // that wants behaviour passes its own fake; one that does not
         // still gets a harmless empty one.
-        authRepositoryProvider.overrideWithValue(
-          repository ?? FakeAuthRepository(),
-        ),
+        authRepositoryProvider
+            .overrideWithValue(repository ?? FakeAuthRepository()),
         riderProfileRepositoryProvider.overrideWithValue(
-          riderProfiles ?? FakeRiderProfileRepository(),
-        ),
+            riderProfiles ?? FakeRiderProfileRepository()),
         // The countdown gate wraps every screen and reads this as soon as
         // anyone is signed in.
         riderAlertRepositoryProvider.overrideWithValue(
-          riderAlerts ?? FakeRiderAlertRepository(),
-        ),
-        familyRepositoryProvider.overrideWithValue(FakeFamilyRepository()),
+            riderAlerts ?? FakeRiderAlertRepository()),
         if (auth != null)
           authStateProvider.overrideWith(() => FixedAuthController(auth)),
       ],
@@ -94,14 +88,15 @@ UserProfile profileFor(
   UserRole role, {
   String uid = 'uid-test',
   bool emailVerified = true,
-}) => UserProfile(
-  uid: uid,
-  email: 'test@example.test',
-  username: 'testrider',
-  fullName: 'Test Person',
-  role: role,
-  emailVerified: emailVerified,
-);
+}) =>
+    UserProfile(
+      uid: uid,
+      email: 'test@example.test',
+      username: 'testrider',
+      fullName: 'Test Person',
+      role: role,
+      emailVerified: emailVerified,
+    );
 
 /// Turns AppLogger off for the duration of a test file.
 ///

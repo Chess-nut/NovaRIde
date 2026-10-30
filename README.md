@@ -111,21 +111,12 @@ and the security rules.
 ## 📱 Mobile app
 
 ```bash
-flutter run -t lib/main.dart -d chrome --dart-define=GOOGLE_MAPS_API_KEY_WEB=<key>
-flutter run -t lib/main.dart          # Android (pass its Maps key define to use maps)
+flutter run -t lib/main.dart          # rider + guardian app
 ```
 
 Riverpod for state, `go_router` for navigation — **mobile only**. The admin
 console shares none of it (see
 [docs/ADMIN_MODULE.md](docs/ADMIN_MODULE.md#2-state-management)).
-
-The guardian web map requires a Google Maps JavaScript API key, the Maps
-JavaScript API enabled in Google Cloud, and the current web origin authorized
-for that key. The login screen also supports Google OAuth: enable Google under
-Firebase Authentication → Sign-in method. Android Google OAuth requires the
-registered app's SHA-1 fingerprints and a refreshed `google-services.json`;
-for web, add the app's domain to Firebase Authentication's authorized domains.
-Keep Maps keys in build-time defines rather than source control.
 
 ```
 lib/

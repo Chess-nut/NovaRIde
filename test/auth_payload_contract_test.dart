@@ -46,7 +46,6 @@ void main() {
       'guardianEmail': guardianEmail,
       'usernameLower': 'riderone',
       'user': FirebaseAuthRepository.buildUserDocument(
-        uid: riderUid,
         email: riderEmail,
         username: 'riderone',
         fullName: 'Rider One',
@@ -55,7 +54,6 @@ void main() {
         serverTimestamp: serverTimestampMarker,
       ),
       'guardianUser': FirebaseAuthRepository.buildUserDocument(
-        uid: guardianUid,
         email: guardianEmail,
         username: 'guardianone',
         fullName: 'Guardian One',
@@ -93,7 +91,6 @@ void main() {
   // rather than something the rules merely tolerate.
   group('the payloads themselves', () {
     final user = FirebaseAuthRepository.buildUserDocument(
-      uid: riderUid,
       email: riderEmail,
       username: 'riderone',
       fullName: 'Rider One',
@@ -109,10 +106,8 @@ void main() {
 
     test('users/ carries the role as a wire name the rules accept', () {
       expect(user['role'], 'rider');
-      expect(user['familyId'], riderUid);
       expect(
         FirebaseAuthRepository.buildUserDocument(
-          uid: guardianUid,
           email: guardianEmail,
           username: 'guardianone',
           fullName: 'Guardian One',
@@ -121,38 +116,6 @@ void main() {
         )['role'],
         'guardian',
       );
-    });
-
-    test('a rider family and owner membership use server timestamps', () {
-      final family = FirebaseAuthRepository.buildFamilyDocument(
-        ownerUid: riderUid,
-        serverTimestamp: serverTimestampMarker,
-      );
-      final member = FirebaseAuthRepository.buildFamilyMemberDocument(
-        uid: riderUid,
-        role: 'rider',
-        displayName: 'Rider One',
-        serverTimestamp: serverTimestampMarker,
-      );
-
-      expect(family, {
-        'ownerUid': riderUid,
-        'createdAt': serverTimestampMarker,
-        'updatedAt': serverTimestampMarker,
-      });
-      expect(member['uid'], riderUid);
-      expect(member['role'], 'rider');
-      expect(member['status'], 'active');
-      expect(member['displayName'], 'Rider One');
-      expect(member['permissions'], {
-        'liveLocation': true,
-        'emergencyAlerts': true,
-        'tripStatus': true,
-        'helmetStatus': true,
-        'incidentHistory': true,
-      });
-      expect(member['createdAt'], serverTimestampMarker);
-      expect(member['updatedAt'], serverTimestampMarker);
     });
 
     test('every timestamp is the server clock, never a DateTime', () {

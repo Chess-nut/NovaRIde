@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/app.dart';
 import 'core/utils/app_logger.dart';
 import 'firebase_options.dart';
+import 'shared/maps/google_maps_script.dart';
+import 'shared/maps/google_maps_key.dart';
 
 /// Rider and guardian mobile app entrypoint.
 ///
@@ -19,8 +21,14 @@ Future<void> main() async {
   // app cannot do anything useful, so it is not caught: a crash at launch
   // with a real stack trace beats a login screen that silently refuses
   // every attempt.
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   AppLogger.i('Firebase ready: ${Firebase.app().options.projectId}');
+
+  // Web only; a no-op on Android. Android and iOS take their key from
+  // native config at build time (see lib/shared/maps/google_maps_key.dart).
+  await loadGoogleMapsScript(googleMapsApiKeyWeb);
 
   runApp(const ProviderScope(child: NovaRideApp()));
 }

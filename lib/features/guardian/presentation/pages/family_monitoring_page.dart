@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:go_router/go_router.dart';
 
@@ -10,40 +9,17 @@ import 'package:novaride/features/guardian/presentation/widgets/family_bottom_na
 import 'package:novaride/features/guardian/presentation/widgets/family_status_badge.dart';
 import 'package:novaride/shared/theme.dart';
 
-class FamilyMonitoringPage extends ConsumerWidget {
-  const FamilyMonitoringPage({super.key, this.repository});
-
-  final FamilyRepository? repository;
+class FamilyMonitoringPage extends StatelessWidget {
+  const FamilyMonitoringPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final FamilyRepository repo =
-        repository ?? ref.watch(familyRepositoryProvider);
-    return StreamBuilder<FamilyConnectedRider?>(
+  Widget build(BuildContext context) {
+    final repo = FamilyRepository();
+    return StreamBuilder<FamilyConnectedRider>(
       stream: repo.watchRiderStatus(),
+      initialData: repo.connectedRider,
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _stateScaffold(
-            Text(
-              'Rider data unavailable: ${snapshot.error}',
-              style: const TextStyle(color: NovaColors.primaryText),
-            ),
-          );
-        }
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return _stateScaffold(
-            const CircularProgressIndicator(color: NovaColors.cyan),
-          );
-        }
-        final rider = snapshot.data;
-        if (rider == null) {
-          return _stateScaffold(
-            const Text(
-              'No rider connection',
-              style: TextStyle(color: NovaColors.primaryText),
-            ),
-          );
-        }
+        final rider = snapshot.data ?? repo.connectedRider;
         return Scaffold(
           backgroundColor: NovaColors.background,
           body: SafeArea(
@@ -81,22 +57,19 @@ class FamilyMonitoringPage extends ConsumerWidget {
                     ),
                     child: Row(
                       children: [
-                        CircleAvatar(
+                        const CircleAvatar(
                           radius: 26,
                           backgroundColor: NovaColors.cyan,
-                          child: Text(
-                            rider.avatarLetters,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                          child: Text('JD', style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                rider.name,
-                                style: const TextStyle(
+                              const Text(
+                                'Juan dela Cruz',
+                                style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 18,
                                   fontWeight: FontWeight.w800,
@@ -123,7 +96,9 @@ class FamilyMonitoringPage extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          rider.status.label,
+                          rider.status == FamilyRiderStatus.safe || rider.status == FamilyRiderStatus.riding
+                              ? 'RIDER IS SAFE'
+                              : rider.status.label,
                           style: TextStyle(
                             color: rider.status.color,
                             fontSize: 20,
@@ -132,7 +107,7 @@ class FamilyMonitoringPage extends ConsumerWidget {
                         ),
                         const SizedBox(height: 10),
                         const Text(
-                          'Status is based on the latest rider record.',
+                          'NovaRide is monitoring the rider.',
                           style: TextStyle(color: NovaColors.secondaryText, fontSize: 13),
                         ),
                       ],
@@ -143,28 +118,7 @@ class FamilyMonitoringPage extends ConsumerWidget {
                   const SizedBox(height: 24),
                   const FamilySectionTitle(label: 'ACTIVITY TIMELINE'),
                   const SizedBox(height: 12),
-                  StreamBuilder<List<FamilyIncident>>(
-                    stream: repo.watchIncidentHistory(),
-                    builder: (context, incidentsSnapshot) {
-                      if (incidentsSnapshot.hasError) {
-                        return Text(
-                          'Activity unavailable: ${incidentsSnapshot.error}',
-                          style: const TextStyle(color: NovaColors.red),
-                        );
-                      }
-                      if (incidentsSnapshot.connectionState ==
-                          ConnectionState.waiting) {
-                        return const Center(
-                          child: CircularProgressIndicator(
-                            color: NovaColors.cyan,
-                          ),
-                        );
-                      }
-                      return _buildTimeline(
-                        incidentsSnapshot.data ?? const [],
-                      );
-                    },
-                  ),
+                  _buildTimeline(),
                 ],
               ),
             ),
@@ -175,19 +129,13 @@ class FamilyMonitoringPage extends ConsumerWidget {
     );
   }
 
-  Widget _stateScaffold(Widget child) => Scaffold(
-    backgroundColor: NovaColors.background,
-    body: SafeArea(child: Center(child: child)),
-    bottomNavigationBar: const FamilyBottomNavBar(selectedIndex: 0),
-  );
-
-  Widget _buildTimeline(List<FamilyIncident> incidents) {
-    if (incidents.isEmpty) {
-      return const Text(
-        'No activity recorded.',
-        style: TextStyle(color: NovaColors.secondaryText),
-      );
-    }
+  Widget _buildTimeline() {
+    final items = [
+      _TimelineItem(time: '10:32 AM', title: 'Trip Started'),
+      _TimelineItem(time: '10:45 AM', title: 'GPS Updated'),
+      _TimelineItem(time: '10:51 AM', title: 'Normal Impact'),
+      _TimelineItem(time: '10:55 AM', title: 'Location Updated'),
+    ];
 
     return Container(
       width: double.infinity,
@@ -198,9 +146,9 @@ class FamilyMonitoringPage extends ConsumerWidget {
         border: Border.all(color: NovaColors.cardBorder),
       ),
       child: Column(
-        children: List.generate(incidents.length, (index) {
-          final incident = incidents[index];
-          final isLast = index == incidents.length - 1;
+        children: List.generate(items.length, (index) {
+          final item = items[index];
+          final isLast = index == items.length - 1;
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -223,7 +171,7 @@ class FamilyMonitoringPage extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${incident.timestamp.hour.toString().padLeft(2, '0')}:${incident.timestamp.minute.toString().padLeft(2, '0')}',
+                        item.time,
                         style: const TextStyle(
                           color: NovaColors.secondaryText,
                           fontSize: 11,
@@ -233,7 +181,7 @@ class FamilyMonitoringPage extends ConsumerWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        incident.title,
+                        item.title,
                         style: const TextStyle(
                           color: NovaColors.primaryText,
                           fontSize: 14,
@@ -252,6 +200,13 @@ class FamilyMonitoringPage extends ConsumerWidget {
   }
 }
 
+class _TimelineItem {
+  final String time;
+  final String title;
+
+  const _TimelineItem({required this.time, required this.title});
+}
+
 class _InfoGrid extends StatelessWidget {
   final FamilyConnectedRider rider;
 
@@ -260,17 +215,11 @@ class _InfoGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      _InfoBox(label: 'Current Speed', value: rider.speedKmh == null ? 'Unavailable' : '${rider.speedKmh!.toStringAsFixed(0)} km/h', color: NovaColors.cyan),
-      _InfoBox(label: 'Location', value: rider.address ?? 'Unavailable', color: NovaColors.green),
-      _InfoBox(label: 'GPS Accuracy', value: 'Unavailable', color: NovaColors.pink),
-      _InfoBox(
-        label: 'Last Update',
-        value: rider.lastUpdated == null
-            ? 'Unavailable'
-            : '${DateTime.now().difference(rider.lastUpdated!).inMinutes} min ago',
-        color: NovaColors.amber,
-      ),
-      _InfoBox(label: 'Trip Duration', value: rider.tripDurationMinutes == null ? 'Unavailable' : '${rider.tripDurationMinutes} min', color: NovaColors.green),
+      _InfoBox(label: 'Current Speed', value: '${rider.speedKmh.toInt()} km/h', color: NovaColors.cyan),
+      _InfoBox(label: 'Location', value: rider.address, color: NovaColors.green),
+      _InfoBox(label: 'GPS Accuracy', value: '±5.2 m', color: NovaColors.pink),
+      _InfoBox(label: 'Last Update', value: '2 seconds ago', color: NovaColors.amber),
+      _InfoBox(label: 'Trip Duration', value: '${rider.tripDurationMinutes} min', color: NovaColors.green),
     ];
 
     return GridView.count(

@@ -9,7 +9,7 @@
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import {
-  collection, deleteDoc, doc, getDoc, getDocs, runTransaction, writeBatch,
+  collection, deleteDoc, doc, getDoc, getDocs, runTransaction,
   serverTimestamp, setDoc,
   Timestamp, updateDoc,
 } from 'firebase/firestore';
@@ -28,50 +28,6 @@ const newUser = (email, role) => ({
   updatedAt: serverTimestamp(),
 });
 
-const permissions = {
-  liveLocation: true,
-  emergencyAlerts: true,
-  tripStatus: true,
-  helmetStatus: true,
-  incidentHistory: true,
-};
-
-const createRiderSetup = async (db, {
-  email = RIDER_EMAIL, user = {}, profile = {}, family = {}, ownerMember = {},
-  omitUsername = false,
-} = {}) => {
-  const batch = writeBatch(db);
-  const userDocument = {
-    ...newUser(email, 'rider'),
-    familyId: RIDER_UID,
-    ...user,
-  };
-  if (omitUsername) delete userDocument.username;
-  batch.set(doc(db, 'users', RIDER_UID), userDocument);
-  batch.set(doc(db, 'riderProfiles', RIDER_UID), {
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    ...profile,
-  });
-  batch.set(doc(db, 'families', RIDER_UID), {
-    ownerUid: RIDER_UID,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    ...family,
-  });
-  batch.set(doc(db, 'families', RIDER_UID, 'members', RIDER_UID), {
-    uid: RIDER_UID,
-    role: 'rider',
-    status: 'active',
-    permissions,
-    displayName: 'Rider One',
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    ...ownerMember,
-  });
-  await batch.commit();
-};
-
 let env;
 before(async () => { env = await newTestEnv(); });
 after(async () => { await env.cleanup(); });
@@ -84,25 +40,10 @@ const seedRider = async (db) => {
     username: 'riderone',
     fullName: 'Rider One',
     role: 'rider',
-    familyId: RIDER_UID,
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
   });
   await s(d(db, 'riderProfiles', RIDER_UID), {
-    createdAt: Timestamp.now(),
-    updatedAt: Timestamp.now(),
-  });
-  await s(d(db, 'families', RIDER_UID), {
-    ownerUid: RIDER_UID,
-    createdAt: Timestamp.now(),
-    updatedAt: Timestamp.now(),
-  });
-  await s(d(db, 'families', RIDER_UID, 'members', RIDER_UID), {
-    uid: RIDER_UID,
-    role: 'rider',
-    status: 'active',
-    permissions,
-    displayName: 'Rider One',
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
   });
@@ -116,29 +57,14 @@ const seedRider = async (db) => {
 beforeEach(async () => { await reset(env); });
 
 describe('users/{uid} — create', () => {
-  it('creates a rider account, profile and owner family atomically', async () => {
-    await assertSucceeds(createRiderSetup(asRider(env)));
+  it('lets an account create its own record', async () => {
+    await assertSucceeds(
+      setDoc(doc(asRider(env), 'users', RIDER_UID), newUser(RIDER_EMAIL, 'rider')),
+    );
     await assertSucceeds(
       setDoc(doc(asGuardian(env), 'users', GUARDIAN_UID),
         newUser(GUARDIAN_EMAIL, 'guardian')),
     );
-  });
-
-  it('requires server timestamps on family and owner member creation', async () => {
-    const db = asRider(env);
-    await assertFails(createRiderSetup(db, {
-      family: { createdAt: Timestamp.now() },
-    }));
-    await assertFails(createRiderSetup(db, {
-      ownerMember: { updatedAt: Timestamp.now() },
-    }));
-  });
-
-  it('keeps an initial guardian account unlinked until invite acceptance', async () => {
-    await assertFails(setDoc(doc(asGuardian(env), 'users', GUARDIAN_UID), {
-      ...newUser(GUARDIAN_EMAIL, 'guardian'),
-      familyId: null,
-    }));
   });
 
   // The document id is the uid. Anything else is somebody else's record.
@@ -159,31 +85,35 @@ describe('users/{uid} — create', () => {
   // Without this an account could write somebody else's address into its
   // own record — and into the world-readable usernames/ entry.
   it('refuses an email that is not the one on the ID token', async () => {
-    await assertFails(createRiderSetup(asRider(env), {
-      email: 'someone.else@example.test',
-    }));
+    await assertFails(
+      setDoc(doc(asRider(env), 'users', RIDER_UID),
+        newUser('someone.else@example.test', 'rider')),
+    );
   });
 
   it('accepts the token email in a different case', async () => {
-    await assertSucceeds(createRiderSetup(asRider(env), {
-      email: RIDER_EMAIL.toUpperCase(),
-    }));
+    await assertSucceeds(
+      setDoc(doc(asRider(env), 'users', RIDER_UID),
+        newUser(RIDER_EMAIL.toUpperCase(), 'rider')),
+    );
   });
 
   it('refuses timestamps from the client clock', async () => {
     const db = asRider(env);
-    await assertFails(createRiderSetup(db, {
-      user: { createdAt: Timestamp.now() },
+    await assertFails(setDoc(doc(db, 'users', RIDER_UID), {
+      ...newUser(RIDER_EMAIL, 'rider'), createdAt: Timestamp.now(),
     }));
-    await assertFails(createRiderSetup(db, {
-      user: { updatedAt: Timestamp.now() },
+    await assertFails(setDoc(doc(db, 'users', RIDER_UID), {
+      ...newUser(RIDER_EMAIL, 'rider'), updatedAt: Timestamp.now(),
     }));
   });
 
   it('refuses a record with no username', async () => {
-    await assertFails(createRiderSetup(asRider(env), { omitUsername: true }));
-    await assertFails(createRiderSetup(asRider(env), {
-      user: { username: '' },
+    const db = asRider(env);
+    const { username, ...withoutUsername } = newUser(RIDER_EMAIL, 'rider');
+    await assertFails(setDoc(doc(db, 'users', RIDER_UID), withoutUsername));
+    await assertFails(setDoc(doc(db, 'users', RIDER_UID), {
+      ...newUser(RIDER_EMAIL, 'rider'), username: '',
     }));
   });
 
@@ -202,16 +132,16 @@ describe('users/{uid} — credentials are never stored', () => {
     'refreshToken', 'token', 'secret', 'apiKey', 'privateKey',
   ]) {
     it(`refuses a record carrying ${field}`, async () => {
-      await assertFails(createRiderSetup(asRider(env), {
-        user: { [field]: 'whatever' },
+      await assertFails(setDoc(doc(asRider(env), 'users', RIDER_UID), {
+        ...newUser(RIDER_EMAIL, 'rider'), [field]: 'whatever',
       }));
     });
   }
 
   // A push token is an address, not a secret, and the app writes one.
   it('allows fcmToken', async () => {
-    await assertSucceeds(createRiderSetup(asRider(env), {
-      user: { fcmToken: 'a-push-token' },
+    await assertSucceeds(setDoc(doc(asRider(env), 'users', RIDER_UID), {
+      ...newUser(RIDER_EMAIL, 'rider'), fcmToken: 'a-push-token',
     }));
   });
 });
@@ -298,32 +228,6 @@ describe('users/{uid} — update', () => {
     }));
   });
 
-  it('accepts only the documented notificationSettings boolean keys', async () => {
-    const db = asRider(env);
-    await assertSucceeds(updateDoc(doc(db, 'users', RIDER_UID), {
-      notificationSettings: {
-        emergencyAlerts: true,
-        accidentDetection: false,
-        tripStarted: true,
-        riderOffline: false,
-        gpsSignalLost: true,
-      },
-      updatedAt: serverTimestamp(),
-    }));
-    await assertFails(updateDoc(doc(db, 'users', RIDER_UID), {
-      notificationSettings: { emergencyAlerts: 'yes' },
-      updatedAt: serverTimestamp(),
-    }));
-    await assertFails(updateDoc(doc(db, 'users', RIDER_UID), {
-      notificationSettings: { unknownSetting: true },
-      updatedAt: serverTimestamp(),
-    }));
-    await assertFails(updateDoc(doc(asOtherRider(env), 'users', RIDER_UID), {
-      notificationSettings: { emergencyAlerts: false },
-      updatedAt: serverTimestamp(),
-    }));
-  });
-
   it('refuses an update by anybody else', async () => {
     await assertFails(updateDoc(doc(asOtherRider(env), 'users', RIDER_UID), {
       fullName: 'Hijacked', updatedAt: serverTimestamp(),
@@ -346,7 +250,9 @@ describe('riderProfiles/ and guardianProfiles/', () => {
   });
 
   it('lets an account create its own, under its own uid', async () => {
-    await assertSucceeds(createRiderSetup(asRider(env)));
+    await assertSucceeds(
+      setDoc(doc(asRider(env), 'riderProfiles', RIDER_UID), newProfile()),
+    );
     await assertSucceeds(
       setDoc(doc(asGuardian(env), 'guardianProfiles', GUARDIAN_UID), newProfile()),
     );
@@ -362,8 +268,8 @@ describe('riderProfiles/ and guardianProfiles/', () => {
   });
 
   it('refuses client-clock timestamps', async () => {
-    await assertFails(createRiderSetup(asRider(env), {
-      profile: { createdAt: Timestamp.now() },
+    await assertFails(setDoc(doc(asRider(env), 'riderProfiles', RIDER_UID), {
+      createdAt: Timestamp.now(), updatedAt: serverTimestamp(),
     }));
   });
 

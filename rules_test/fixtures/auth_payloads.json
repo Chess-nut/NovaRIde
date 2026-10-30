@@ -9,7 +9,6 @@
     "username": "riderone",
     "fullName": "Rider One",
     "role": "rider",
-    "familyId": "uid-mobile-rider",
     "phoneNumber": "09171234567",
     "createdAt": "__SERVER_TIMESTAMP__",
     "updatedAt": "__SERVER_TIMESTAMP__",

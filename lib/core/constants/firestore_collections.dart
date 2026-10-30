@@ -56,10 +56,4 @@ abstract final class FirestoreCollections {
 
   /// `emergencyContacts/{id}` — reserved in the schema, unused, unopened.
   static const emergencyContacts = 'emergencyContacts';
-
-  /// `families/{familyId}` and its `members/{uid}` subcollection.
-  static const families = 'families';
-
-  /// Short-lived, one-use links for guardians to join a rider's family.
-  static const familyInvites = 'familyInvites';
 }

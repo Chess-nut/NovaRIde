@@ -16,13 +16,14 @@ rules_version = '2';
 //   ever disagree the rules win, because the console cannot be trusted to
 //   police itself.
 //
-//   MOBILE ACCOUNTS — riders and guardians of the phone app. They carry no
-//   claim and are not operators. They may read/write their own account and
-//   profile. A rider reads their linked roster entry and alerts; active
-//   family members may read the linked roster entry and location data
-//   allowed by their per-member permissions. Family membership never
-//   grants writes to the console or helmet-service collections. The one
-//   exception to
+//   MOBILE ACCOUNTS — riders and guardians of the phone app, added in
+//   Phase 3. They carry no claim at all and are not operators: an account
+//   is whoever `request.auth.uid` says it is, and it may read and write
+//   its own users/{uid}, its own riderProfiles/ or guardianProfiles/
+//   document. A rider account a Super Admin has linked to a roster entry
+//   (riders/{id}.authUid) also reads that one entry and the alerts filed
+//   under it, and nothing else of the roster, the alerts or another
+//   rider's anything. The one exception to
 //   "signed in or nothing" in this whole file is a `get` on
 //   usernames/{usernameLower}, which has to work before sign-in because
 //   logging in by username means resolving it to an email first; the
@@ -224,9 +225,8 @@ service cloud.firestore {
 
     // --------------------------------------------------------- collections
 
-    // Roster. Console-owned, camelCase. Read by every operator and linked
-    // active guardians with all three document permissions; created and edited by Super
-    // Admins. Dispatchers touch only `status` — the console
+    // Roster. Console-owned, camelCase. Read by every operator; created and
+    // edited by Super Admins. Dispatchers touch only `status` — the console
     // resets a rider to idle when their last critical alert is resolved —
     // and the helmet service may set it to emergency when it raises a
     // critical alert (the firmware contract in FIRESTORE_SCHEMA.md §2).
@@ -237,12 +237,11 @@ service cloud.firestore {
     // One account per rider is the console's check: rules cannot query for
     // it, as with helmet-id uniqueness. Once linked, the rider may read this
     // document: `get`, and the one query the app makes, where authUid is
-    // its own uid. Active family membership separately grants reads of the
-    // linked roster entry.
+    // its own uid. The rule is provable from that filter, so no other
+    // rider's entry can come back.
     match /riders/{riderId} {
       allow read: if isOperator()
-                  || (signedIn() && resource.data.authUid == request.auth.uid)
-                  || guardianCanReadRiderDocuments(riderId);
+                  || (signedIn() && resource.data.authUid == request.auth.uid);
       allow create: if hasRole(['superAdmin']) && authUidNamesARider();
       allow update: if (hasRole(['superAdmin']) && authUidNamesARider())
                     || ((hasRole(['dispatcher']) || isHelmetService())
@@ -262,50 +261,6 @@ service cloud.firestore {
                    .data.get('role', '') == 'rider');
     }
 
-    function initialRiderFamilyIsReady(uid) {
-      let familyPath = /databases/$(database)/documents/families/$(uid);
-      let memberPath = familyMemberPath(uid, uid);
-      let profilePath = /databases/$(database)/documents/riderProfiles/$(uid);
-      return existsAfter(familyPath)
-          && getAfter(familyPath).data.get('ownerUid', '') == uid
-          && existsAfter(memberPath)
-          && getAfter(memberPath).data.get('uid', '') == uid
-          && getAfter(memberPath).data.get('role', '') == 'rider'
-          && getAfter(memberPath).data.get('status', '') == 'active'
-          && existsAfter(profilePath);
-    }
-
-    function initialRiderMemberIsReady(uid) {
-      let userPath = /databases/$(database)/documents/users/$(uid);
-      let profilePath = /databases/$(database)/documents/riderProfiles/$(uid);
-      return existsAfter(userPath)
-          && getAfter(userPath).data.get('role', '') == 'rider'
-          && getAfter(userPath).data.get('familyId', '') == uid
-          && existsAfter(profilePath);
-    }
-
-    function guardianMemberIsAcceptingInvite(familyId, uid) {
-      let userPath = /databases/$(database)/documents/users/$(uid);
-      let inviteCode = getAfter(userPath).data.get('familyInviteCode', '');
-      let invitePath = /databases/$(database)/documents/familyInvites/$(inviteCode);
-      return uid == request.auth.uid
-          && inviteCode is string && inviteCode != ''
-          && exists(invitePath)
-          && get(invitePath).data.get('familyId', '') == familyId
-          && get(invitePath).data.get('status', '') == 'pending'
-          && get(invitePath).data.get('expiresAt', request.time) > request.time
-          && familyInviteMatchesEmail(get(invitePath).data)
-          && existsAfter(invitePath)
-          && getAfter(invitePath).data.get('status', '') == 'accepted'
-          && getAfter(invitePath).data.get('acceptedBy', '') == uid
-          && existsAfter(userPath)
-          && getAfter(userPath).data.get('role', '') == 'guardian'
-          && getAfter(userPath).data.get('familyId', '') == familyId
-          && getAfter(userPath).data.get('familyInviteCode', '') == inviteCode
-          && guardianPermissionsStartDisabled(
-               request.resource.data.get('permissions', {}));
-    }
-
     // The rider app account linked to riders/{riderId}, and nobody else.
     function isLinkedRiderOf(riderId) {
       return signedIn()
@@ -316,18 +271,12 @@ service cloud.firestore {
     // Telemetry and pairing. Firmware-owned, snake_case, except for the two
     // pairing fields the console owns: `assigned_rider_id` and `paired_at`,
     // written when a Super Admin registers or edits a rider (the same
-    // transaction that writes riders/). Operators read; active guardians
-    // need `liveLocation`, `tripStatus` and `helmetStatus` for their rider.
-    // The helmet
-    // service writes readings; a Super Admin may create a device document
+    // transaction that writes riders/). Operators read; the helmet service
+    // writes readings; a Super Admin may create a device document
     // (registering a helmet before it first reports, and the seed) and may
     // update an existing one only to change the pairing — never a reading.
     match /devices/{deviceId} {
-      allow read: if isOperator()
-                  || (resource.data.get('assigned_rider_id', '') is string
-                      && resource.data.get('assigned_rider_id', '') != ''
-                      && guardianCanReadRiderDocuments(
-                           resource.data.assigned_rider_id));
+      allow read: if isOperator();
       allow create: if isHelmetService() || hasRole(['superAdmin']);
       allow update: if isHelmetService()
                     || (hasRole(['superAdmin'])
@@ -343,12 +292,10 @@ service cloud.firestore {
     // change only `status` and stamp exactly the matching `<status>At` with
     // the server clock, which is what the console's batched write does and
     // what the Reports tab trusts.
-    // A linked rider reads their own alerts. Active family members need
-    // both `emergencyAlerts` and `liveLocation` for the linked rider.
+    // A linked rider reads their own alerts: `get`, and queries filtered on
+    // riderId == their roster id. That is what the countdown listens to.
     match /alerts/{alertId} {
-      allow read: if isOperator()
-                  || isLinkedRiderOf(resource.data.riderId)
-                  || familyCanReadAlert(resource.data);
+      allow read: if isOperator() || isLinkedRiderOf(resource.data.riderId);
       allow create: if (isHelmetService() && isHelmetAlert())
                     || (hasRole(['superAdmin'])
                         && request.resource.data.get('timestamp', null) is timestamp);
@@ -367,7 +314,7 @@ service cloud.firestore {
       // them. Reads of this path come through the collection-group rule
       // below; this one covers direct reads of a single alert's trail.
       match /history/{entryId} {
-        allow read: if isOperator() || familyCanReadHistory(alertId);
+        allow read: if isOperator();
         allow create: if hasRole(['superAdmin', 'dispatcher'])
                       && request.resource.data.get('toStatus', 0) is string
                       && request.resource.data.get('actorName', 0) is string
@@ -419,211 +366,11 @@ service cloud.firestore {
       ]);
     }
 
-    function validNotificationSettings(data) {
-      let settings = data.get('notificationSettings', {});
-      return !('notificationSettings' in data)
-          || (settings is map
-              && settings.keys().hasOnly([
-                'emergencyAlerts', 'accidentDetection', 'tripStarted',
-                'riderOffline', 'gpsSignalLost'
-              ])
-              && (!('emergencyAlerts' in settings)
-                  || settings.emergencyAlerts is bool)
-              && (!('accidentDetection' in settings)
-                  || settings.accidentDetection is bool)
-              && (!('tripStarted' in settings) || settings.tripStarted is bool)
-              && (!('riderOffline' in settings) || settings.riderOffline is bool)
-              && (!('gpsSignalLost' in settings) || settings.gpsSignalLost is bool));
-    }
-
     // True when an update leaves `field` exactly as it was, including
     // leaving it absent. The immutability checks below are all this.
     function keeps(field) {
       return request.resource.data.get(field, null)
           == resource.data.get(field, null);
-    }
-
-    function familyMemberPath(familyId, uid) {
-      return /databases/$(database)/documents/families/$(familyId)/members/$(uid);
-    }
-
-    function activeFamilyMember(familyId) {
-      let callerUid = signedIn() ? request.auth.uid : '_anonymous_';
-      let userPath = /databases/$(database)/documents/users/$(callerUid);
-      let memberPath = familyMemberPath(familyId, callerUid);
-      return signedIn() && familyId is string
-          && exists(userPath)
-          && get(userPath).data.get('familyId', '') == familyId
-          && exists(memberPath)
-          && get(memberPath).data.get('uid', '') == request.auth.uid
-          && get(memberPath).data.get('status', '') == 'active';
-    }
-
-    function activeFamilyMemberForRider(riderId) {
-      let riderPath = /databases/$(database)/documents/riders/$(riderId);
-      let ownerUid = get(riderPath).data.get('authUid', '');
-      let safeOwnerUid = ownerUid is string && ownerUid != '' ? ownerUid : '_unlinked_';
-      let userPath = /databases/$(database)/documents/users/$(safeOwnerUid);
-      return ownerUid is string && ownerUid != ''
-          && exists(userPath)
-          && get(userPath).data.get('role', '') == 'rider'
-          && get(userPath).data.get('familyId', '') == ownerUid
-          && activeFamilyMember(ownerUid);
-    }
-
-    function familyPermissionForRider(riderId, permission) {
-      let riderPath = /databases/$(database)/documents/riders/$(riderId);
-      let ownerUid = get(riderPath).data.get('authUid', '');
-      let callerUid = signedIn() ? request.auth.uid : '_anonymous_';
-      let safeOwnerUid = ownerUid is string && ownerUid != '' ? ownerUid : '_unlinked_';
-      let memberPath = familyMemberPath(safeOwnerUid, callerUid);
-      return activeFamilyMemberForRider(riderId)
-          && get(memberPath).data.get('permissions', {}).get(permission, false) == true;
-    }
-
-    function guardianCanReadRiderDocuments(riderId) {
-      let riderPath = /databases/$(database)/documents/riders/$(riderId);
-      let ownerUid = get(riderPath).data.get('authUid', '');
-      let callerUid = signedIn() ? request.auth.uid : '_anonymous_';
-      let safeOwnerUid = ownerUid is string && ownerUid != '' ? ownerUid : '_unlinked_';
-      let memberPath = familyMemberPath(safeOwnerUid, callerUid);
-      let memberData = exists(memberPath) ? get(memberPath).data : {};
-      let permissions = memberData.get('permissions', {});
-      return activeFamilyMemberForRider(riderId)
-          && memberData.get('role', '') == 'guardian'
-          && permissions.get('liveLocation', false) == true
-          && permissions.get('tripStatus', false) == true
-          && permissions.get('helmetStatus', false) == true;
-    }
-
-    function familyCanReadAlert(alert) {
-      let riderId = alert.get('riderId', '');
-      return riderId is string && riderId != ''
-          && familyPermissionForRider(riderId, 'emergencyAlerts')
-          && familyPermissionForRider(riderId, 'liveLocation');
-    }
-
-    function familyCanReadHistory(alertId) {
-      let alertPath = /databases/$(database)/documents/alerts/$(alertId);
-      let riderId = exists(alertPath)
-          ? get(alertPath).data.get('riderId', '') : '';
-      return riderId is string && riderId != ''
-          && familyPermissionForRider(riderId, 'incidentHistory')
-          && familyPermissionForRider(riderId, 'liveLocation');
-    }
-
-    function validFamilyPermissions(permissions) {
-      return permissions is map
-          && permissions.keys().hasAll([
-            'liveLocation', 'emergencyAlerts', 'tripStatus', 'helmetStatus',
-            'incidentHistory'
-          ])
-          && permissions.keys().hasOnly([
-            'liveLocation', 'emergencyAlerts', 'tripStatus', 'helmetStatus',
-            'incidentHistory'
-          ])
-          && permissions.liveLocation is bool
-          && permissions.emergencyAlerts is bool
-          && permissions.tripStatus is bool
-          && permissions.helmetStatus is bool
-          && permissions.incidentHistory is bool;
-    }
-
-    function guardianPermissionsStartDisabled(permissions) {
-      return validFamilyPermissions(permissions)
-          && !permissions.liveLocation
-          && !permissions.emergencyAlerts
-          && !permissions.tripStatus
-          && !permissions.helmetStatus
-          && !permissions.incidentHistory;
-    }
-
-    function isFamilyOwner(familyId) {
-      let familyPath = /databases/$(database)/documents/families/$(familyId);
-      let ownerUid = get(familyPath).data.get('ownerUid', '');
-      let safeOwnerUid = ownerUid is string && ownerUid != '' ? ownerUid : '_no-owner_';
-      let ownerMemberPath = familyMemberPath(familyId, safeOwnerUid);
-      let ownerUserPath = /databases/$(database)/documents/users/$(safeOwnerUid);
-      return signedIn() && ownerUid == request.auth.uid
-          && familyId == request.auth.uid
-          && exists(ownerUserPath)
-          && get(ownerUserPath).data.get('role', '') == 'rider'
-          && get(ownerUserPath).data.get('familyId', '') == familyId
-          && exists(ownerMemberPath)
-          && get(ownerMemberPath).data.get('uid', '') == ownerUid
-          && get(ownerMemberPath).data.get('role', '') == 'rider'
-          && get(ownerMemberPath).data.get('status', '') == 'active';
-    }
-
-    function familyInviteMatchesEmail(invite) {
-      return !('invitedEmail' in invite)
-          || invite.get('invitedEmail', '').lower()
-               == request.auth.token.get('email', '').lower();
-    }
-
-    function acceptedInviteLinks(uid, familyId) {
-      let memberPath = familyMemberPath(familyId, uid);
-      let inviteCode = getAfter(
-          /databases/$(database)/documents/users/$(uid))
-          .data.get('familyInviteCode', '');
-      let invitePath = /databases/$(database)/documents/familyInvites/$(inviteCode);
-      return existsAfter(memberPath)
-          && inviteCode is string && inviteCode != ''
-          && getAfter(memberPath).data.get('uid', '') == uid
-          && getAfter(memberPath).data.get('role', '') == 'guardian'
-          && getAfter(memberPath).data.get('status', '') == 'active'
-          && existsAfter(invitePath)
-          && getAfter(invitePath).data.get('familyId', '') == familyId
-          && getAfter(invitePath).data.get('status', '') == 'accepted'
-          && getAfter(invitePath).data.get('acceptedBy', '') == uid
-          && exists(invitePath)
-          && get(invitePath).data.get('status', '') == 'pending'
-          && get(invitePath).data.get('expiresAt', request.time) > request.time
-          && familyInviteMatchesEmail(get(invitePath).data);
-    }
-
-    function familyInviteCodeChangeAllowed(uid) {
-      let sameValue =
-          (('familyInviteCode' in resource.data
-            && 'familyInviteCode' in request.resource.data
-            && request.resource.data.familyInviteCode
-                 == resource.data.familyInviteCode)
-           || (!('familyInviteCode' in resource.data)
-               && !('familyInviteCode' in request.resource.data)));
-      let nextFamilyId = request.resource.data.get('familyId', '');
-      let inviteCode = request.resource.data.get('familyInviteCode', '');
-      return sameValue
-          || (resource.data.get('role', '') == 'guardian'
-              && nextFamilyId is string && nextFamilyId != ''
-              && inviteCode is string && inviteCode != ''
-              && acceptedInviteLinks(uid, nextFamilyId));
-    }
-
-    function familyIdChangeAllowed(uid) {
-      let previousFamilyId = resource.data.get('familyId', null);
-      let nextFamilyId = request.resource.data.get('familyId', null);
-      let safePreviousFamilyId = previousFamilyId is string && previousFamilyId != ''
-          ? previousFamilyId : '_unlinked_';
-      let previousMemberPath = familyMemberPath(safePreviousFamilyId, uid);
-      let familyIdIsUnchanged =
-          (('familyId' in resource.data
-            && 'familyId' in request.resource.data
-            && request.resource.data.familyId == resource.data.familyId)
-           || (!('familyId' in resource.data)
-               && !('familyId' in request.resource.data)));
-      return familyIdIsUnchanged
-          || (resource.data.get('role', '') == 'guardian'
-              && (previousFamilyId == null
-                  || (existsAfter(previousMemberPath)
-                      && getAfter(previousMemberPath).data.get('status', '') == 'revoked'))
-              && ((nextFamilyId == null
-                   && !request.resource.data.keys().hasAny(['familyId']))
-                  || (nextFamilyId is string
-                      && acceptedInviteLinks(uid, nextFamilyId))))
-          || (resource.data.get('role', '') == 'rider'
-              && previousFamilyId == null
-              && nextFamilyId == uid
-              && initialRiderFamilyIsReady(uid));
     }
 
     // The address on the document has to be the address on the ID token.
@@ -634,11 +381,10 @@ service cloud.firestore {
           == request.auth.token.get('email', '').lower();
     }
 
-    // A guardian may only hold a guardianProfiles document. During the
-    // sign-up transaction users/{uid} does not exist yet — rules see the
-    // pre-transaction state — so the first clause admits the create;
-    // afterwards the role decides. Rider profile creation is coupled to
-    // the rider's owner-family transaction below.
+    // A rider may only hold a riderProfiles document and a guardian only a
+    // guardianProfiles one. During the sign-up transaction users/{uid}
+    // does not exist yet — rules see the pre-transaction state — so the
+    // first clause admits the create; afterwards the role decides.
     function profileRoleIs(uid, expected) {
       return !exists(/databases/$(database)/documents/users/$(uid))
           || get(/databases/$(database)/documents/users/$(uid))
@@ -650,9 +396,8 @@ service cloud.firestore {
     // no code that reads these and no reason to.
     //
     // `role` and `createdAt` can never change once written. The role
-    // decides which home screen; familyId is rider-initialized or guardian-
-    // invite-linked and otherwise immutable except after revocation.
-    // createdAt is evidence for the study. `email` and
+    // decides which home screen and, in later phases, which rider data an
+    // account can reach; createdAt is evidence for the study. `email` and
     // `username` are immutable too: the email is checked against the ID
     // token, and the username is claimed under usernames/ where nothing
     // can be transferred.
@@ -662,214 +407,26 @@ service cloud.firestore {
 
       allow create: if isOwner(uid)
                     && noCredentialFields()
-                    && validNotificationSettings(request.resource.data)
                     && matchesTokenEmail()
                     && isMobileRole(request.resource.data.get('role', ''))
                     && request.resource.data.get('username', '') is string
                     && request.resource.data.get('username', '') != ''
                     && request.resource.data.get('fullName', 0) is string
                     && isServerTime(request.resource.data.get('createdAt', ''))
-                    && isServerTime(request.resource.data.get('updatedAt', ''))
-                    && !request.resource.data.keys()
-                         .hasAny(['familyInviteCode'])
-                    && ((request.resource.data.get('role', '') == 'rider'
-                         && request.resource.data.get('familyId', '') == uid
-                         && initialRiderFamilyIsReady(uid))
-                        || (request.resource.data.get('role', '') == 'guardian'
-                            && !request.resource.data.keys().hasAny([
-                                 'familyId', 'familyInviteCode'
-                               ])));
+                    && isServerTime(request.resource.data.get('updatedAt', ''));
 
       // Every write stamps the server clock. A client that wants to change
       // anything has to say when, and it does not get to choose when.
       allow update: if isOwner(uid)
                     && noCredentialFields()
-                    && validNotificationSettings(request.resource.data)
                     && keeps('role')
                     && keeps('createdAt')
                     && keeps('email')
                     && keeps('username')
-                    && familyIdChangeAllowed(uid)
-                    && familyInviteCodeChangeAllowed(uid)
                     && isServerTime(request.resource.data.get('updatedAt', ''))
                     && (keeps('lastLoginAt')
                         || isServerTime(request.resource.data.get('lastLoginAt', '')));
 
-      allow delete: if false;
-    }
-
-    // Family membership. The owner and guardian member documents are created
-    // with the account setup and invite-acceptance transactions respectively.
-    match /families/{familyId} {
-      allow get: if activeFamilyMember(familyId);
-      allow list: if false;
-      allow create: if signedIn()
-                    && familyId == request.auth.uid
-                    && request.resource.data.keys()
-                         .hasAll(['ownerUid', 'createdAt', 'updatedAt'])
-                    && request.resource.data.keys()
-                         .hasOnly(['ownerUid', 'createdAt', 'updatedAt'])
-                    && request.resource.data.get('ownerUid', '') == request.auth.uid
-                    && isServerTime(request.resource.data.get('createdAt', ''))
-                    && isServerTime(request.resource.data.get('updatedAt', ''))
-                    && existsAfter(
-                         /databases/$(database)/documents/users/$(familyId))
-                    && getAfter(
-                         /databases/$(database)/documents/users/$(familyId))
-                         .data.get('role', '') == 'rider'
-                    && getAfter(
-                         /databases/$(database)/documents/users/$(familyId))
-                         .data.get('familyId', '') == familyId
-                    && initialRiderMemberIsReady(familyId)
-                    && existsAfter(familyMemberPath(familyId, familyId));
-      allow update, delete: if false;
-
-      match /members/{uid} {
-        allow get, list: if activeFamilyMember(familyId);
-        allow create: if request.resource.data.keys()
-                          .hasAll([
-                            'uid', 'role', 'status', 'permissions',
-                            'displayName', 'createdAt', 'updatedAt'
-                          ])
-                      && request.resource.data.keys()
-                          .hasOnly([
-                            'uid', 'role', 'status', 'permissions',
-                            'displayName', 'createdAt', 'updatedAt'
-                          ])
-                      && request.resource.data.get('uid', '') == uid
-                      && request.resource.data.get('displayName', 0) is string
-                      && validFamilyPermissions(
-                           request.resource.data.get('permissions', {}))
-                      && isServerTime(request.resource.data.get('createdAt', ''))
-                      && isServerTime(request.resource.data.get('updatedAt', ''))
-                      && ((uid == request.auth.uid
-                           && familyId == uid
-                           && request.resource.data.get('role', '') == 'rider'
-                           && request.resource.data.get('status', '') == 'active'
-                           && existsAfter(
-                                /databases/$(database)/documents/families/$(familyId))
-                           && getAfter(
-                                /databases/$(database)/documents/families/$(familyId))
-                                .data.get('ownerUid', '') == uid
-                           && initialRiderMemberIsReady(uid))
-                          || (request.resource.data.get('role', '') == 'guardian'
-                              && request.resource.data.get('status', '') == 'active'
-                              && guardianMemberIsAcceptingInvite(familyId, uid)));
-        allow update: if validFamilyPermissions(
-                          request.resource.data.get('permissions', {}))
-                      && isServerTime(request.resource.data.get('updatedAt', ''))
-                      && ((isFamilyOwner(familyId)
-                           && uid != familyId
-                           && resource.data.get('role', '') == 'guardian'
-                           && resource.data.get('status', '') == 'active'
-                           && onlyChanges(['permissions', 'updatedAt'])
-                           && keeps('uid') && keeps('role') && keeps('status')
-                           && keeps('createdAt') && keeps('displayName'))
-                          || (isFamilyOwner(familyId)
-                              && uid != familyId
-                              && resource.data.get('role', '') == 'guardian'
-                              && resource.data.get('status', '') == 'active'
-                              && request.resource.data.get('status', '') == 'revoked'
-                              && onlyChanges(['status', 'updatedAt'])
-                              && keeps('uid') && keeps('role')
-                              && keeps('permissions') && keeps('createdAt')
-                              && keeps('displayName'))
-                          || (uid == request.auth.uid
-                              && resource.data.get('role', '') == 'guardian'
-                              && resource.data.get('status', '') == 'active'
-                              && request.resource.data.get('status', '') == 'revoked'
-                              && onlyChanges(['status', 'updatedAt'])
-                              && keeps('uid') && keeps('role')
-                              && keeps('permissions') && keeps('createdAt')
-                              && keeps('displayName')
-                              && existsAfter(
-                                   /databases/$(database)/documents/users/$(uid))
-                              && !getAfter(
-                                   /databases/$(database)/documents/users/$(uid))
-                                    .data.keys().hasAny(['familyId'])));
-        allow update: if validFamilyPermissions(
-                          request.resource.data.get('permissions', {}))
-                      && isServerTime(request.resource.data.get('updatedAt', ''))
-                      && uid == request.auth.uid
-                      && resource.data.get('role', '') == 'guardian'
-                      && resource.data.get('status', '') == 'revoked'
-                      && request.resource.data.get('status', '') == 'active'
-                      && request.resource.data.get('displayName', 0) is string
-                      && onlyChanges([
-                           'role', 'displayName', 'permissions', 'status',
-                           'updatedAt'
-                         ])
-                      && keeps('uid') && keeps('createdAt')
-                      && guardianMemberIsAcceptingInvite(familyId, uid);
-        allow delete: if false;
-      }
-    }
-
-    match /familyInvites/{code} {
-      allow get: if signedIn()
-                 && resource.data.get('status', '') == 'pending'
-                 && resource.data.get('expiresAt', request.time) > request.time
-                 && familyInviteMatchesEmail(resource.data);
-      allow list: if false;
-      allow create: if signedIn()
-                    && code.size() >= 16
-                    && code.size() <= 64
-                    && request.resource.data.keys()
-                         .hasAll([
-                           'familyId', 'invitedBy', 'status', 'createdAt',
-                           'expiresAt'
-                         ])
-                    && request.resource.data.keys()
-                         .hasOnly([
-                           'familyId', 'invitedBy', 'invitedEmail', 'status',
-                           'createdAt', 'expiresAt'
-                         ])
-                    && request.resource.data.get('familyId', '') == request.auth.uid
-                    && request.resource.data.get('invitedBy', '') == request.auth.uid
-                    && request.resource.data.get('status', '') == 'pending'
-                    && isServerTime(request.resource.data.get('createdAt', ''))
-                    && request.resource.data.get('expiresAt', null) is timestamp
-                    && request.resource.data.expiresAt > request.time
-                    && request.resource.data.expiresAt
-                         <= request.time + duration.value(24, 'h')
-                    && isFamilyOwner(request.auth.uid)
-                    && (!('invitedEmail' in request.resource.data)
-                        || (request.resource.data.invitedEmail is string
-                            && request.resource.data.invitedEmail != ''));
-      allow update: if signedIn()
-                    && resource.data.get('status', '') == 'pending'
-                    && resource.data.get('expiresAt', request.time) > request.time
-                    && familyInviteMatchesEmail(resource.data)
-                    && onlyChanges(['status', 'acceptedBy', 'acceptedAt'])
-                    && request.resource.data.get('status', '') == 'accepted'
-                    && request.resource.data.get('acceptedBy', '') == request.auth.uid
-                    && isServerTime(request.resource.data.get('acceptedAt', ''))
-                    && existsAfter(familyMemberPath(
-                         resource.data.get('familyId', ''), request.auth.uid))
-                    && getAfter(familyMemberPath(
-                         resource.data.get('familyId', ''), request.auth.uid))
-                         .data.get('status', '') == 'active'
-                    && getAfter(familyMemberPath(
-                         resource.data.get('familyId', ''), request.auth.uid))
-                         .data.get('uid', '') == request.auth.uid
-                    && getAfter(familyMemberPath(
-                         resource.data.get('familyId', ''), request.auth.uid))
-                         .data.get('role', '') == 'guardian'
-                    && guardianPermissionsStartDisabled(
-                         getAfter(familyMemberPath(
-                           resource.data.get('familyId', ''), request.auth.uid))
-                           .data.get('permissions', {}))
-                    && existsAfter(
-                         /databases/$(database)/documents/users/$(request.auth.uid))
-                    && getAfter(
-                         /databases/$(database)/documents/users/$(request.auth.uid))
-                         .data.get('role', '') == 'guardian'
-                    && getAfter(
-                         /databases/$(database)/documents/users/$(request.auth.uid))
-                         .data.get('familyId', '') == resource.data.familyId
-                    && getAfter(
-                         /databases/$(database)/documents/users/$(request.auth.uid))
-                         .data.get('familyInviteCode', '') == code;
       allow delete: if false;
     }
 
@@ -881,13 +438,7 @@ service cloud.firestore {
       allow list: if false;
       allow create: if isOwner(uid)
                     && noCredentialFields()
-                    && existsAfter(/databases/$(database)/documents/users/$(uid))
-                    && getAfter(/databases/$(database)/documents/users/$(uid))
-                         .data.get('role', '') == 'rider'
-                    && getAfter(/databases/$(database)/documents/users/$(uid))
-                         .data.get('familyId', '') == uid
-                    && existsAfter(/databases/$(database)/documents/families/$(uid))
-                    && existsAfter(familyMemberPath(uid, uid))
+                    && profileRoleIs(uid, 'rider')
                     && isServerTime(request.resource.data.get('createdAt', ''))
                     && isServerTime(request.resource.data.get('updatedAt', ''));
       allow update: if isOwner(uid)

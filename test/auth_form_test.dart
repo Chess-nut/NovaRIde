@@ -42,16 +42,16 @@ void main() {
   );
 
   FakeAuthRepository repositoryWith({Failure? failWith}) => FakeAuthRepository(
-    accounts: {
-      'rider@example.test': ('rider123', rider),
-      'guardian@example.test': ('guard123', guardian),
-    },
-    usernames: const {
-      'riderone': 'rider@example.test',
-      'guardianone': 'guardian@example.test',
-    },
-    failWith: failWith,
-  );
+        accounts: {
+          'rider@example.test': ('rider123', rider),
+          'guardian@example.test': ('guard123', guardian),
+        },
+        usernames: const {
+          'riderone': 'rider@example.test',
+          'guardianone': 'guardian@example.test',
+        },
+        failWith: failWith,
+      );
 
   Future<FakeAuthRepository> openLogin(
     WidgetTester tester, {
@@ -75,9 +75,8 @@ void main() {
 
     // autovalidateMode: onUserInteraction. The message has to appear once
     // a field has been touched, not only once the button is pressed.
-    testWidgets('complains once a field has been touched and emptied', (
-      tester,
-    ) async {
+    testWidgets('complains once a field has been touched and emptied',
+        (tester) async {
       await openLogin(tester);
 
       final identifier = find.byType(TextFormField).first;
@@ -108,9 +107,7 @@ void main() {
     testWidgets('offers the fields to a password manager', (tester) async {
       await openLogin(tester);
 
-      final fields = tester
-          .widgetList<TextField>(find.byType(TextField))
-          .toList();
+      final fields = tester.widgetList<TextField>(find.byType(TextField)).toList();
       expect(fields.length, 2);
       expect(fields[0].autofillHints, contains(AutofillHints.username));
       expect(fields[1].autofillHints, contains(AutofillHints.password));
@@ -148,9 +145,8 @@ void main() {
 
     // A username goes through usernames/{usernameLower}; an address does
     // not. The one character that can only be in an address decides.
-    testWidgets('signs in by username and lands on the rider home', (
-      tester,
-    ) async {
+    testWidgets('signs in by username and lands on the rider home',
+        (tester) async {
       final repository = await openLogin(tester);
       await submit(tester, 'riderone', 'rider123');
 
@@ -165,22 +161,6 @@ void main() {
 
       expect(repository.calls, contains('signInWithEmail:rider@example.test'));
       expect(find.byType(HomePage), findsOneWidget);
-    });
-
-    testWidgets('Google sign-in uses the selected role for a new account', (
-      tester,
-    ) async {
-      final repository = await openLogin(tester);
-      await tester.tap(find.text('Family'));
-      await tester.pumpAndSettle();
-      final googleButton = find.text('Continue with Google');
-      await tester.ensureVisible(googleButton);
-      await tester.pumpAndSettle();
-      await tester.tap(googleButton);
-      await tester.pumpAndSettle();
-
-      expect(repository.calls, contains('signInWithGoogle:guardian'));
-      expect(find.byType(FamilyDashboardPage), findsOneWidget);
     });
 
     // The role comes from the account, not from the toggle on the form.
@@ -218,9 +198,7 @@ void main() {
       await submit(tester, 'riderone', 'rider123');
 
       expect(
-        find.text(
-          'No connection to NovaRide. Check your internet and try again.',
-        ),
+        find.text('No connection to NovaRide. Check your internet and try again.'),
         findsOneWidget,
       );
       expect(find.byType(LoginPage), findsOneWidget);
@@ -276,9 +254,8 @@ void main() {
       expect(find.textContaining('Check your inbox'), findsOneWidget);
     });
 
-    testWidgets('says so when the address is still unconfirmed', (
-      tester,
-    ) async {
+    testWidgets('says so when the address is still unconfirmed',
+        (tester) async {
       final repository = await openVerify(tester);
 
       await tester.tap(find.text('I have confirmed it'));

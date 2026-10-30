@@ -1,6 +1,6 @@
 # Security-rules tests
 
-Security-rules tests over `firestore.rules`, run against the Firestore emulator.
+141 tests over `firestore.rules`, run against the Firestore emulator.
 
 ```bash
 cd rules_test
@@ -28,14 +28,13 @@ read and a stray call can never reach `novaride-7a68c`.
 | `history.test.js` | append-only; required fields; the `collectionGroup('history')` read |
 | `admins.test.js` | own-document reads, Super Admin lists, no client writes at all |
 | `accounts.test.js` | the phone app's four collections: who may create, read and update `users/`, `riderProfiles/`, `guardianProfiles/`, and how a `usernames/` claim works |
-| `families.test.js` | owner/member setup and migration, invitation acceptance/replay/email/expiry, membership changes, and family permission gates for riders/devices/alerts/history |
 | `closed.test.js` | the catch-all: every path without a rule is denied to everyone |
 | `firmware_contract.test.js` | the JSON bodies in `docs/FIRMWARE_CONTRACT.md`, sent verbatim over REST as the helmet — the doc and the rules cannot drift apart |
 | `payload_contract.test.js` | the payloads the **Dart app actually sends**, replayed against the real ruleset — see below |
 
 `closed.test.js` is the one to watch. It asserts that every path without a
 rule of its own is denied to everybody — today `emergencyContacts/`,
-`riderLinks/` (superseded by family members) and anything unnamed. When a phase opens one, the matching
+`riderLinks/` and anything unnamed. When a phase opens one, the matching
 case there is what has to be rewritten, so no collection can quietly
 become readable without someone editing that file on purpose. Phase 3 is
 what that looks like in practice: it moved `users/`, `riderProfiles/`,
@@ -63,12 +62,6 @@ straight out of the production builders on `FirebaseAuthRepository`
 timestamps travel as the marker `__SERVER_TIMESTAMP__` and become real
 ones on this side, which is the only reason the payloads can be built
 outside a Firebase app.
-
-The approved family rules additionally require a rider's `familyId` and
-the owner family/member records in that same transaction. The Node test
-adds those schema records around the exported payload and separately asserts
-that the current payload without `familyId` is refused; the Dart app-side
-change is intentionally outside this rules-only update.
 
 **Run `flutter test` before `npm test`.** The fixture is committed, so a
 change to the payload is visible in review as a change to that JSON, and

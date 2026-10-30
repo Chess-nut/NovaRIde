@@ -34,8 +34,9 @@ import '../../../../core/errors/failure.dart';
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key, this.role = UserRole.rider});
 
-  /// Which role to use when creating a first-time Google profile. Existing
-  /// accounts always use the role already stored in Firestore.
+  /// Which copy to show and, until real auth knows better, which home to
+  /// land on. An existing account's real role comes from Firestore in
+  /// Phase 3 and this becomes a presentation detail only.
   final UserRole role;
 
   @override
@@ -75,18 +76,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       // so a wrong guess here costs nothing.
       final profile = identifier.contains('@')
           ? await repository.signInWithEmail(
-              email: identifier,
-              password: _password.text,
-            )
+              email: identifier, password: _password.text)
           : await repository.signInWithUsername(
-              username: identifier,
-              password: _password.text,
-            );
+              username: identifier, password: _password.text);
 
-      AppLogger.i(
-        'Signed in as ${profile.username} '
-        '(${profile.role.wireName}).',
-      );
+      AppLogger.i('Signed in as ${profile.username} '
+          '(${profile.role.wireName}).');
       // No navigation here. The repository's auth stream updates
       // authStateProvider and the router's gate moves to the role's home
       // — or to verify-email if the address is not confirmed yet.
@@ -96,26 +91,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         _busy = false;
         _formError = failure.message;
       });
-    }
-  }
-
-  Future<void> _signInWithGoogle() async {
-    FocusScope.of(context).unfocus();
-    setState(() {
-      _busy = true;
-      _formError = null;
-    });
-
-    try {
-      final profile = await ref
-          .read(authRepositoryProvider)
-          .signInWithGoogle(role: _role);
-      AppLogger.i('Signed in with Google as ${profile.role.wireName}.');
-    } on Failure catch (failure) {
-      if (!mounted) return;
-      setState(() => _formError = failure.message);
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -144,14 +119,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 isRider
                     ? 'Sign in to start a ride with NovaRide watching.'
                     : 'Sign in to keep an eye on your rider.',
-                style: AppTypography.body.copyWith(color: colors.textSecondary),
+                style:
+                    AppTypography.body.copyWith(color: colors.textSecondary),
               ),
               const SizedBox(height: AppSpacing.xl),
               NovaRoleToggle(
                 value: _role,
-                onChanged: _busy
-                    ? null
-                    : (role) => setState(() => _role = role),
+                onChanged:
+                    _busy ? null : (role) => setState(() => _role = role),
               ),
               const SizedBox(height: AppSpacing.xxl),
               NovaTextField(
@@ -194,17 +169,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 busy: _busy,
                 onPressed: _submit,
               ),
-              const SizedBox(height: AppSpacing.md),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _signInWithGoogle,
-                icon: const Icon(Icons.account_circle_outlined),
-                label: const Text('Continue with Google'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: colors.textPrimary,
-                  side: BorderSide(color: colors.border),
-                  minimumSize: const Size.fromHeight(48),
-                ),
-              ),
               const SizedBox(height: AppSpacing.sm),
               NovaTextAction(
                 leading: "Don't have an account? ",
@@ -212,8 +176,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 onPressed: _busy
                     ? null
                     : () => context.push(
-                        '${AppRoutes.signupPath}?role=${_role.wireName}',
-                      ),
+                          '${AppRoutes.signupPath}?role=${_role.wireName}',
+                        ),
               ),
             ],
           ),

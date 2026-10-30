@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 enum FamilyRiderStatus {
   safe,
-  idle,
   riding,
   warning,
   accidentDetected,
@@ -27,23 +26,23 @@ class FamilyConnectedRider {
   final String relationship;
   final String avatarLetters;
   final FamilyRiderStatus status;
-  final double? speedKmh;
-  final int? tripDurationMinutes;
-  final String? destination;
-  final String? address;
-  final int? batteryPct;
-  final bool? helmetConnected;
-  final bool? gpsActive;
-  final bool? internetConnected;
-  final bool? impactNormal;
-  final bool? alcoholSafe;
-  final bool? gpsLocked;
-  final bool? isCurrentlyRiding;
-  final int? lastUpdatedSeconds;
-  final double? latitude;
-  final double? longitude;
-  final String? heading;
-  final DateTime? lastUpdated;
+  final double speedKmh;
+  final int tripDurationMinutes;
+  final String destination;
+  final String address;
+  final int batteryPct;
+  final bool helmetConnected;
+  final bool gpsActive;
+  final bool internetConnected;
+  final bool impactNormal;
+  final bool alcoholSafe;
+  final bool gpsLocked;
+  final bool isCurrentlyRiding;
+  final int lastUpdatedSeconds;
+  final double latitude;
+  final double longitude;
+  final String heading;
+  final DateTime lastUpdated;
   final bool activeEmergency;
 
   const FamilyConnectedRider({
@@ -52,25 +51,73 @@ class FamilyConnectedRider {
     required this.relationship,
     required this.avatarLetters,
     required this.status,
-    this.speedKmh,
-    this.tripDurationMinutes,
-    this.destination,
-    this.address,
-    this.batteryPct,
-    this.helmetConnected,
-    this.gpsActive,
-    this.internetConnected,
-    this.impactNormal,
-    this.alcoholSafe,
-    this.gpsLocked,
-    this.isCurrentlyRiding,
-    this.lastUpdatedSeconds,
-    this.latitude,
-    this.longitude,
-    this.heading,
-    this.lastUpdated,
-    this.activeEmergency = false,
+    required this.speedKmh,
+    required this.tripDurationMinutes,
+    required this.destination,
+    required this.address,
+    required this.batteryPct,
+    required this.helmetConnected,
+    required this.gpsActive,
+    required this.internetConnected,
+    required this.impactNormal,
+    required this.alcoholSafe,
+    required this.gpsLocked,
+    required this.isCurrentlyRiding,
+    required this.lastUpdatedSeconds,
+    required this.latitude,
+    required this.longitude,
+    required this.heading,
+    required this.lastUpdated,
+    required this.activeEmergency,
   });
+
+  FamilyConnectedRider copyWith({
+    FamilyRiderStatus? status,
+    double? speedKmh,
+    int? tripDurationMinutes,
+    String? destination,
+    String? address,
+    int? batteryPct,
+    bool? helmetConnected,
+    bool? gpsActive,
+    bool? internetConnected,
+    bool? impactNormal,
+    bool? alcoholSafe,
+    bool? gpsLocked,
+    bool? isCurrentlyRiding,
+    int? lastUpdatedSeconds,
+    double? latitude,
+    double? longitude,
+    String? heading,
+    DateTime? lastUpdated,
+    bool? activeEmergency,
+  }) {
+    return FamilyConnectedRider(
+      id: id,
+      name: name,
+      relationship: relationship,
+      avatarLetters: avatarLetters,
+      status: status ?? this.status,
+      speedKmh: speedKmh ?? this.speedKmh,
+      tripDurationMinutes: tripDurationMinutes ?? this.tripDurationMinutes,
+      destination: destination ?? this.destination,
+      address: address ?? this.address,
+      batteryPct: batteryPct ?? this.batteryPct,
+      helmetConnected: helmetConnected ?? this.helmetConnected,
+      gpsActive: gpsActive ?? this.gpsActive,
+      internetConnected: internetConnected ?? this.internetConnected,
+      impactNormal: impactNormal ?? this.impactNormal,
+      alcoholSafe: alcoholSafe ?? this.alcoholSafe,
+      gpsLocked: gpsLocked ?? this.gpsLocked,
+      isCurrentlyRiding: isCurrentlyRiding ?? this.isCurrentlyRiding,
+      lastUpdatedSeconds: lastUpdatedSeconds ?? this.lastUpdatedSeconds,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      heading: heading ?? this.heading,
+      lastUpdated: lastUpdated ?? this.lastUpdated,
+      activeEmergency: activeEmergency ?? this.activeEmergency,
+    );
+  }
 }
 
 class FamilyIncident {
@@ -130,47 +177,24 @@ class FamilyPermission {
 }
 
 class FamilyUserProfile {
-  final String uid;
   final String name;
   final String relationship;
   final String phoneNumber;
   final String email;
   final String connectedRider;
-  final String? familyId;
-  final Map<String, bool> notificationSettings;
 
   const FamilyUserProfile({
-    required this.uid,
     required this.name,
     required this.relationship,
     required this.phoneNumber,
     required this.email,
     required this.connectedRider,
-    this.familyId,
-    this.notificationSettings = const {},
-  });
-}
-
-class FamilyMember {
-  final String uid;
-  final String displayName;
-  final String role;
-  final String status;
-  final Map<String, bool> permissions;
-
-  const FamilyMember({
-    required this.uid,
-    required this.displayName,
-    required this.role,
-    required this.status,
-    required this.permissions,
   });
 }
 
 extension FamilyStatusText on FamilyRiderStatus {
   String get label => switch (this) {
         FamilyRiderStatus.safe => 'SAFE',
-        FamilyRiderStatus.idle => 'IDLE',
         FamilyRiderStatus.riding => 'RIDING',
         FamilyRiderStatus.warning => 'WARNING',
         FamilyRiderStatus.accidentDetected => 'ACCIDENT DETECTED',
@@ -181,7 +205,6 @@ extension FamilyStatusText on FamilyRiderStatus {
 
   Color get color => switch (this) {
         FamilyRiderStatus.safe => const Color(0xFF3DDC97),
-        FamilyRiderStatus.idle => const Color(0xFF6C7280),
         FamilyRiderStatus.riding => const Color(0xFF4CC9F0),
         FamilyRiderStatus.warning => const Color(0xFFFFB020),
         FamilyRiderStatus.accidentDetected => const Color(0xFFFF3B5C),

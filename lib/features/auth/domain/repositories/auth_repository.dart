@@ -1,7 +1,9 @@
 /// Everything the app can ask of the identity provider.
 ///
-/// The Firebase implementation lives in the data layer; the interface keeps
-/// screens and tests independent of Firebase.
+/// Interface only — Phase 1 ships no implementation. Phase 3 adds the
+/// Firebase one behind it. The point of writing it now is that the router,
+/// the providers and the screens can all be built and tested against this
+/// shape, and the day Firebase arrives nothing above this line changes.
 ///
 /// **Contract for every method:** on failure, throw a
 /// `Failure` from `core/errors/failure.dart` — never a `FirebaseException`,
@@ -33,10 +35,6 @@ abstract interface class AuthRepository {
     required String email,
     required String password,
   });
-
-  /// Google OAuth. A new account is created with [role]; existing accounts
-  /// keep the role already stored in their profile.
-  Future<UserProfile> signInWithGoogle({required UserRole role});
 
   /// Username and password. Resolves the username to an email through
   /// `usernames/{usernameLower}` first, then signs in. A username that does

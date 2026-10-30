@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/firestore_collections.dart';
-import '../../../core/data/family_firestore_payloads.dart';
 import '../../../core/errors/failure.dart';
 import '../../../core/errors/firebase_failure_mapper.dart';
 import '../../../core/utils/app_logger.dart';
@@ -25,8 +24,8 @@ import '../domain/repositories/auth_repository.dart';
 /// wrapper over the SDK.
 class FirebaseAuthRepository implements AuthRepository {
   FirebaseAuthRepository({fb.FirebaseAuth? auth, FirebaseFirestore? firestore})
-    : _auth = auth ?? fb.FirebaseAuth.instance,
-      _firestore = firestore ?? FirebaseFirestore.instance;
+      : _auth = auth ?? fb.FirebaseAuth.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance;
 
   final fb.FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -35,13 +34,13 @@ class FirebaseAuthRepository implements AuthRepository {
   UserProfile? _cached;
   String? _cachedUid;
 
-  /// Non-null while sign-up or Google sign-in creates profile documents.
+  /// Non-null while [signUp] owns the session.
   ///
-  /// `userChanges()` fires as soon as the provider authenticates — before
-  /// the account flow has written its documents. Without this
+  /// `userChanges()` fires the instant `createUserWithEmailAndPassword`
+  /// returns — before signUp has written a single document. Without this
   /// gate the stream's own [ensureProfile] runs first, finds no
   /// `users/{uid}` and no role to build one from, throws, and signs the
-  /// account out from under the profile setup that is still running.
+  /// account out from under the sign-up that is still running.
   ///
   /// That is not theoretical. It produced exactly three symptoms, all of
   /// which were seen: a permission-denied on signUp's write, because by
@@ -51,7 +50,7 @@ class FirebaseAuthRepository implements AuthRepository {
   /// left behind every time.
   ///
   /// The stream waits on this rather than racing it.
-  Completer<void>? _profileSetupGate;
+  Completer<void>? _signUpGate;
 
   // ------------------------------------------------------------- session
 
@@ -76,9 +75,9 @@ class FirebaseAuthRepository implements AuthRepository {
       _cachedUid = null;
       return null;
     }
-    // An account-creation flow owns this uid's documents. Wait for it to
-    // finish writing them instead of racing it — see [_profileSetupGate].
-    final gate = _profileSetupGate;
+    // A sign-up in flight owns this uid's documents. Wait for it to
+    // finish writing them instead of racing it — see [_signUpGate].
+    final gate = _signUpGate;
     if (gate != null && !gate.isCompleted) {
       await gate.future;
     }
@@ -106,11 +105,8 @@ class FirebaseAuthRepository implements AuthRepository {
       // Signed in with no usable profile is a state nothing downstream can
       // handle: the router would have a uid and no role. End the session
       // rather than let the app run in it.
-      AppLogger.e(
-        'Session for ${user.uid} has no usable profile; signing out.',
-        error: error,
-        stackTrace: stack,
-      );
+      AppLogger.e('Session for ${user.uid} has no usable profile; signing out.',
+          error: error, stackTrace: stack);
       await signOut();
       return null;
     }
@@ -130,81 +126,6 @@ class FirebaseAuthRepository implements AuthRepository {
       );
       return _finishSignIn(credential.user);
     });
-  }
-
-  @override
-  Future<UserProfile> signInWithGoogle({required UserRole role}) {
-    return _guard(() async {
-      final gate = Completer<void>();
-      _profileSetupGate = gate;
-      try {
-        final credential = kIsWeb
-            ? await _auth.signInWithPopup(fb.GoogleAuthProvider())
-            : await _auth.signInWithProvider(fb.GoogleAuthProvider());
-        final user = credential.user;
-        if (user == null) {
-          throw const AuthFailure(
-            'Google sign-in did not complete. Try again.',
-          );
-        }
-
-        final email = user.email?.trim() ?? '';
-        if (email.isEmpty) {
-          throw const AuthFailure(
-            'Google did not provide an email address. Try another account.',
-          );
-        }
-
-        try {
-          final profile = await ensureProfile(
-            user,
-            username: _googleUsername(user),
-            fullName: _googleDisplayName(user),
-            role: role,
-          );
-          _cached = profile;
-          _cachedUid = user.uid;
-          return profile;
-        } catch (error, stack) {
-          AppLogger.e(
-            'Google profile setup failed for ${user.uid}; signing out.',
-            error: error,
-            stackTrace: stack,
-          );
-          await signOut();
-          rethrow;
-        }
-      } on fb.FirebaseAuthException catch (error, stack) {
-        throw failureFromGoogleSignIn(error, stack);
-      } finally {
-        _profileSetupGate = null;
-        if (!gate.isCompleted) gate.complete();
-      }
-    });
-  }
-
-  static String _googleUsername(fb.User user) {
-    final emailName = (user.email ?? '').split('@').first;
-    final safeName = emailName.toLowerCase().replaceAll(
-      RegExp(r'[^a-z0-9]'),
-      '',
-    );
-    final safeUid = user.uid.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-    final suffix = safeUid.length > 12
-        ? safeUid.substring(safeUid.length - 12)
-        : safeUid;
-    final name = safeName.isEmpty ? 'user' : safeName;
-    final prefixLength = 20 - suffix.length - 1;
-    final prefix = name.length > prefixLength
-        ? name.substring(0, prefixLength)
-        : name;
-    return '${prefix}_$suffix';
-  }
-
-  static String _googleDisplayName(fb.User user) {
-    final displayName = user.displayName?.trim() ?? '';
-    if (displayName.isNotEmpty) return displayName;
-    return (user.email ?? '').split('@').first;
   }
 
   /// Sign in with a username.
@@ -271,10 +192,8 @@ class FirebaseAuthRepository implements AuthRepository {
   Future<String?> _emailForUsername(String username) async {
     final key = username.trim().toLowerCase();
     if (key.isEmpty) return null;
-    final snapshot = await _firestore
-        .collection(FirestoreCollections.usernames)
-        .doc(key)
-        .get();
+    final snapshot =
+        await _firestore.collection(FirestoreCollections.usernames).doc(key).get();
     if (!snapshot.exists) return null;
     final email = snapshot.data()?['email'];
     return email is String && email.isNotEmpty ? email : null;
@@ -309,7 +228,7 @@ class FirebaseAuthRepository implements AuthRepository {
       // below whatever happens. The auth stream waits on it rather than
       // provisioning the half-made account itself.
       final gate = Completer<void>();
-      _profileSetupGate = gate;
+      _signUpGate = gate;
       try {
         return await _signUp(
           email: email,
@@ -320,7 +239,7 @@ class FirebaseAuthRepository implements AuthRepository {
           phoneNumber: phoneNumber,
         );
       } finally {
-        _profileSetupGate = null;
+        _signUpGate = null;
         if (!gate.isCompleted) gate.complete();
       }
     });
@@ -355,7 +274,9 @@ class FirebaseAuthRepository implements AuthRepository {
       );
       final user = credential.user;
       if (user == null) {
-        throw const AuthFailure('The account was not created. Try again.');
+        throw const AuthFailure(
+          'The account was not created. Try again.',
+        );
       }
 
       try {
@@ -383,12 +304,8 @@ class FirebaseAuthRepository implements AuthRepository {
         // on it yet. The person retries and gets a clean attempt rather
         // than "that email is already in use" on an account they cannot
         // reach.
-        AppLogger.e(
-          'Sign-up for ${user.uid} failed after the Auth account '
-          'was created; removing it.',
-          error: error,
-          stackTrace: stack,
-        );
+        AppLogger.e('Sign-up for ${user.uid} failed after the Auth account '
+            'was created; removing it.', error: error, stackTrace: stack);
         try {
           await user.delete();
         } catch (deleteError, deleteStack) {
@@ -479,9 +396,8 @@ class FirebaseAuthRepository implements AuthRepository {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      final ref = _firestore
-          .collection(FirestoreCollections.users)
-          .doc(user.uid);
+      final ref =
+          _firestore.collection(FirestoreCollections.users).doc(user.uid);
       await ref.update(edit);
 
       // Re-read rather than patch the cache: the document is the truth,
@@ -514,11 +430,8 @@ class FirebaseAuthRepository implements AuthRepository {
       _cachedUid = user.uid;
       return profile;
     } catch (error, stack) {
-      AppLogger.e(
-        'ensureProfile failed for ${user.uid}; signing out.',
-        error: error,
-        stackTrace: stack,
-      );
+      AppLogger.e('ensureProfile failed for ${user.uid}; signing out.',
+          error: error, stackTrace: stack);
       await signOut();
       rethrow;
     }
@@ -560,34 +473,23 @@ class FirebaseAuthRepository implements AuthRepository {
     String? phoneNumber,
     String? fcmToken,
   }) {
-    return _withRetry(
-      () => _firestore.runTransaction((transaction) async {
-        final userRef = _firestore
-            .collection(FirestoreCollections.users)
-            .doc(user.uid);
-        final existing = await transaction.get(userRef);
+    return _withRetry(() => _firestore.runTransaction((transaction) async {
+          final userRef = _firestore
+              .collection(FirestoreCollections.users)
+              .doc(user.uid);
+          final existing = await transaction.get(userRef);
 
-        if (existing.exists) {
-          return _touchExisting(
-            transaction,
-            userRef,
-            existing,
-            user,
-            fcmToken: fcmToken,
-          );
-        }
-        return _createAll(
-          transaction,
-          userRef,
-          user,
-          username: username,
-          fullName: fullName,
-          role: role,
-          phoneNumber: phoneNumber,
-          fcmToken: fcmToken,
-        );
-      }),
-    );
+          if (existing.exists) {
+            return _touchExisting(transaction, userRef, existing, user,
+                fcmToken: fcmToken);
+          }
+          return _createAll(transaction, userRef, user,
+              username: username,
+              fullName: fullName,
+              role: role,
+              phoneNumber: phoneNumber,
+              fcmToken: fcmToken);
+        }));
   }
 
   /// The already-provisioned path, which is almost every call.
@@ -598,58 +500,15 @@ class FirebaseAuthRepository implements AuthRepository {
     fb.User user, {
     String? fcmToken,
   }) async {
-    final data = existing.data()!;
-    final role = UserRole.fromWireName(data['role'] as String?);
-    final familyId = data['familyId'] as String?;
-    if (role == UserRole.rider && familyId != null && familyId != user.uid) {
-      throw const ValidationFailure(
-        'This rider account is linked to an invalid family. Contact support.',
-      );
-    }
-
-    final familyRef = _firestore.collection('families').doc(user.uid);
-    final memberRef = familyRef.collection('members').doc(user.uid);
-    DocumentSnapshot<Map<String, dynamic>>? family;
-    DocumentSnapshot<Map<String, dynamic>>? member;
-    if (role == UserRole.rider) {
-      family = await transaction.get(familyRef);
-      member = await transaction.get(memberRef);
-    }
-
     // Built by the same function the contract test checks against the
     // rules. `role` and `createdAt` are not in it and must never be.
-    final touch = buildLoginTouch(
-      serverTimestamp: FieldValue.serverTimestamp(),
-      fcmToken: fcmToken,
+    transaction.update(
+      userRef,
+      buildLoginTouch(
+        serverTimestamp: FieldValue.serverTimestamp(),
+        fcmToken: fcmToken,
+      ),
     );
-    if (role == UserRole.rider && familyId == null) {
-      touch['familyId'] = user.uid;
-    }
-    transaction.update(userRef, touch);
-
-    if (role == UserRole.rider) {
-      final timestamp = FieldValue.serverTimestamp();
-      if (!family!.exists) {
-        transaction.set(
-          familyRef,
-          buildFamilyDocument(
-            ownerUid: user.uid,
-            serverTimestamp: timestamp,
-          ),
-        );
-      }
-      if (!member!.exists) {
-        transaction.set(
-          memberRef,
-          buildFamilyMemberDocument(
-            uid: user.uid,
-            role: 'rider',
-            displayName: (data['fullName'] as String?) ?? '',
-            serverTimestamp: timestamp,
-          ),
-        );
-      }
-    }
 
     // Read from what was already there, not from what was just written:
     // the server timestamps are unresolved until the transaction commits,
@@ -710,7 +569,6 @@ class FirebaseAuthRepository implements AuthRepository {
     // password, a hash or a token of any kind; the rules refuse those
     // field names outright on all four paths.
     final userDoc = buildUserDocument(
-      uid: user.uid,
       email: email,
       username: resolvedUsername,
       fullName: (fullName ?? '').trim(),
@@ -719,48 +577,18 @@ class FirebaseAuthRepository implements AuthRepository {
       fcmToken: fcmToken,
       serverTimestamp: FieldValue.serverTimestamp(),
     );
-    final profileDoc = buildProfileDocument(
-      serverTimestamp: FieldValue.serverTimestamp(),
-    );
+    final profileDoc =
+        buildProfileDocument(serverTimestamp: FieldValue.serverTimestamp());
     final claimDoc = buildUsernameClaim(
       uid: user.uid,
       email: email,
       serverTimestamp: FieldValue.serverTimestamp(),
     );
-    final familyRef = _firestore.collection('families').doc(user.uid);
-    final familyMemberRef = familyRef.collection('members').doc(user.uid);
-    DocumentSnapshot<Map<String, dynamic>>? existingFamily;
-    DocumentSnapshot<Map<String, dynamic>>? existingMember;
-    if (resolvedRole == UserRole.rider) {
-      existingFamily = await transaction.get(familyRef);
-      existingMember = await transaction.get(familyMemberRef);
-    }
 
     // Dumped before the writes, so the trace survives a refusal — a
     // rejected transaction is exactly when it is wanted.
-    await _traceCreate(
-      user,
-      email,
-      profileCollection,
-      usernameKey,
-      userDoc,
-      profileDoc,
-      claimDoc,
-      resolvedRole == UserRole.rider
-          ? buildFamilyDocument(
-              ownerUid: user.uid,
-              serverTimestamp: FieldValue.serverTimestamp(),
-            )
-          : null,
-      resolvedRole == UserRole.rider
-          ? buildFamilyMemberDocument(
-              uid: user.uid,
-              role: 'rider',
-              displayName: (fullName ?? '').trim(),
-              serverTimestamp: FieldValue.serverTimestamp(),
-            )
-          : null,
-    );
+    await _traceCreate(user, email, profileCollection, usernameKey, userDoc,
+        profileDoc, claimDoc);
 
     transaction.set(userRef, userDoc);
     transaction.set(
@@ -769,28 +597,6 @@ class FirebaseAuthRepository implements AuthRepository {
     );
     if (!claim.exists) {
       transaction.set(usernameRef, claimDoc);
-    }
-    if (resolvedRole == UserRole.rider) {
-      if (!existingFamily!.exists) {
-        transaction.set(
-          familyRef,
-          buildFamilyDocument(
-            ownerUid: user.uid,
-            serverTimestamp: FieldValue.serverTimestamp(),
-          ),
-        );
-      }
-      if (!existingMember!.exists) {
-        transaction.set(
-          familyMemberRef,
-          buildFamilyMemberDocument(
-            uid: user.uid,
-            role: 'rider',
-            displayName: (fullName ?? '').trim(),
-            serverTimestamp: FieldValue.serverTimestamp(),
-          ),
-        );
-      }
     }
 
     return UserProfile(
@@ -814,6 +620,7 @@ class FirebaseAuthRepository implements AuthRepository {
     );
   }
 
+
   // ---------------------------------------------- the payloads, exactly
   //
   // The four maps ensureProfile writes, pulled out as pure functions so a
@@ -834,7 +641,6 @@ class FirebaseAuthRepository implements AuthRepository {
   /// the reason the field exists at all.
   @visibleForTesting
   static Map<String, Object?> buildUserDocument({
-    required String uid,
     required String email,
     required String username,
     required String fullName,
@@ -848,7 +654,6 @@ class FirebaseAuthRepository implements AuthRepository {
       'username': username,
       'fullName': fullName,
       'role': role.wireName,
-      if (role == UserRole.rider) 'familyId': uid,
       if (phoneNumber != null && phoneNumber.trim().isNotEmpty)
         'phoneNumber': phoneNumber.trim(),
       if (fcmToken != null && fcmToken.isNotEmpty) 'fcmToken': fcmToken,
@@ -864,30 +669,11 @@ class FirebaseAuthRepository implements AuthRepository {
   static Map<String, Object?> buildProfileDocument({
     required Object serverTimestamp,
   }) {
-    return {'createdAt': serverTimestamp, 'updatedAt': serverTimestamp};
+    return {
+      'createdAt': serverTimestamp,
+      'updatedAt': serverTimestamp,
+    };
   }
-
-  @visibleForTesting
-  static Map<String, Object?> buildFamilyDocument({
-    required String ownerUid,
-    required Object serverTimestamp,
-  }) => FamilyFirestorePayloads.family(
-    ownerUid: ownerUid,
-    serverTimestamp: serverTimestamp,
-  );
-
-  @visibleForTesting
-  static Map<String, Object?> buildFamilyMemberDocument({
-    required String uid,
-    required String role,
-    required String displayName,
-    required Object serverTimestamp,
-  }) => FamilyFirestorePayloads.member(
-    uid: uid,
-    role: role,
-    displayName: displayName,
-    serverTimestamp: serverTimestamp,
-  );
 
   /// `usernames/{usernameLower}`. Exactly three fields — the rules use
   /// `hasOnly`, because this document is world-readable.
@@ -897,7 +683,11 @@ class FirebaseAuthRepository implements AuthRepository {
     required String email,
     required Object serverTimestamp,
   }) {
-    return {'uid': uid, 'email': email, 'createdAt': serverTimestamp};
+    return {
+      'uid': uid,
+      'email': email,
+      'createdAt': serverTimestamp,
+    };
   }
 
   /// The update on every later sign-in. Three keys and no others: `role`
@@ -914,6 +704,7 @@ class FirebaseAuthRepository implements AuthRepository {
     };
   }
 
+
   // ------------------------------------------------------------- tracing
 
   /// Whether to dump every payload before writing it.
@@ -921,10 +712,8 @@ class FirebaseAuthRepository implements AuthRepository {
   /// On in debug builds, off in release — the dump contains a uid and an
   /// email address and has no business in a shipped log. Force it either
   /// way with `--dart-define=NOVARIDE_AUTH_TRACE=true|false`.
-  static const bool traceWrites = bool.fromEnvironment(
-    'NOVARIDE_AUTH_TRACE',
-    defaultValue: kDebugMode,
-  );
+  static const bool traceWrites =
+      bool.fromEnvironment('NOVARIDE_AUTH_TRACE', defaultValue: kDebugMode);
 
   /// Prints exactly what is about to be written, before it is written.
   ///
@@ -945,8 +734,6 @@ class FirebaseAuthRepository implements AuthRepository {
     Map<String, Object?> userDoc,
     Map<String, Object?> profileDoc,
     Map<String, Object?> claimDoc,
-    Map<String, Object?>? familyDoc,
-    Map<String, Object?>? familyMemberDoc,
   ) async {
     if (!traceWrites) return;
 
@@ -970,26 +757,15 @@ class FirebaseAuthRepository implements AuthRepository {
       ..writeln('user.email             : ${user.email}')
       ..writeln('token email claim      : $tokenEmail')
       ..writeln('email written to docs  : $email')
-      ..writeln(
-        'emails match (lowered) : '
-        '${email.toLowerCase() == tokenEmail.toLowerCase()}',
-      )
+      ..writeln('emails match (lowered) : '
+          '${email.toLowerCase() == tokenEmail.toLowerCase()}')
       ..writeln('token claim keys       : $claimKeys')
       ..writeln('user.isAnonymous       : ${user.isAnonymous}')
       ..writeln('user.emailVerified     : ${user.emailVerified}')
       ..writeln()
       ..write(_describe('users/${user.uid}', userDoc))
       ..write(_describe('$profileCollection/${user.uid}', profileDoc))
-      ..write(_describe('usernames/$usernameKey', claimDoc));
-    if (familyDoc != null) {
-      buffer.write(_describe('families/${user.uid}', familyDoc));
-    }
-    if (familyMemberDoc != null) {
-      buffer.write(
-        _describe('families/${user.uid}/members/${user.uid}', familyMemberDoc),
-      );
-    }
-    buffer
+      ..write(_describe('usernames/$usernameKey', claimDoc))
       ..writeln('--- paste into the Rules Playground ---')
       ..writeln(_playgroundJson(userDoc))
       ..writeln('=== end ===');

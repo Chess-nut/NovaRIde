@@ -1,6 +1,9 @@
 /// The session, as the router sees it.
 ///
-/// The router's view of the current authentication session.
+/// Phase 3 put a real [AuthRepository] behind this. The shape below did
+/// not change when it did — which was the point of building the router's
+/// gate against it first: swapping the placeholder for Firebase was a
+/// change to [AuthController.build] and nothing else.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,11 +39,11 @@ class AuthState {
 
   /// Signed in and verified.
   const AuthState.signedIn(UserProfile profile)
-    : this._(AuthStatus.authenticated, profile);
+      : this._(AuthStatus.authenticated, profile);
 
   /// Signed in, waiting on the verification email.
   const AuthState.awaitingVerification(UserProfile profile)
-    : this._(AuthStatus.awaitingEmailVerification, profile);
+      : this._(AuthStatus.awaitingEmailVerification, profile);
 
   /// Picks the right state for a profile, from whether Firebase Auth says
   /// the address is confirmed. One place, so the router and the screens

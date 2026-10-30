@@ -1706,9 +1706,9 @@ void startAccessPoint() {
   WiFi.softAP(TRACKER_AP_SSID, TRACKER_AP_PASSWORD);
   dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
 
-  Serial.print("Setup AP started: ");
+  Serial.print("Setup AP started: SmartGPS-Setup");
   Serial.println(TRACKER_AP_SSID);
-  Serial.print("Open browser: http://");
+  Serial.print("Open browser: http://192.168.4.1");
   Serial.println(WiFi.softAPIP());
 }
 

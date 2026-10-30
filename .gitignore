@@ -163,3 +163,5 @@ node_modules/
 
 # Helmet firmware: per-helmet Wi-Fi and Firebase credentials.
 firmware/**/secrets.h
+
+IoT/**/config.h

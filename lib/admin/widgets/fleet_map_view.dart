@@ -77,15 +77,34 @@ class _FleetMapViewState extends State<FleetMapView>
     final pins = <RiderPin>[];
     for (final rider in widget.riders) {
       final t = _telemetryFor(rider.id);
-      if (t == null) continue;
+      final (lat, lng) = (t?.lat, t?.lng);
+      // No position is no dot — never a dot at 0,0.
+      if (lat == null || lng == null) continue;
       pins.add(
         RiderPin(
           riderId: rider.id,
-          lat: t.lat,
-          lng: t.lng,
+          lat: lat,
+          lng: lng,
           color: StatusPill.colorForRider(rider.status),
           emergency: rider.status == RiderStatus.emergency,
           selected: rider.id == widget.selectedRiderId,
+        ),
+      );
+    }
+    // A helmet with no rider is still on the map, in neutral grey, keyed
+    // by its device id.
+    for (final t in widget.telemetry) {
+      final (deviceId, lat, lng) = (t.deviceId, t.lat, t.lng);
+      if (t.riderId != null || deviceId == null) continue;
+      if (lat == null || lng == null) continue;
+      pins.add(
+        RiderPin(
+          riderId: deviceId,
+          lat: lat,
+          lng: lng,
+          color: NovaColors.secondaryText,
+          emergency: false,
+          selected: deviceId == widget.selectedRiderId,
         ),
       );
     }

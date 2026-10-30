@@ -667,8 +667,20 @@ class _AlertDetailPanel extends StatelessWidget {
           if (telemetry == null)
             _muted('No helmet telemetry for this rider.')
           else ...[
-            _row('Speed', '${telemetry.speedKmh.toStringAsFixed(1)} km/h'),
-            _row('Battery', '${telemetry.batteryPct}%'),
+            _row(
+              'Speed',
+              telemetry.speedLabel,
+              valueColor: telemetry.speedKmh == null
+                  ? NovaColors.secondaryText
+                  : null,
+            ),
+            _row(
+              'Battery',
+              telemetry.batteryLabel,
+              valueColor: telemetry.batteryPct == null
+                  ? NovaColors.secondaryText
+                  : null,
+            ),
             _row(
               'Alcohol',
               telemetry.alcoholLabel,

@@ -70,9 +70,19 @@ class Rider {
       );
 }
 
+/// One helmet's latest reading.
+///
+/// Every reading is nullable, and null means "the helmet did not send it".
+/// A default would turn that absence into a reading — a missing speed shown
+/// as 0.0 km/h is "not measured" shown as "stopped" — so there are none.
 class HelmetTelemetry {
-  final String riderId;
-  final double speedKmh;
+  /// The rider this helmet is paired to. Null for a helmet that reports but
+  /// is on nobody's roster entry: a real state the operator should see.
+  final String? riderId;
+
+  /// The helmet's serial / device id (`devices/{id}`, `deviceStatus/{id}`).
+  final String? deviceId;
+  final double? speedKmh;
 
   /// The helmet's own verdict: MQ-3 vapour above that helmet's measured
   /// clean-air baseline (`alcohol_detected`). Null when the helmet sends no
@@ -83,16 +93,28 @@ class HelmetTelemetry {
   /// is zero tolerance for motorcycle riders, and a sensor inside a helmet
   /// measures the vapour in the helmet, not breath.
   final bool? alcoholDetected;
-  final int batteryPct;
+
+  /// The MQ-3's raw ADC count (`alcoholRelativeIndex`, 0–4095), uncalibrated.
+  /// A relative index — not mg/L, not BAC — so it is shown as a raw number
+  /// and never compared against any limit.
+  final double? alcoholRawIndex;
+
+  /// Overall acceleration in g (`accelMagnitudeG`), about 1 at rest. Null
+  /// when the helmet says its accelerometer is not ready.
+  final double? accelMagnitudeG;
+  final int? batteryPct;
   final bool gpsFix;
-  final double lat;
-  final double lng;
-  final DateTime lastUpdate;
+  final double? lat;
+  final double? lng;
+  final DateTime? lastUpdate;
 
   const HelmetTelemetry({
     required this.riderId,
+    this.deviceId,
     required this.speedKmh,
     this.alcoholDetected,
+    this.alcoholRawIndex,
+    this.accelMagnitudeG,
     required this.batteryPct,
     required this.gpsFix,
     required this.lat,
@@ -108,8 +130,11 @@ class HelmetTelemetry {
   }) =>
       HelmetTelemetry(
         riderId: riderId,
+        deviceId: deviceId,
         speedKmh: speedKmh ?? this.speedKmh,
         alcoholDetected: alcoholDetected,
+        alcoholRawIndex: alcoholRawIndex,
+        accelMagnitudeG: accelMagnitudeG,
         batteryPct: batteryPct,
         gpsFix: gpsFix,
         lat: lat ?? this.lat,
@@ -213,6 +238,42 @@ extension AlcoholReadout on HelmetTelemetry {
         false => 'Not detected',
         null => 'Not measured',
       };
+}
+
+/// Text for the numeric readings. A reading the helmet did not send is a
+/// dash, never 0.
+extension TelemetryReadout on HelmetTelemetry {
+  static const missing = '—';
+
+  String get speedLabel {
+    final v = speedKmh;
+    return v == null ? missing : '${v.toStringAsFixed(1)} km/h';
+  }
+
+  String get batteryLabel {
+    final v = batteryPct;
+    return v == null ? missing : '$v%';
+  }
+
+  /// Battery the helmet reported as under 20%. Unknown is not low.
+  bool get batteryLow => (batteryPct ?? 100) < 20;
+
+  String get alcoholRawLabel {
+    final v = alcoholRawIndex;
+    return v == null ? missing : '${v.toStringAsFixed(0)} raw (0–4095)';
+  }
+
+  String get accelLabel {
+    final v = accelMagnitudeG;
+    return v == null ? missing : '${v.toStringAsFixed(2)} g';
+  }
+
+  String get coordinatesLabel {
+    final la = lat;
+    final ln = lng;
+    if (la == null || ln == null) return 'No position';
+    return '${la.toStringAsFixed(5)}, ${ln.toStringAsFixed(5)}';
+  }
 }
 
 extension RiderStatusLabel on RiderStatus {

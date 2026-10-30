@@ -177,17 +177,22 @@ class MockFleetRepository implements FleetRepository {
 
     for (var i = 0; i < _telemetry.length; i++) {
       final t = _telemetry[i];
-      if (_riderFor(t.riderId)?.status != RiderStatus.riding) continue;
+      final riderId = t.riderId;
+      final (lat, lng, speed) = (t.lat, t.lng, t.speedKmh);
+      if (riderId == null || lat == null || lng == null || speed == null) {
+        continue;
+      }
+      if (_riderFor(riderId)?.status != RiderStatus.riding) continue;
 
       _telemetry[i] = t.copyWith(
-        lat: (t.lat + _signed(_latJitter))
+        lat: (lat + _signed(_latJitter))
             .clamp(kFleetLatMin, kFleetLatMax)
             .toDouble(),
-        lng: (t.lng + _signed(_lngJitter))
+        lng: (lng + _signed(_lngJitter))
             .clamp(kFleetLngMin, kFleetLngMax)
             .toDouble(),
         speedKmh:
-            (t.speedKmh + _signed(_speedJitter)).clamp(8.0, 78.0).toDouble(),
+            (speed + _signed(_speedJitter)).clamp(8.0, 78.0).toDouble(),
         lastUpdate: now,
       );
     }

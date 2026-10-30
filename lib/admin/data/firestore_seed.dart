@@ -63,7 +63,7 @@ Future<void> seedFirestore({FirebaseFirestore? firestore}) async {
       'speed_kmh': t.speedKmh,
       'battery_pct': t.batteryPct,
       'gps_fix': t.gpsFix,
-      'last_update': Timestamp.fromDate(t.lastUpdate),
+      if (t.lastUpdate case final at?) 'last_update': Timestamp.fromDate(at),
     });
   }
 

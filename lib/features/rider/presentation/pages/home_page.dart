@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:novaride/core/errors/firebase_failure_mapper.dart';
 import 'package:novaride/core/utils/initials.dart';
 import 'package:novaride/core/widgets/unavailable.dart';
 import 'package:novaride/features/auth/domain/entities/user_profile.dart';
 import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
 import 'package:novaride/shared/theme.dart';
+import '../../domain/entities/helmet_telemetry.dart';
+import '../providers/helmet_telemetry_provider.dart';
 import '../widgets/nova_bottom_nav_bar.dart';
 import 'alerts_page.dart';
 import 'gps_map_page.dart';
@@ -16,6 +19,11 @@ class HomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final helmet = _HelmetView.from(
+      ref.watch(helmetTelemetryProvider),
+      ref.watch(helmetClockProvider).value ?? DateTime.now(),
+    );
+
     return Scaffold(
       backgroundColor: NovaColors.background,
       body: SafeArea(
@@ -26,18 +34,26 @@ class HomePage extends ConsumerWidget {
             children: [
               _buildHeader(context),
               const SizedBox(height: 20),
-              _buildProfileCard(context, ref.watch(authStateProvider).profile),
+              _buildProfileCard(
+                  context, ref.watch(authStateProvider).profile, helmet),
               const SizedBox(height: 16),
               _buildQuickStatsRow(),
               const SizedBox(height: 16),
-              _buildCircleStatsRow(context),
+              _buildCircleStatsRow(context, helmet),
+              if (helmet.phase == _HelmetPhase.error) ...[
+                const SizedBox(height: 12),
+                _TelemetryErrorBanner(
+                  message: helmet.errorMessage ?? '',
+                  onRetry: () => ref.invalidate(helmetTelemetryProvider),
+                ),
+              ],
               const SizedBox(height: 24),
               // showLive is off: nothing is streaming, and a green LIVE
               // dot over three em dashes is the contradiction this pass
               // exists to remove.
               _buildSectionTitle('CURRENT TRIP'),
               const SizedBox(height: 12),
-              _buildTripCard(),
+              _buildTripCard(helmet),
               const SizedBox(height: 24),
               _buildSectionTitle('EMERGENCY SOS'),
               const SizedBox(height: 20),
@@ -117,7 +133,8 @@ class HomePage extends ConsumerWidget {
   /// console's roster (`riders/{R-001}`), a mobile account cannot read
   /// that collection, and nothing links the two yet. The username is
   /// shown instead, which is real and is what they signed in with.
-  Widget _buildProfileCard(BuildContext context, UserProfile? profile) {
+  Widget _buildProfileCard(
+      BuildContext context, UserProfile? profile, _HelmetView helmet) {
     final name = profile?.displayName ?? '';
     final initials = initialsFrom(name);
 
@@ -166,20 +183,30 @@ class HomePage extends ConsumerWidget {
               ],
             ),
           ),
-          // No helmet reports to this account, so there is nothing to be
-          // connected to. Saying "Connected" was the most misleading
-          // thing on the screen.
-          const _StatusPill(label: 'No helmet', color: NovaColors.secondaryText),
+          // "Connected" only while the helmet says it is online and its
+          // last write is recent: the firmware never writes online:false,
+          // so a helmet that has gone quiet still says true.
+          switch (helmet.phase) {
+            _HelmetPhase.connecting => const _StatusPill(
+                label: 'Connecting…', color: NovaColors.secondaryText),
+            _HelmetPhase.error =>
+              const _StatusPill(label: 'Error', color: NovaColors.red),
+            _HelmetPhase.missing => const _StatusPill(
+                label: 'No helmet', color: NovaColors.secondaryText),
+            _HelmetPhase.reporting when helmet.live => const _StatusPill(
+                label: 'Connected', color: NovaColors.green),
+            _HelmetPhase.reporting => const _StatusPill(
+                label: 'Offline', color: NovaColors.amber),
+          },
         ],
       ),
     );
   }
   // ---- Battery / Hardware / Signal row ----
   //
-  // All three came from the helmet, and no helmet reports to a mobile
-  // account: telemetry lives on devices/{id}, which the rules refuse,
-  // and nothing links an account to a device anyway. 78%, ESP32 and
-  // -62 dBm were invented. Em dashes until there is a feed.
+  // 78%, ESP32 and -62 dBm were invented. The firmware sends no battery
+  // level, and its rssi is a hard-coded 0 on cellular. Em dashes until
+  // there is a real feed.
   Widget _buildQuickStatsRow() {
     return Row(
       children: const [
@@ -211,30 +238,42 @@ class HomePage extends ConsumerWidget {
   }
 
   // ---- Impact / Air quality / GPS row ----
-  Widget _buildCircleStatsRow(BuildContext context) {
+  Widget _buildCircleStatsRow(BuildContext context, _HelmetView helmet) {
+    final t = helmet.telemetry;
+    final impact = t?.impactG;
+    final alcohol = t?.alcoholRelativeIndex;
+    final (impactStatus, impactColor) = helmet.statusFor(impact != null);
+    final (alcoholStatus, alcoholColor) = helmet.alcoholStatus();
+    final (gpsStatus, gpsColor) = helmet.gpsStatus();
+
     return Row(
       children: [
-        const Expanded(
+        Expanded(
           child: _CircleStatCard(
             icon: Icons.bolt,
             iconColor: NovaColors.green,
-            value: Unavailable.dash,
+            value: impact == null
+                ? Unavailable.dash
+                : '${impact.toStringAsFixed(2)} g',
             label: 'IMPACT',
-            statusText: 'NO HELMET',
-            statusColor: NovaColors.secondaryText,
+            statusText: impactStatus,
+            statusColor: impactColor,
           ),
         ),
         const SizedBox(width: 10),
-        const Expanded(
+        Expanded(
           child: _CircleStatCard(
             icon: Icons.water_drop_outlined,
             iconColor: NovaColors.secondaryText,
-            value: Unavailable.dash,
-            // No unit: the helmet reports vapour above its own baseline,
-            // not a percentage or a breath concentration.
-            label: 'ALCOHOL',
-            statusText: 'NO HELMET',
-            statusColor: NovaColors.secondaryText,
+            value: alcohol == null
+                ? Unavailable.dash
+                : alcohol.toStringAsFixed(0),
+            // The MQ-3's raw ADC count: a relative index, not a percentage
+            // and not a breath concentration, so there is no unit and the
+            // label says raw.
+            label: 'RAW ALCOHOL INDEX',
+            statusText: alcoholStatus,
+            statusColor: alcoholColor,
           ),
         ),
         const SizedBox(width: 10),
@@ -244,8 +283,8 @@ class HomePage extends ConsumerWidget {
             iconColor: NovaColors.cyan,
             value: 'GPS',
             label: 'LOCATION',
-            statusText: 'NO FIX',
-            statusColor: NovaColors.secondaryText,
+            statusText: gpsStatus,
+            statusColor: gpsColor,
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const GpsMapPage()),
@@ -294,8 +333,11 @@ class HomePage extends ConsumerWidget {
   //
   // 42 km/h, 8.3 km, 23:47 and "Makati Ave → Bonifacio Global City"
   // were a scripted demo trip. Trips are not recorded anywhere yet —
-  // there is no trips collection and no helmet feed to build one from.
-  Widget _buildTripCard() {
+  // there is no trips collection to build distance or duration from.
+  // Speed is the helmet's own, and only while it is live: this tile has
+  // no status line to mark a stale figure as stale.
+  Widget _buildTripCard(_HelmetView helmet) {
+    final speed = helmet.live ? helmet.telemetry?.speedKmph : null;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -306,17 +348,21 @@ class HomePage extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               Expanded(
                 child: _TripMetric(
-                    value: Unavailable.dash, unit: 'km/h', label: 'SPEED'),
+                    value: speed == null
+                        ? Unavailable.dash
+                        : speed.toStringAsFixed(1),
+                    unit: 'km/h',
+                    label: 'SPEED'),
               ),
-              Expanded(
+              const Expanded(
                 child: _TripMetric(
                     value: Unavailable.dash, unit: 'km', label: 'DISTANCE'),
               ),
-              Expanded(
+              const Expanded(
                 child: _TripMetric(
                     value: Unavailable.dash, unit: 'min', label: 'DURATION'),
               ),
@@ -390,7 +436,118 @@ class HomePage extends ConsumerWidget {
   }
 }
 
-/// Small rounded "Connected" badge shown on the profile card.
+/// The three things the helmet stream can be, plus the one that is not
+/// an answer yet. Each renders differently, and none renders as a number.
+enum _HelmetPhase {
+  /// No snapshot yet.
+  connecting,
+
+  /// The stream failed; the banner says why and offers Retry.
+  error,
+
+  /// The snapshot arrived and there is nothing at that device id.
+  missing,
+
+  /// The helmet's node, live or stale. Its fields may still be absent.
+  reporting,
+}
+
+/// What the home screen can honestly say about the helmet right now.
+class _HelmetView {
+  const _HelmetView(this.phase,
+      {this.telemetry, this.live = false, this.errorMessage});
+
+  factory _HelmetView.from(AsyncValue<HelmetTelemetry?> async, DateTime now) {
+    // A retry after an error keeps the old error while it loads; show that
+    // as connecting rather than as the failure it is recovering from.
+    if (async.hasError && !async.isLoading) {
+      return _HelmetView(_HelmetPhase.error,
+          errorMessage: messageFor(async.error!));
+    }
+    if (async.hasValue && !async.hasError) {
+      final telemetry = async.value;
+      if (telemetry == null) return const _HelmetView(_HelmetPhase.missing);
+      return _HelmetView(
+        _HelmetPhase.reporting,
+        telemetry: telemetry,
+        live: telemetry.online == true &&
+            telemetry.isFresh(now, helmetStaleAfter),
+      );
+    }
+    return const _HelmetView(_HelmetPhase.connecting);
+  }
+
+  final _HelmetPhase phase;
+  final HelmetTelemetry? telemetry;
+
+  /// Says it is online, and wrote within [helmetStaleAfter]. A missing
+  /// `online` or `lastSeen` is not live: there is no telling.
+  final bool live;
+  final String? errorMessage;
+
+  /// The status line under a circle tile whose reading is [present].
+  (String, Color) statusFor(bool present) => switch (phase) {
+        _HelmetPhase.connecting => ('CONNECTING…', NovaColors.secondaryText),
+        _HelmetPhase.error => ('ERROR', NovaColors.red),
+        _HelmetPhase.missing => ('NO HELMET', NovaColors.secondaryText),
+        _HelmetPhase.reporting when !present =>
+          ('NO READING', NovaColors.secondaryText),
+        _HelmetPhase.reporting when live => ('LIVE', NovaColors.green),
+        _HelmetPhase.reporting => ('STALE', NovaColors.amber),
+      };
+
+  /// The alcohol tile's status line carries the helmet's own threshold
+  /// verdict, while it is live. No verdict sent is plain LIVE, not "clear".
+  (String, Color) alcoholStatus() {
+    final t = telemetry;
+    final present = t?.alcoholRelativeIndex != null;
+    if (live && present && t!.alcoholAlert == true) {
+      return ('ALERT', NovaColors.red);
+    }
+    return statusFor(present);
+  }
+
+  /// The location tile's status line is the fix itself, while it is live.
+  (String, Color) gpsStatus() {
+    final fix = telemetry?.hasUsableFix;
+    if (fix == null || !live) return statusFor(fix != null);
+    return fix ? ('FIX', NovaColors.green) : ('NO FIX', NovaColors.amber);
+  }
+}
+
+/// Why the helmet stream failed, with a way back that does not need the
+/// app restarted.
+class _TelemetryErrorBanner extends StatelessWidget {
+  const _TelemetryErrorBanner({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+      decoration: BoxDecoration(
+        color: NovaColors.red.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: NovaColors.red.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(color: NovaColors.primaryText, fontSize: 12),
+            ),
+          ),
+          TextButton(onPressed: onRetry, child: const Text('Retry')),
+        ],
+      ),
+    );
+  }
+}
+
+/// Small rounded status badge shown on the profile card.
 class _StatusPill extends StatelessWidget {
   final String label;
   final Color color;
@@ -469,7 +626,7 @@ class _InfoCard extends StatelessWidget {
   }
 }
 
-/// Impact / % Clean / GPS card with an icon circle and status dot.
+/// Impact / Alcohol / GPS card with an icon circle and status dot.
 class _CircleStatCard extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
@@ -523,6 +680,7 @@ class _CircleStatCard extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 color: NovaColors.secondaryText,
                 fontSize: 10,

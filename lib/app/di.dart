@@ -12,6 +12,8 @@ import '../features/auth/data/firebase_auth_repository.dart';
 import '../features/auth/domain/repositories/auth_repository.dart';
 import '../features/rider/data/firestore_rider_alert_repository.dart';
 import '../features/rider/data/firestore_rider_profile_repository.dart';
+import '../features/rider/data/rtdb_helmet_telemetry_repository.dart';
+import '../features/rider/domain/repositories/helmet_telemetry_repository.dart';
 import '../features/rider/domain/repositories/rider_alert_repository.dart';
 import '../features/rider/domain/repositories/rider_profile_repository.dart';
 
@@ -37,4 +39,12 @@ final riderProfileRepositoryProvider = Provider<RiderProfileRepository>((ref) {
 /// reason: a test overrides it rather than constructing Firestore.
 final riderAlertRepositoryProvider = Provider<RiderAlertRepository>((ref) {
   return FirestoreRiderAlertRepository();
+});
+
+/// The helmet's telemetry, from Realtime Database `deviceStatus/{id}`.
+/// Here for the same reason: the rider home screen reads it, and a test
+/// overrides it.
+final helmetTelemetryRepositoryProvider =
+    Provider<HelmetTelemetryRepository>((ref) {
+  return RtdbHelmetTelemetryRepository();
 });

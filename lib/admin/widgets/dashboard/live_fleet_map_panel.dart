@@ -23,8 +23,16 @@ class LiveFleetMapPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final plotted = riders
-        .where((r) => telemetry.any((t) => t.riderId == r.id))
+    // Same rule as the map's dots: a rider's helmet or an unassigned one,
+    // and only with a position.
+    final riderIds = {for (final r in riders) r.id};
+    final plotted = telemetry
+        .where((t) =>
+            t.lat != null &&
+            t.lng != null &&
+            (t.riderId == null
+                ? t.deviceId != null
+                : riderIds.contains(t.riderId)))
         .length;
 
     return DashPanel(

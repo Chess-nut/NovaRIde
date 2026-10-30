@@ -155,6 +155,21 @@ class FleetController extends ChangeNotifier {
     return null;
   }
 
+  /// Helmets reporting with no rider assigned. Shown as their own rows,
+  /// never hidden.
+  List<HelmetTelemetry> get unassignedTelemetry =>
+      [for (final t in _telemetry) if (t.riderId == null) t];
+
+  /// An unassigned helmet by device id. Selection holds either a rider id or
+  /// one of these, so the table and map can drill into a helmet with no
+  /// rider.
+  HelmetTelemetry? unassignedFor(String deviceId) {
+    for (final t in _telemetry) {
+      if (t.riderId == null && t.deviceId == deviceId) return t;
+    }
+    return null;
+  }
+
   Rider? riderFor(String riderId) {
     for (final r in _riders) {
       if (r.id == riderId) return r;
@@ -247,12 +262,16 @@ class FleetController extends ChangeNotifier {
   /// one, dropping the oldest once the cap is reached so a long session
   /// cannot grow the trail unbounded.
   void _recordTrailPoint(HelmetTelemetry telemetry) {
-    final trail = _trails.putIfAbsent(telemetry.riderId, () => <TrailPoint>[]);
+    final (riderId, lat, lng) = (telemetry.riderId, telemetry.lat, telemetry.lng);
+    // Trails are per rider; an unassigned helmet or one with no position
+    // has nothing to draw.
+    if (riderId == null || lat == null || lng == null) return;
+    final trail = _trails.putIfAbsent(riderId, () => <TrailPoint>[]);
     if (trail.isNotEmpty) {
       final last = trail.last;
-      if (last.lat == telemetry.lat && last.lng == telemetry.lng) return;
+      if (last.lat == lat && last.lng == lng) return;
     }
-    trail.add(TrailPoint(telemetry.lat, telemetry.lng));
+    trail.add(TrailPoint(lat, lng));
     if (trail.length > _maxTrailPoints) {
       trail.removeRange(0, trail.length - _maxTrailPoints);
     }

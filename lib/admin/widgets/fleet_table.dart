@@ -14,6 +14,9 @@ class FleetTable extends StatelessWidget {
   final List<Rider> riders;
   final List<HelmetTelemetry> telemetry;
 
+  /// Helmets reporting with no rider assigned, listed after the riders.
+  final List<HelmetTelemetry> unassigned;
+
   /// Shared with the map through the controller — clicking a row and clicking
   /// a dot are the same action.
   final String? selectedRiderId;
@@ -23,6 +26,7 @@ class FleetTable extends StatelessWidget {
     super.key,
     required this.riders,
     required this.telemetry,
+    this.unassigned = const [],
     this.selectedRiderId,
     this.onSelect,
   });
@@ -45,6 +49,7 @@ class FleetTable extends StatelessWidget {
         _buildHeader(),
         const Divider(height: 1, color: NovaColors.cardBorder),
         ...riders.map(_buildRow),
+        ...unassigned.map(_buildUnassignedRow),
       ],
     );
   }
@@ -83,8 +88,6 @@ class FleetTable extends StatelessWidget {
     final t = _telemetryFor(rider.id);
     final isEmergency = rider.status == RiderStatus.emergency;
     final selected = rider.id == selectedRiderId;
-    final alcohol = t?.alcoholDetected;
-    final lowBattery = (t?.batteryPct ?? 100) < 20;
 
     // Selection outranks the emergency tint so the operator never loses track
     // of which row they drilled into.
@@ -129,37 +132,7 @@ class FleetTable extends StatelessWidget {
             flex: _columns[1].flex,
             child: _cell(rider.helmetId, color: NovaColors.secondaryText),
           ),
-          Expanded(
-            flex: _columns[2].flex,
-            child: _cell('${(t?.speedKmh ?? 0).toStringAsFixed(1)} km/h'),
-          ),
-          Expanded(
-            flex: _columns[3].flex,
-            child: _cell(
-              t?.alcoholLabel ?? 'Not measured',
-              color: switch (alcohol) {
-                true => NovaColors.amber,
-                false => NovaColors.primaryText,
-                null => NovaColors.secondaryText,
-              },
-              bold: alcohol == true,
-            ),
-          ),
-          Expanded(
-            flex: _columns[4].flex,
-            child: _cell(
-              '${t?.batteryPct ?? 0}%',
-              color: lowBattery ? NovaColors.amber : NovaColors.primaryText,
-            ),
-          ),
-          Expanded(
-            flex: _columns[5].flex,
-            child: Icon(
-              (t?.gpsFix ?? false) ? Icons.gps_fixed : Icons.gps_off,
-              size: 15,
-              color: (t?.gpsFix ?? false) ? NovaColors.green : NovaColors.secondaryText,
-            ),
-          ),
+          ..._readingCells(t),
           Expanded(
             flex: _columns[6].flex,
             child: Align(
@@ -177,6 +150,125 @@ class FleetTable extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: () => onSelect!(rider.id),
+        borderRadius: BorderRadius.circular(8),
+        child: row,
+      ),
+    );
+  }
+
+  /// Speed, alcohol, battery and GPS. A reading the helmet did not send is a
+  /// dash in grey — never 0 in the normal colour.
+  List<Widget> _readingCells(HelmetTelemetry? t) {
+    final alcohol = t?.alcoholDetected;
+    final battery = t?.batteryPct;
+    final gpsFix = t?.gpsFix ?? false;
+    return [
+      Expanded(
+        flex: _columns[2].flex,
+        child: _cell(
+          t?.speedLabel ?? TelemetryReadout.missing,
+          color: t?.speedKmh == null
+              ? NovaColors.secondaryText
+              : NovaColors.primaryText,
+        ),
+      ),
+      Expanded(
+        flex: _columns[3].flex,
+        child: _cell(
+          t?.alcoholLabel ?? 'Not measured',
+          color: switch (alcohol) {
+            true => NovaColors.amber,
+            false => NovaColors.primaryText,
+            null => NovaColors.secondaryText,
+          },
+          bold: alcohol == true,
+        ),
+      ),
+      Expanded(
+        flex: _columns[4].flex,
+        child: _cell(
+          t?.batteryLabel ?? TelemetryReadout.missing,
+          color: battery == null
+              ? NovaColors.secondaryText
+              : (t!.batteryLow ? NovaColors.amber : NovaColors.primaryText),
+        ),
+      ),
+      Expanded(
+        flex: _columns[5].flex,
+        child: Icon(
+          gpsFix ? Icons.gps_fixed : Icons.gps_off,
+          size: 15,
+          color: gpsFix ? NovaColors.green : NovaColors.secondaryText,
+        ),
+      ),
+    ];
+  }
+
+  /// A helmet reporting with nobody assigned: its readings, its device id,
+  /// and "Unassigned" where a rider's name and status would be.
+  Widget _buildUnassignedRow(HelmetTelemetry t) {
+    final deviceId = t.deviceId ?? '';
+    final selected = deviceId.isNotEmpty && deviceId == selectedRiderId;
+    final row = Container(
+      margin: const EdgeInsets.only(bottom: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: selected
+            ? NovaColors.cyan.withValues(alpha: 0.10)
+            : Colors.transparent,
+        border: selected
+            ? Border.all(color: NovaColors.cyan, width: 1.5)
+            : const Border(
+                bottom: BorderSide(color: NovaColors.cardBorder, width: 0.5),
+              ),
+        borderRadius: selected ? BorderRadius.circular(8) : null,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: _columns[0].flex,
+            child: _cell(
+              'Unassigned device',
+              color: NovaColors.secondaryText,
+            ),
+          ),
+          Expanded(
+            flex: _columns[1].flex,
+            child: _cell(deviceId, color: NovaColors.secondaryText),
+          ),
+          ..._readingCells(t),
+          Expanded(
+            flex: _columns[6].flex,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: NovaColors.cardBorder),
+                ),
+                child: const Text(
+                  'NO RIDER',
+                  style: TextStyle(
+                    color: NovaColors.secondaryText,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (onSelect == null || deviceId.isEmpty) return row;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onSelect!(deviceId),
         borderRadius: BorderRadius.circular(8),
         child: row,
       ),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:novaride/admin/data/admin_auth.dart';
@@ -97,9 +98,18 @@ class FleetBootstrap {
           'Super Admin signs in.');
     }
 
-    debugPrint('FleetBootstrap: Cloud Firestore (${options.projectId}).');
+    debugPrint('FleetBootstrap: Cloud Firestore (${options.projectId}), '
+        'helmet telemetry also from Realtime Database.');
     return ConsoleBackend(
-      createRepository: FirestoreFleetRepository.new,
+      // The URL is explicit: firebase.json has no databaseURL, and the
+      // default instance would be the us-central1 host, which returns
+      // nothing for this asia-southeast1 database.
+      createRepository: () => FirestoreFleetRepository(
+        database: FirebaseDatabase.instanceFor(
+          app: Firebase.app(),
+          databaseURL: FirestoreFleetRepository.helmetDatabaseUrl,
+        ),
+      ),
       auth: FirebaseAdminAuth(),
       projectId: options.projectId,
     );

@@ -175,14 +175,16 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
     List<Rider> roster, {
     bool scrollable = true,
   }) {
+    final unassigned = _filteredUnassigned(fleet);
     final table = FleetTable(
       riders: roster,
       telemetry: fleet.telemetry,
+      unassigned: unassigned,
       selectedRiderId: fleet.selectedRiderId,
       onSelect: fleet.selectRider,
     );
 
-    final Widget body = roster.isEmpty
+    final Widget body = roster.isEmpty && unassigned.isEmpty
         ? const Padding(
             padding: EdgeInsets.symmetric(vertical: 28),
             child: Center(
@@ -287,9 +289,24 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
     }).toList();
   }
 
+  /// Unassigned helmets match the search on their device id. They have no
+  /// rider status, so a status filter leaves them out.
+  List<HelmetTelemetry> _filteredUnassigned(FleetController fleet) {
+    if (_statusFilter.isNotEmpty) return const [];
+    return fleet.unassignedTelemetry.where((t) {
+      if (_query.isEmpty) return true;
+      return (t.deviceId ?? '').toLowerCase().contains(_query);
+    }).toList();
+  }
+
   // ----------------------------------------------------------- detail card
 
   Widget _buildDetailCard(FleetController fleet, Rider? rider) {
+    final selectedId = fleet.selectedRiderId;
+    final device = rider == null && selectedId != null
+        ? fleet.unassignedFor(selectedId)
+        : null;
+    if (device != null) return _buildUnassignedCard(device);
     if (rider == null) {
       return _Card(
         title: 'Rider detail',
@@ -329,9 +346,6 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
     final telemetry = fleet.telemetryFor(rider.id);
     final riderAlerts =
         fleet.alerts.where((a) => a.riderId == rider.id).take(4).toList();
-    final district = telemetry == null
-        ? null
-        : FleetController.nearestDistrict(telemetry.lat, telemetry.lng);
 
     return _Card(
       title: 'Rider detail',
@@ -365,52 +379,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
               style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
             )
           else ...[
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _Metric(
-                  label: 'SPEED',
-                  value: '${telemetry.speedKmh.toStringAsFixed(1)} km/h',
-                  icon: Icons.speed,
-                  color: NovaColors.cyan,
-                ),
-                _Metric(
-                  label: 'BATTERY',
-                  value: '${telemetry.batteryPct}%',
-                  icon: Icons.battery_std,
-                  color: telemetry.batteryPct < 20
-                      ? NovaColors.amber
-                      : NovaColors.green,
-                ),
-                _Metric(
-                  label: 'ALCOHOL',
-                  value: telemetry.alcoholLabel,
-                  icon: Icons.local_bar,
-                  color: switch (telemetry.alcoholDetected) {
-                    true => NovaColors.amber,
-                    false => NovaColors.green,
-                    null => NovaColors.secondaryText,
-                  },
-                ),
-                _Metric(
-                  label: 'GPS',
-                  value: telemetry.gpsFix ? 'Locked' : 'No fix',
-                  icon: telemetry.gpsFix ? Icons.gps_fixed : Icons.gps_off,
-                  color: telemetry.gpsFix
-                      ? NovaColors.green
-                      : NovaColors.secondaryText,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _kv('Nearest district', district?.name ?? '—'),
-            _kv(
-              'Coordinates',
-              '${telemetry.lat.toStringAsFixed(5)}, '
-                  '${telemetry.lng.toStringAsFixed(5)}',
-            ),
-            _kv('Last update', AlertFeedTile.relativeTime(telemetry.lastUpdate)),
+            ..._telemetryDetail(telemetry),
             _kv('Trail points', '${fleet.trailFor(rider.id).length}'),
             const SizedBox(height: 12),
             _buildLocateButton(fleet, rider),
@@ -433,6 +402,102 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
             )
           else
             for (final alert in riderAlerts) AlertFeedTile(alert: alert),
+        ],
+      ),
+    );
+  }
+
+  /// The readings block shared by a rider's card and an unassigned helmet's.
+  /// A reading the helmet did not send is a dash in grey, never 0.
+  List<Widget> _telemetryDetail(HelmetTelemetry telemetry) {
+    final (lat, lng) = (telemetry.lat, telemetry.lng);
+    final district = lat == null || lng == null
+        ? null
+        : FleetController.nearestDistrict(lat, lng);
+    final lastUpdate = telemetry.lastUpdate;
+    return [
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          _Metric(
+            label: 'SPEED',
+            value: telemetry.speedLabel,
+            icon: Icons.speed,
+            color: telemetry.speedKmh == null
+                ? NovaColors.secondaryText
+                : NovaColors.cyan,
+          ),
+          _Metric(
+            label: 'BATTERY',
+            value: telemetry.batteryLabel,
+            icon: Icons.battery_std,
+            color: telemetry.batteryPct == null
+                ? NovaColors.secondaryText
+                : (telemetry.batteryLow ? NovaColors.amber : NovaColors.green),
+          ),
+          _Metric(
+            label: 'ALCOHOL',
+            value: telemetry.alcoholLabel,
+            icon: Icons.local_bar,
+            color: switch (telemetry.alcoholDetected) {
+              true => NovaColors.amber,
+              false => NovaColors.green,
+              null => NovaColors.secondaryText,
+            },
+          ),
+          _Metric(
+            label: 'GPS',
+            value: telemetry.gpsFix ? 'Locked' : 'No fix',
+            icon: telemetry.gpsFix ? Icons.gps_fixed : Icons.gps_off,
+            color: telemetry.gpsFix
+                ? NovaColors.green
+                : NovaColors.secondaryText,
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      // Raw ADC count, uncalibrated: labelled as such and compared to
+      // nothing. The verdict above is the helmet's own.
+      if (telemetry.alcoholRawIndex != null)
+        _kv('MQ-3 raw index', telemetry.alcoholRawLabel),
+      if (telemetry.accelMagnitudeG != null)
+        _kv('Acceleration', telemetry.accelLabel),
+      _kv('Nearest district', district?.name ?? '—'),
+      _kv('Coordinates', telemetry.coordinatesLabel),
+      _kv(
+        'Last update',
+        lastUpdate == null
+            ? 'No reading'
+            : AlertFeedTile.relativeTime(lastUpdate),
+      ),
+    ];
+  }
+
+  /// Detail for a helmet that reports but is on nobody's roster entry.
+  Widget _buildUnassignedCard(HelmetTelemetry telemetry) {
+    return _Card(
+      title: 'Unassigned device',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            telemetry.deviceId ?? 'Unknown device',
+            style: const TextStyle(
+              color: NovaColors.primaryText,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 3),
+          const Text(
+            'Transmitting with no rider assigned — no rider, alerts or trail '
+            'are attached to it.',
+            style: TextStyle(color: NovaColors.secondaryText, fontSize: 11.5),
+          ),
+          const SizedBox(height: 14),
+          ..._telemetryDetail(telemetry),
         ],
       ),
     );

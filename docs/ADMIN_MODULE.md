@@ -69,8 +69,9 @@ admin console was not touched and keeps this file's architecture.)
 **Decision: `ChangeNotifier` + `InheritedNotifier`, with zero third-party
 packages.**
 
-Apart from `firebase_core`, `cloud_firestore` and `firebase_auth` (the data
-tier and its identity), the mobile app's `google_maps_flutter`, and the
+Apart from `firebase_core`, `cloud_firestore`, `firebase_database` (helmet
+telemetry from Realtime Database) and `firebase_auth` (the data tier and its
+identity), the mobile app's `google_maps_flutter`, and the
 mobile-only `flutter_riverpod`, `go_router` and `logger` (which no file
 under `lib/admin/` imports),
 `pubspec.yaml` has no non-Flutter dependencies. That is deliberate:

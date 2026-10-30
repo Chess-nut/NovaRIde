@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart'
+    show DatabaseEvent, FirebaseDatabase;
 import 'package:flutter/foundation.dart';
 import 'package:novaride/admin/data/fleet_geography.dart';
 import 'package:novaride/admin/data/fleet_repository.dart';
@@ -14,6 +16,13 @@ import 'package:novaride/shared/models/models.dart';
 /// entries are stitched onto their alert so the pages see one [AlertEvent]
 /// with its audit trail, exactly as the simulation hands it over.
 ///
+/// Telemetry has a second source. Helmets on the Realtime Database firmware
+/// write `deviceStatus/{id}` (sensors) and `devices/{id}/latest` (the last
+/// GPS fix) in camelCase instead of Firestore `devices/`. When a
+/// [FirebaseDatabase] is passed, both nodes are listened to and merged into
+/// the same [HelmetTelemetry] list; for a helmet present in both stores the
+/// fresher reading wins. Riders and alerts stay on Firestore.
+///
 /// Parsing is deliberately forgiving. A field that is missing or the wrong
 /// type falls back to a sensible default; a document that cannot be read at
 /// all is skipped with a `debugPrint`. One malformed write from a helmet must
@@ -26,10 +35,31 @@ import 'package:novaride/shared/models/models.dart';
 /// helmet writes its own fields into the same documents, and the console
 /// never erases one it does not know about.
 class FirestoreFleetRepository implements FleetRepository {
-  FirestoreFleetRepository({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance {
+  /// [database] is the Realtime Database helmet telemetry source; null
+  /// leaves telemetry on Firestore alone. It must be built with an explicit
+  /// `databaseURL` ([helmetDatabaseUrl]) — see there.
+  FirestoreFleetRepository({
+    FirebaseFirestore? firestore,
+    FirebaseDatabase? database,
+  })  : _db = firestore ?? FirebaseFirestore.instance,
+        _rtdb = database {
     _start();
   }
+
+  /// The project's Realtime Database. Passed explicitly because the
+  /// console's config (`assets/config/firebase.json`) has no `databaseURL`,
+  /// and without one the SDK resolves to the us-central1 host and silently
+  /// returns nothing. This database is in asia-southeast1. Same value as the
+  /// rider app's `helmetDatabaseUrl`; the console does not import from
+  /// `lib/features/`.
+  static const helmetDatabaseUrl =
+      'https://novaride-7a68c-default-rtdb.asia-southeast1.firebasedatabase.app';
+
+  /// How long a `devices/{id}/latest` fix still counts as current. The
+  /// firmware uploads its location every 5 min
+  /// (`PERIODIC_LOCATION_UPLOAD_INTERVAL_MS`) and a cellular upload may take
+  /// 90 s to land, so 7 min. Older than that, speed is not shown.
+  static const rtdbFixStaleAfter = Duration(minutes: 7);
 
   /// Newest alerts kept on the board. An uncapped listener bills every
   /// document on every change and slows down over a long session.
@@ -47,6 +77,7 @@ class FirestoreFleetRepository implements FleetRepository {
   static const _maxBackoff = Duration(seconds: 30);
 
   final FirebaseFirestore _db;
+  final FirebaseDatabase? _rtdb;
 
   final _ridersCtrl = StreamController<List<Rider>>.broadcast();
   final _telemetryCtrl = StreamController<List<HelmetTelemetry>>.broadcast();
@@ -63,6 +94,11 @@ class FirestoreFleetRepository implements FleetRepository {
   QuerySnapshot<Map<String, dynamic>>? _deviceDocs;
   List<AlertEvent> _bareAlerts = const [];
   Map<String, List<AlertAction>> _historyByAlert = const {};
+
+  /// Realtime Database nodes by device id: `deviceStatus/{id}` and
+  /// `devices/{id}/latest`.
+  Map<String, Map<String, dynamic>> _rtdbStatus = const {};
+  Map<String, Map<String, dynamic>> _rtdbLatest = const {};
 
   bool _ridersLoaded = false;
   bool _telemetryLoaded = false;
@@ -120,6 +156,10 @@ class FirestoreFleetRepository implements FleetRepository {
     _listenDevices();
     _listenAlerts();
     _listenHistory();
+    if (_rtdb != null) {
+      _listenRtdbStatus();
+      _listenRtdbPositions();
+    }
   }
 
   void _listenRiders() {
@@ -206,6 +246,49 @@ class FirestoreFleetRepository implements FleetRepository {
     );
   }
 
+  /// RTDB listeners do not drive the connection pill: it reports Firestore,
+  /// which riders and alerts depend on. A refusal here is logged and retried.
+  void _listenRtdbStatus() {
+    _subscribe(
+      'deviceStatus',
+      _rtdb!.ref('deviceStatus').onValue,
+      (DatabaseEvent event) {
+        _rtdbStatus = _rtdbChildren(event.snapshot.value);
+        _publishTelemetry();
+      },
+      affectsConnection: false,
+    );
+  }
+
+  void _listenRtdbPositions() {
+    _subscribe(
+      'rtdbDevices',
+      _rtdb!.ref('devices').onValue,
+      (DatabaseEvent event) {
+        _rtdbLatest = _rtdbChildren(event.snapshot.value, child: 'latest');
+        _publishTelemetry();
+      },
+      affectsConnection: false,
+    );
+  }
+
+  /// `{id: {...}}` from an RTDB node, optionally one level down at [child].
+  /// Anything that is not a map is skipped, not read as empty telemetry.
+  static Map<String, Map<String, dynamic>> _rtdbChildren(
+    Object? value, {
+    String? child,
+  }) {
+    final out = <String, Map<String, dynamic>>{};
+    if (value is! Map) return out;
+    value.forEach((key, node) {
+      final data = child == null ? node : (node is Map ? node[child] : null);
+      if (data is Map) {
+        out['$key'] = {for (final e in data.entries) '${e.key}': e.value};
+      }
+    });
+    return out;
+  }
+
   /// Wires one listener with restart-on-error. Each listener backs off on
   /// its own, so a missing index on `history` cannot take `riders` down.
   void _subscribe<T>(
@@ -249,6 +332,10 @@ class FirestoreFleetRepository implements FleetRepository {
           _listenAlerts();
         case 'history':
           _listenHistory();
+        case 'deviceStatus':
+          _listenRtdbStatus();
+        case 'rtdbDevices':
+          _listenRtdbPositions();
       }
     });
   }
@@ -278,6 +365,12 @@ class FirestoreFleetRepository implements FleetRepository {
   }
 
   static String _describe(Object error) {
+    if (error is FirebaseException && error.plugin == 'firebase_database') {
+      return error.code == 'permission-denied'
+          ? 'Realtime Database denied access — RTDB helmet telemetry will '
+              'not show.'
+          : 'Realtime Database error: ${error.code}';
+    }
     if (error is FirebaseException) {
       return switch (error.code) {
         'permission-denied' =>
@@ -293,14 +386,42 @@ class FirestoreFleetRepository implements FleetRepository {
 
   // ----------------------------------------------------------------- joins
 
+  /// Firestore `devices/` first, then the RTDB helmets laid over it by
+  /// device id. A helmet in both stores keeps whichever reading is newer.
   void _publishTelemetry() {
     final docs = _deviceDocs;
     if (docs == null) return;
-    _telemetry = [
-      for (final doc in docs.docs)
-        ?_parse(doc, _telemetryFrom),
-    ];
+    final byDevice = <String, HelmetTelemetry>{};
+    final assignedByDevice = <String, String?>{};
+    for (final doc in docs.docs) {
+      final key = doc.id.toUpperCase();
+      assignedByDevice[key] = _str(
+          doc.data(), ['assigned_rider_id', 'assignedRiderId']);
+      final t = _parse(doc, _telemetryFrom);
+      if (t != null) byDevice[key] = t;
+    }
+    for (final id in {..._rtdbStatus.keys, ..._rtdbLatest.keys}) {
+      final key = id.toUpperCase();
+      final HelmetTelemetry t;
+      try {
+        t = _rtdbTelemetryFrom(id, assignedByDevice[key]);
+      } catch (error) {
+        debugPrint('FirestoreFleetRepository: skipped RTDB $id: $error');
+        continue;
+      }
+      final existing = byDevice[key];
+      if (existing == null || !_isOlder(t, existing)) byDevice[key] = t;
+    }
+    _telemetry = byDevice.values.toList();
     if (_telemetryLoaded) _telemetryCtrl.add(_telemetry);
+  }
+
+  /// A reading with no timestamp is older than one with any.
+  static bool _isOlder(HelmetTelemetry a, HelmetTelemetry b) {
+    final at = a.lastUpdate;
+    final bt = b.lastUpdate;
+    if (bt == null) return false;
+    return at == null || at.isBefore(bt);
   }
 
   void _publishAlerts() {
@@ -372,32 +493,100 @@ class FirestoreFleetRepository implements FleetRepository {
     );
   }
 
-  /// A device is only telemetry once it maps to a rider: by an explicit
-  /// assignment on the document, else by the rider whose helmet serial is
-  /// the document id. Unassigned helmets are not an error, just invisible.
+  /// The rider a device belongs to: by an explicit assignment on its
+  /// `devices/` document, else by the rider whose helmet serial is the id.
+  Rider? _riderForDevice(String deviceId, String? assigned) => assigned != null
+      ? (_riderById(assigned) ?? _riderByHelmet(deviceId))
+      : _riderByHelmet(deviceId);
+
+  /// A device with no rider is still telemetry, with a null `riderId`: a
+  /// helmet transmitting with nobody assigned is a state the operator sees.
+  ///
+  /// No reading has a default. A missing speed, battery or timestamp is
+  /// null and shows as a dash — never 0, never "now".
   HelmetTelemetry? _telemetryFrom(String deviceId, Map<String, dynamic> d) {
     final assigned = _str(d, ['assigned_rider_id', 'assignedRiderId']);
-    final rider = assigned != null
-        ? (_riderById(assigned) ?? _riderByHelmet(deviceId))
-        : _riderByHelmet(deviceId);
-    if (rider == null) return null;
-
-    final lat = _num(d, ['latitude', 'lat']) ?? 0;
-    final lng = _num(d, ['longitude', 'lng', 'lon']) ?? 0;
+    final lat = _num(d, ['latitude', 'lat']);
+    final lng = _num(d, ['longitude', 'lng', 'lon']);
     return HelmetTelemetry(
-      riderId: rider.id,
-      speedKmh: _num(d, ['speed_kmh', 'speedKmh', 'speed']) ?? 0,
+      riderId: _riderForDevice(deviceId, assigned)?.id,
+      deviceId: deviceId,
+      speedKmh: _num(d, ['speed_kmh', 'speedKmh', 'speed']),
       // No default: absent is "not measured", not "not detected".
       alcoholDetected: _bool(d, ['alcohol_detected', 'alcoholDetected']),
-      batteryPct: (_num(d, ['battery_pct', 'batteryPct', 'battery']) ?? 0)
-          .round()
+      batteryPct: _num(d, ['battery_pct', 'batteryPct', 'battery'])
+          ?.round()
           .clamp(0, 100),
-      gpsFix: _bool(d, ['gps_fix', 'gpsFix']) ?? (lat != 0 || lng != 0),
+      gpsFix: _bool(d, ['gps_fix', 'gpsFix']) ?? _isFix(lat, lng),
       lat: lat,
       lng: lng,
       lastUpdate:
-          _date(d, ['last_update', 'lastUpdate', 'last_seen', 'lastSeen']) ??
-              DateTime.now(),
+          _date(d, ['last_update', 'lastUpdate', 'last_seen', 'lastSeen']),
+    );
+  }
+
+  /// A position, and not the 0,0 a GPS module reports before its first fix.
+  static bool _isFix(double? lat, double? lng) =>
+      lat != null && lng != null && (lat != 0 || lng != 0);
+
+  /// One helmet from Realtime Database: sensors from `deviceStatus/{id}`,
+  /// position and speed from `devices/{id}/latest`. The firmware's camelCase
+  /// mapped onto the console's model:
+  ///
+  /// - `accelMagnitudeG` → [HelmetTelemetry.accelMagnitudeG], in g. Not
+  ///   `vector_magnitude`, which is m/s²; null if the accelerometer is down,
+  ///   because the firmware then sends 0.000.
+  /// - `alcoholRelativeIndex` → [HelmetTelemetry.alcoholRawIndex], the raw
+  ///   ADC count. `alcoholAlert`, the firmware's own threshold verdict, →
+  ///   [HelmetTelemetry.alcoholDetected].
+  /// - `speedKmph`, `lat`, `lng` from the fix; speed only while the fix is
+  ///   current (`gpsAgeMs` ≤ 30 s when taken, uploaded within
+  ///   [rtdbFixStaleAfter]).
+  /// - `lastSeen` → last update. No battery: this firmware sends none.
+  HelmetTelemetry _rtdbTelemetryFrom(String deviceId, String? assigned) =>
+      telemetryFromRtdb(
+        deviceId: deviceId,
+        riderId: _riderForDevice(deviceId, assigned)?.id,
+        status: _rtdbStatus[deviceId] ?? const {},
+        fix: _rtdbLatest[deviceId] ?? const {},
+        now: DateTime.now(),
+      );
+
+  /// The mapping behind [_rtdbTelemetryFrom], without the join.
+  @visibleForTesting
+  static HelmetTelemetry telemetryFromRtdb({
+    required String deviceId,
+    required String? riderId,
+    required Map<String, dynamic> status,
+    required Map<String, dynamic> fix,
+    required DateTime now,
+  }) {
+    // Sensors come from the status node; a helmet that has only ever
+    // written a fix still shows the readings that fix carried.
+    final sensors = status.isNotEmpty ? status : fix;
+
+    final lat = _num(fix, ['lat']);
+    final lng = _num(fix, ['lng']);
+    final gpsAgeMs = _num(fix, ['gpsAgeMs']);
+    final fixAt = _date(fix, ['serverTime']);
+    final current = _isFix(lat, lng) &&
+        (gpsAgeMs == null || gpsAgeMs <= 30000) &&
+        (fixAt == null || now.difference(fixAt) <= rtdbFixStaleAfter);
+
+    return HelmetTelemetry(
+      riderId: riderId,
+      deviceId: deviceId,
+      speedKmh: current ? _num(fix, ['speedKmph']) : null,
+      alcoholDetected: _bool(sensors, ['alcoholAlert']),
+      alcoholRawIndex: _num(sensors, ['alcoholRelativeIndex']),
+      accelMagnitudeG: _bool(sensors, ['accelerometerReady']) == false
+          ? null
+          : _num(sensors, ['accelMagnitudeG']),
+      batteryPct: null,
+      gpsFix: current,
+      lat: lat,
+      lng: lng,
+      lastUpdate: _date(status, ['lastSeen']) ?? fixAt,
     );
   }
 

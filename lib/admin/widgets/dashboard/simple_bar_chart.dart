@@ -161,10 +161,7 @@ class SimpleBarChartPainter extends CustomPainter {
   /// Widest y-axis label plus a little breathing room.
   double _measureAxis(int maxValue) {
     final painter = TextPainter(
-      text: TextSpan(
-        text: '$maxValue',
-        style: const TextStyle(fontSize: 9),
-      ),
+      text: TextSpan(text: '$maxValue', style: const TextStyle(fontSize: 9)),
       textDirection: TextDirection.ltr,
     )..layout();
     return painter.width + 6;

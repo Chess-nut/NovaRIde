@@ -23,8 +23,9 @@ void main() {
   silenceAppLogger();
 
   group('the palette travels with the theme', () {
-    testWidgets('AppTheme.from installs its palette as an extension',
-        (tester) async {
+    testWidgets('AppTheme.from installs its palette as an extension', (
+      tester,
+    ) async {
       late AppColors resolved;
       await tester.pumpWidget(
         MaterialApp(
@@ -42,8 +43,9 @@ void main() {
 
     // This is the whole point of the structure: a second palette changes
     // what widgets render without any widget knowing it happened.
-    testWidgets('a different palette reaches widgets with no widget change',
-        (tester) async {
+    testWidgets('a different palette reaches widgets with no widget change', (
+      tester,
+    ) async {
       const other = AppColors(
         surface: Color(0xFFFFFFFF),
         surfaceRaised: Color(0xFFF4F6F9),
@@ -85,8 +87,9 @@ void main() {
       expect(seen, isNot(AppColors.dark.action));
     });
 
-    testWidgets('context.colors falls back rather than throwing',
-        (tester) async {
+    testWidgets('context.colors falls back rather than throwing', (
+      tester,
+    ) async {
       late AppColors resolved;
       await tester.pumpWidget(
         MaterialApp(
@@ -165,7 +168,8 @@ void main() {
       expect(
         offenders,
         isEmpty,
-        reason: 'Define the colour in core/theme/app_colors.dart and read '
+        reason:
+            'Define the colour in core/theme/app_colors.dart and read '
             'it with context.colors instead.',
       );
     });
@@ -177,17 +181,18 @@ void main() {
           final source = file.readAsStringSync();
           // The lookbehind keeps AppColors.* — the token class itself —
           // from matching, including where it appears in a doc comment.
-          final hits = RegExp(r'(?<![A-Za-z])Colors\.(?!transparent)\w+')
-              .allMatches(source)
-              .map((m) => m.group(0)!)
-              .toSet();
-          if (hits.isNotEmpty) offenders.add('${file.path}: ${hits.join(', ')}');
+          final hits = RegExp(
+            r'(?<![A-Za-z])Colors\.(?!transparent)\w+',
+          ).allMatches(source).map((m) => m.group(0)!).toSet();
+          if (hits.isNotEmpty)
+            offenders.add('${file.path}: ${hits.join(', ')}');
         }
       }
       expect(
         offenders,
         isEmpty,
-        reason: 'Material colour constants do not change with the theme. '
+        reason:
+            'Material colour constants do not change with the theme. '
             'Use a token from context.colors.',
       );
     });
@@ -204,7 +209,8 @@ void main() {
       expect(
         offenders,
         isEmpty,
-        reason: 'lib/shared/theme.dart is the admin console\'s palette. '
+        reason:
+            'lib/shared/theme.dart is the admin console\'s palette. '
             'The mobile app uses core/theme/app_colors.dart.',
       );
     });

@@ -28,21 +28,26 @@ void main() {
       final fleet = _controller();
 
       final counts = fleet.statusCounts;
-      expect(counts.keys.toSet(), RiderStatus.values.toSet(),
-          reason: 'donut legend needs a stable bucket order, even at zero');
+      expect(
+        counts.keys.toSet(),
+        RiderStatus.values.toSet(),
+        reason: 'donut legend needs a stable bucket order, even at zero',
+      );
       expect(_sum(counts.values), fleet.riders.length);
     });
 
     test('stays consistent after adding, deactivating and resolving', () {
       final fleet = _controller();
 
-      fleet.addRider(Rider(
-        id: 'R-011',
-        fullName: 'Bagong Sakay',
-        helmetId: 'NR-H1-011',
-        phone: '+63 917 123 4567',
-        status: RiderStatus.riding,
-      ));
+      fleet.addRider(
+        Rider(
+          id: 'R-011',
+          fullName: 'Bagong Sakay',
+          helmetId: 'NR-H1-011',
+          phone: '+63 917 123 4567',
+          status: RiderStatus.riding,
+        ),
+      );
       expect(_sum(fleet.statusCounts.values), fleet.riders.length);
 
       fleet.setRiderActive('R-011', false);
@@ -51,8 +56,11 @@ void main() {
 
       // Resolving a crash moves R-003 emergency → idle; the total is unchanged.
       fleet.acknowledgeAlert('A-101', actor: 'Ops');
-      fleet.dispatchAlert('A-101',
-          actor: 'Ops', responder: ResponderType.medical);
+      fleet.dispatchAlert(
+        'A-101',
+        actor: 'Ops',
+        responder: ResponderType.medical,
+      );
       fleet.resolveAlert('A-101', actor: 'Ops');
       expect(_sum(fleet.statusCounts.values), fleet.riders.length);
     });
@@ -77,12 +85,10 @@ void main() {
 
     test('nearestDistrict picks the closest centre', () {
       // Exactly on the Makati centroid.
-      final makati =
-          FleetController.nearestDistrict(14.5547, 121.0244);
+      final makati = FleetController.nearestDistrict(14.5547, 121.0244);
       expect(makati.name, 'Makati');
 
-      final fairview =
-          FleetController.nearestDistrict(14.7297, 121.0644);
+      final fairview = FleetController.nearestDistrict(14.7297, 121.0644);
       expect(fairview.name, 'Fairview');
     });
   });
@@ -100,27 +106,33 @@ void main() {
       expect(criticalBefore, greaterThan(0));
 
       fleet.acknowledgeAlert('A-101', actor: 'Ops');
-      fleet.dispatchAlert('A-101',
-          actor: 'Ops', responder: ResponderType.medical);
+      fleet.dispatchAlert(
+        'A-101',
+        actor: 'Ops',
+        responder: ResponderType.medical,
+      );
       fleet.resolveAlert('A-101', actor: 'Ops');
 
-      expect(fleet.alertsByPriority[AlertPriority.critical], criticalBefore - 1);
+      expect(
+        fleet.alertsByPriority[AlertPriority.critical],
+        criticalBefore - 1,
+      );
       expect(fleet.alertsByPriority[AlertPriority.none], noneBefore + 1);
       expect(_sum(fleet.alertsByPriority.values), fleet.alerts.length);
     });
 
     test('priorityOf ranks life-critical types first', () {
       AlertEvent alert(AlertType type, AlertStatus status) => AlertEvent(
-            id: 'X',
-            riderId: 'R-001',
-            riderName: 'Test',
-            type: type,
-            lat: 14.6,
-            lng: 121.0,
-            address: 'somewhere',
-            timestamp: DateTime.now(),
-            status: status,
-          );
+        id: 'X',
+        riderId: 'R-001',
+        riderName: 'Test',
+        type: type,
+        lat: 14.6,
+        lng: 121.0,
+        address: 'somewhere',
+        timestamp: DateTime.now(),
+        status: status,
+      );
 
       expect(
         FleetController.priorityOf(alert(AlertType.crash, AlertStatus.open)),
@@ -132,13 +144,15 @@ void main() {
       );
       expect(
         FleetController.priorityOf(
-            alert(AlertType.lowBattery, AlertStatus.open)),
+          alert(AlertType.lowBattery, AlertStatus.open),
+        ),
         AlertPriority.low,
       );
       // Resolved stops competing for attention whatever the type.
       expect(
         FleetController.priorityOf(
-            alert(AlertType.crash, AlertStatus.resolved)),
+          alert(AlertType.crash, AlertStatus.resolved),
+        ),
         AlertPriority.none,
       );
     });
@@ -172,8 +186,7 @@ void main() {
       // Newest-first ordering survives the trimming.
       for (var i = 1; i < fleet.alerts.length; i++) {
         expect(
-          fleet.alerts[i].timestamp
-              .isAfter(fleet.alerts[i - 1].timestamp),
+          fleet.alerts[i].timestamp.isAfter(fleet.alerts[i - 1].timestamp),
           isFalse,
           reason: 'alerts are not newest-first at index $i',
         );
@@ -232,13 +245,15 @@ void main() {
     test('a new rider is immediately plottable', () {
       final fleet = _controller();
 
-      fleet.addRider(Rider(
-        id: 'R-011',
-        fullName: 'Bagong Sakay',
-        helmetId: 'NR-H1-011',
-        phone: '+63 917 123 4567',
-        status: RiderStatus.riding,
-      ));
+      fleet.addRider(
+        Rider(
+          id: 'R-011',
+          fullName: 'Bagong Sakay',
+          helmetId: 'NR-H1-011',
+          phone: '+63 917 123 4567',
+          status: RiderStatus.riding,
+        ),
+      );
 
       expect(fleet.telemetryFor('R-011'), isNotNull);
       expect(fleet.trailFor('R-011'), hasLength(1));
@@ -250,24 +265,28 @@ void main() {
       final fleet = _controller();
 
       expect(
-        () => fleet.addRider(Rider(
-          id: 'R-001',
-          fullName: 'Duplicate Id',
-          helmetId: 'NR-H1-099',
-          phone: '+63 917 123 4567',
-          status: RiderStatus.idle,
-        )),
+        () => fleet.addRider(
+          Rider(
+            id: 'R-001',
+            fullName: 'Duplicate Id',
+            helmetId: 'NR-H1-099',
+            phone: '+63 917 123 4567',
+            status: RiderStatus.idle,
+          ),
+        ),
         throwsA(isA<StateError>()),
       );
 
       expect(
-        () => fleet.addRider(Rider(
-          id: 'R-099',
-          fullName: 'Duplicate Helmet',
-          helmetId: 'NR-H1-001',
-          phone: '+63 917 123 4567',
-          status: RiderStatus.idle,
-        )),
+        () => fleet.addRider(
+          Rider(
+            id: 'R-099',
+            fullName: 'Duplicate Helmet',
+            helmetId: 'NR-H1-001',
+            phone: '+63 917 123 4567',
+            status: RiderStatus.idle,
+          ),
+        ),
         throwsA(isA<StateError>()),
       );
     });
@@ -289,16 +308,23 @@ void main() {
     test('deactivation preserves the rider and their alert history', () {
       final fleet = _controller();
 
-      final alertsBefore =
-          fleet.alerts.where((a) => a.riderId == 'R-003').length;
+      final alertsBefore = fleet.alerts
+          .where((a) => a.riderId == 'R-003')
+          .length;
 
       fleet.setRiderActive('R-003', false);
 
-      expect(fleet.riderFor('R-003'), isNotNull, reason: 'must not hard-delete');
+      expect(
+        fleet.riderFor('R-003'),
+        isNotNull,
+        reason: 'must not hard-delete',
+      );
       expect(fleet.riderFor('R-003')!.isActive, isFalse);
       expect(fleet.riderFor('R-003')!.status, RiderStatus.offline);
-      expect(fleet.alerts.where((a) => a.riderId == 'R-003').length,
-          alertsBefore);
+      expect(
+        fleet.alerts.where((a) => a.riderId == 'R-003').length,
+        alertsBefore,
+      );
 
       fleet.setRiderActive('R-003', true);
       expect(fleet.riderFor('R-003')!.isActive, isTrue);
@@ -308,16 +334,20 @@ void main() {
     test('an unknown rider id throws rather than silently doing nothing', () {
       final fleet = _controller();
 
-      expect(() => fleet.setRiderActive('R-999', false),
-          throwsA(isA<StateError>()));
       expect(
-        () => fleet.updateRider(Rider(
-          id: 'R-999',
-          fullName: 'Ghost',
-          helmetId: 'NR-H1-999',
-          phone: '+63 917 123 4567',
-          status: RiderStatus.idle,
-        )),
+        () => fleet.setRiderActive('R-999', false),
+        throwsA(isA<StateError>()),
+      );
+      expect(
+        () => fleet.updateRider(
+          Rider(
+            id: 'R-999',
+            fullName: 'Ghost',
+            helmetId: 'NR-H1-999',
+            phone: '+63 917 123 4567',
+            status: RiderStatus.idle,
+          ),
+        ),
         throwsA(isA<StateError>()),
       );
     });

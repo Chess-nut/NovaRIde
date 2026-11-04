@@ -54,7 +54,7 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
         _notice = profile.emailVerified
             ? null
             : 'Not confirmed yet. Open the link in the email, then try '
-                'again.';
+                  'again.';
       });
     } on Failure catch (failure) {
       if (!mounted) return;
@@ -110,9 +110,9 @@ class _VerifyEmailPageState extends ConsumerState<VerifyEmailPage> {
           Text(
             sentTo == null
                 ? 'We have sent you a confirmation link. Open it, then come '
-                    'back here.'
+                      'back here.'
                 : 'We have sent a confirmation link to $sentTo. Open it, '
-                    'then come back here.',
+                      'then come back here.',
             textAlign: TextAlign.center,
             style: AppTypography.body.copyWith(color: colors.textSecondary),
           ),

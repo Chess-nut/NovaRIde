@@ -31,91 +31,91 @@ class LegalDocumentPage extends StatelessWidget {
   const LegalDocumentPage({super.key, required this.document});
 
   String get _title => switch (document) {
-        LegalDocument.terms => 'Terms of Service',
-        LegalDocument.privacy => 'Privacy Policy',
-      };
+    LegalDocument.terms => 'Terms of Service',
+    LegalDocument.privacy => 'Privacy Policy',
+  };
 
   List<_LegalSection> get _sections => switch (document) {
-        LegalDocument.terms => const [
-            _LegalSection(
-              '1. Acceptance of Terms',
-              'By creating a NovaRide account, you agree to these Terms of Service and to '
-                  'the Privacy Policy. If you do not agree, please do not use the app.',
-            ),
-            _LegalSection(
-              '2. What NovaRide Does',
-              'NovaRide pairs a smart helmet IoT device with this mobile application to '
-                  'detect crashes, monitor breath alcohol level, and share your live GPS '
-                  'location with your emergency contacts and your ride-hailing operator '
-                  'when an emergency SOS is triggered.',
-            ),
-            _LegalSection(
-              '3. Account Responsibilities',
-              'You are responsible for keeping your login credentials secure and for '
-                  'keeping your emergency contact list accurate and up to date. Emergency '
-                  'response depends on this information being correct.',
-            ),
-            _LegalSection(
-              '4. Emergency Alerts Are Not Guaranteed',
-              'NovaRide is designed to reduce emergency response time, but it cannot '
-                  'guarantee that an alert will be delivered, that GPS location will be '
-                  'accurate, or that help will arrive. NovaRide is not a substitute for '
-                  'calling local emergency services directly when you are able to.',
-            ),
-            _LegalSection(
-              '5. Acceptable Use',
-              'You agree not to misuse the app, tamper with the helmet hardware in a way '
-                  'that disables crash detection, or submit false emergency contact '
-                  'information.',
-            ),
-            _LegalSection(
-              '6. Changes to These Terms',
-              'We may update these Terms as the app evolves. Continued use of NovaRide '
-                  'after an update means you accept the revised Terms.',
-            ),
-          ],
-        LegalDocument.privacy => const [
-            _LegalSection(
-              '1. Information We Collect',
-              'To provide crash detection and emergency response, NovaRide collects: your '
-                  'name, email, and phone number; your emergency contacts\' names and phone '
-                  'numbers; real-time GPS location; speed; helmet impact (accelerometer) '
-                  'readings; breath alcohol sensor readings; and helmet battery and '
-                  'connection status.',
-            ),
-            _LegalSection(
-              '2. How We Use Your Information',
-              'This data is used to detect possible crashes, run the SOS abort countdown, '
-                  'notify your emergency contacts and ride-hailing operator during an '
-                  'emergency, show your ride history and safety score, and improve crash '
-                  'detection accuracy.',
-            ),
-            _LegalSection(
-              '3. Who We Share It With',
-              'Your live location and emergency status are shared with your registered '
-                  'emergency contacts and your ride-hailing operator only when an SOS is '
-                  'triggered, or when you choose to share your location manually. We do not '
-                  'sell your personal data.',
-            ),
-            _LegalSection(
-              '4. Where Your Data Is Stored',
-              'Ride and sensor data is stored on our cloud database (Firebase) so that it '
-                  'remains available even if your phone is offline or your app is closed.',
-            ),
-            _LegalSection(
-              '5. Your Choices',
-              'You can edit or remove emergency contacts, change notification preferences, '
-                  'and adjust GPS tracking intervals at any time from your Profile settings. '
-                  'You may request deletion of your account and associated data by '
-                  'contacting support.',
-            ),
-            _LegalSection(
-              '6. Data Retention',
-              'We retain ride history and alert logs for as long as your account is active, '
-                  'so you can review past trips and safety reports.',
-            ),
-          ],
-      };
+    LegalDocument.terms => const [
+      _LegalSection(
+        '1. Acceptance of Terms',
+        'By creating a NovaRide account, you agree to these Terms of Service and to '
+            'the Privacy Policy. If you do not agree, please do not use the app.',
+      ),
+      _LegalSection(
+        '2. What NovaRide Does',
+        'NovaRide pairs a smart helmet IoT device with this mobile application to '
+            'detect crashes, monitor breath alcohol level, and share your live GPS '
+            'location with your emergency contacts and your ride-hailing operator '
+            'when an emergency SOS is triggered.',
+      ),
+      _LegalSection(
+        '3. Account Responsibilities',
+        'You are responsible for keeping your login credentials secure and for '
+            'keeping your emergency contact list accurate and up to date. Emergency '
+            'response depends on this information being correct.',
+      ),
+      _LegalSection(
+        '4. Emergency Alerts Are Not Guaranteed',
+        'NovaRide is designed to reduce emergency response time, but it cannot '
+            'guarantee that an alert will be delivered, that GPS location will be '
+            'accurate, or that help will arrive. NovaRide is not a substitute for '
+            'calling local emergency services directly when you are able to.',
+      ),
+      _LegalSection(
+        '5. Acceptable Use',
+        'You agree not to misuse the app, tamper with the helmet hardware in a way '
+            'that disables crash detection, or submit false emergency contact '
+            'information.',
+      ),
+      _LegalSection(
+        '6. Changes to These Terms',
+        'We may update these Terms as the app evolves. Continued use of NovaRide '
+            'after an update means you accept the revised Terms.',
+      ),
+    ],
+    LegalDocument.privacy => const [
+      _LegalSection(
+        '1. Information We Collect',
+        'To provide crash detection and emergency response, NovaRide collects: your '
+            'name, email, and phone number; your emergency contacts\' names and phone '
+            'numbers; real-time GPS location; speed; helmet impact (accelerometer) '
+            'readings; breath alcohol sensor readings; and helmet battery and '
+            'connection status.',
+      ),
+      _LegalSection(
+        '2. How We Use Your Information',
+        'This data is used to detect possible crashes, run the SOS abort countdown, '
+            'notify your emergency contacts and ride-hailing operator during an '
+            'emergency, show your ride history and safety score, and improve crash '
+            'detection accuracy.',
+      ),
+      _LegalSection(
+        '3. Who We Share It With',
+        'Your live location and emergency status are shared with your registered '
+            'emergency contacts and your ride-hailing operator only when an SOS is '
+            'triggered, or when you choose to share your location manually. We do not '
+            'sell your personal data.',
+      ),
+      _LegalSection(
+        '4. Where Your Data Is Stored',
+        'Ride and sensor data is stored on our cloud database (Firebase) so that it '
+            'remains available even if your phone is offline or your app is closed.',
+      ),
+      _LegalSection(
+        '5. Your Choices',
+        'You can edit or remove emergency contacts, change notification preferences, '
+            'and adjust GPS tracking intervals at any time from your Profile settings. '
+            'You may request deletion of your account and associated data by '
+            'contacting support.',
+      ),
+      _LegalSection(
+        '6. Data Retention',
+        'We retain ride history and alert logs for as long as your account is active, '
+            'so you can review past trips and safety reports.',
+      ),
+    ],
+  };
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -144,8 +144,10 @@ class LegalDocumentPage extends StatelessWidget {
               // Long-form reading gets more line height than the scale's
               // default: this is the one screen in the app somebody
               // actually reads top to bottom.
-              style: AppTypography.body
-                  .copyWith(color: colors.textSecondary, height: 1.6),
+              style: AppTypography.body.copyWith(
+                color: colors.textSecondary,
+                height: 1.6,
+              ),
             ),
             const SizedBox(height: AppSpacing.xxl),
           ],
@@ -183,8 +185,9 @@ class _PlaceholderNotice extends StatelessWidget {
             child: Text(
               'Placeholder copy for development. Replace with reviewed '
               'legal text before release.',
-              style:
-                  AppTypography.caption.copyWith(color: colors.textSecondary),
+              style: AppTypography.caption.copyWith(
+                color: colors.textSecondary,
+              ),
             ),
           ),
         ],

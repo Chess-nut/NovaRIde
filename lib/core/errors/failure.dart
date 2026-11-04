@@ -57,7 +57,12 @@ final class NotFoundFailure extends Failure {
 /// uniqueness check. [field] names the form field to attach it to, when one
 /// applies.
 final class ValidationFailure extends Failure {
-  const ValidationFailure(super.message, {this.field, super.cause, super.stackTrace});
+  const ValidationFailure(
+    super.message, {
+    this.field,
+    super.cause,
+    super.stackTrace,
+  });
 
   final String? field;
 }

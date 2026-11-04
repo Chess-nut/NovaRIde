@@ -10,9 +10,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/data/firebase_auth_repository.dart';
 import '../features/auth/domain/repositories/auth_repository.dart';
+import '../features/guardian/data/firestore_guardian_link_repository.dart';
+import '../features/guardian/domain/repositories/guardian_link_repository.dart';
+import '../features/rider/data/firestore_emergency_contact_repository.dart';
 import '../features/rider/data/firestore_rider_alert_repository.dart';
 import '../features/rider/data/firestore_rider_profile_repository.dart';
 import '../features/rider/data/rtdb_helmet_telemetry_repository.dart';
+import '../features/rider/domain/repositories/emergency_contact_repository.dart';
 import '../features/rider/domain/repositories/helmet_telemetry_repository.dart';
 import '../features/rider/domain/repositories/rider_alert_repository.dart';
 import '../features/rider/domain/repositories/rider_profile_repository.dart';
@@ -47,4 +51,15 @@ final riderAlertRepositoryProvider = Provider<RiderAlertRepository>((ref) {
 final helmetTelemetryRepositoryProvider =
     Provider<HelmetTelemetryRepository>((ref) {
   return RtdbHelmetTelemetryRepository();
+});
+
+/// Rider–guardian invites and links.
+final guardianLinkRepositoryProvider = Provider<GuardianLinkRepository>((ref) {
+  return FirestoreGuardianLinkRepository();
+});
+
+/// A rider's phone-only emergency contacts.
+final emergencyContactRepositoryProvider =
+    Provider<EmergencyContactRepository>((ref) {
+  return FirestoreEmergencyContactRepository();
 });

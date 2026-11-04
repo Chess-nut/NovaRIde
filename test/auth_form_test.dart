@@ -17,7 +17,7 @@ import 'package:novaride/features/auth/domain/entities/user_profile.dart';
 import 'package:novaride/features/auth/domain/entities/user_role.dart';
 import 'package:novaride/features/auth/presentation/pages/login_page.dart';
 import 'package:novaride/features/auth/presentation/pages/verify_email_page.dart';
-import 'package:novaride/features/guardian/presentation/pages/family_dashboard_page.dart';
+import 'package:novaride/features/guardian/presentation/pages/guardian_home_page.dart';
 import 'package:novaride/features/rider/presentation/pages/home_page.dart';
 
 import 'support/fake_auth_repository.dart';
@@ -164,11 +164,11 @@ void main() {
     });
 
     // The role comes from the account, not from the toggle on the form.
-    testWidgets('a guardian lands on the family dashboard', (tester) async {
+    testWidgets('a guardian lands on the guardian home', (tester) async {
       await openLogin(tester);
       await submit(tester, 'guardianone', 'guard123');
 
-      expect(find.byType(FamilyDashboardPage), findsOneWidget);
+      expect(find.byType(GuardianHomePage), findsOneWidget);
     });
 
     testWidgets('a wrong password stays put and says so', (tester) async {

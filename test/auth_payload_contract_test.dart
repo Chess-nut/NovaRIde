@@ -161,18 +161,31 @@ void main() {
     // The brief's last line, checked on the payload rather than trusted.
     test('no payload carries anything credential-shaped', () {
       const forbidden = {
-        'password', 'passwordHash', 'passwordSalt', 'idToken', 'accessToken',
-        'refreshToken', 'token', 'secret', 'apiKey', 'privateKey',
+        'password',
+        'passwordHash',
+        'passwordSalt',
+        'idToken',
+        'accessToken',
+        'refreshToken',
+        'token',
+        'secret',
+        'apiKey',
+        'privateKey',
       };
       final all = [
         user,
         FirebaseAuthRepository.buildProfileDocument(
-            serverTimestamp: serverTimestampMarker),
+          serverTimestamp: serverTimestampMarker,
+        ),
         FirebaseAuthRepository.buildUsernameClaim(
-            uid: riderUid, email: riderEmail,
-            serverTimestamp: serverTimestampMarker),
+          uid: riderUid,
+          email: riderEmail,
+          serverTimestamp: serverTimestampMarker,
+        ),
         FirebaseAuthRepository.buildLoginTouch(
-            serverTimestamp: serverTimestampMarker, fcmToken: 'a-push-token'),
+          serverTimestamp: serverTimestampMarker,
+          fcmToken: 'a-push-token',
+        ),
       ];
       for (final payload in all) {
         expect(payload.keys.toSet().intersection(forbidden), isEmpty);

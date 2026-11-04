@@ -239,9 +239,13 @@ service cloud.firestore {
     // document: `get`, and the one query the app makes, where authUid is
     // its own uid. The rule is provable from that filter, so no other
     // rider's entry can come back.
+    //
+    // A guardian linked to that rider (guardianLinks/, below) may read it
+    // the same way: the one query, where authUid is the rider they follow.
     match /riders/{riderId} {
       allow read: if isOperator()
-                  || (signedIn() && resource.data.authUid == request.auth.uid);
+                  || (signedIn() && resource.data.authUid == request.auth.uid)
+                  || isGuardianOfUid(resource.data.authUid);
       allow create: if hasRole(['superAdmin']) && authUidNamesARider();
       allow update: if (hasRole(['superAdmin']) && authUidNamesARider())
                     || ((hasRole(['dispatcher']) || isHelmetService())
@@ -294,8 +298,11 @@ service cloud.firestore {
     // what the Reports tab trusts.
     // A linked rider reads their own alerts: `get`, and queries filtered on
     // riderId == their roster id. That is what the countdown listens to.
+    // Their guardians read the same alerts the same way.
     match /alerts/{alertId} {
-      allow read: if isOperator() || isLinkedRiderOf(resource.data.riderId);
+      allow read: if isOperator()
+                  || isLinkedRiderOf(resource.data.riderId)
+                  || isGuardianOfRoster(resource.data.riderId);
       allow create: if (isHelmetService() && isHelmetAlert())
                     || (hasRole(['superAdmin'])
                         && request.resource.data.get('timestamp', null) is timestamp);
@@ -401,8 +408,10 @@ service cloud.firestore {
     // `username` are immutable too: the email is checked against the ID
     // token, and the username is claimed under usernames/ where nothing
     // can be transferred.
+    // A guardian may also read the account of the rider they follow — the
+    // name to show and the number to call.
     match /users/{uid} {
-      allow get: if isOwner(uid);
+      allow get: if isOwner(uid) || isGuardianOfUid(uid);
       allow list: if false;
 
       allow create: if isOwner(uid)
@@ -461,6 +470,130 @@ service cloud.firestore {
                     && keeps('createdAt')
                     && isServerTime(request.resource.data.get('updatedAt', ''));
       allow delete: if false;
+    }
+
+    // ------------------------------------------------ guardians and contacts
+
+    // True when users/{uid} exists and has this role. Unlike profileRoleIs
+    // above, a missing account is a no.
+    function userRoleIs(uid, expected) {
+      return exists(/databases/$(database)/documents/users/$(uid))
+          && get(/databases/$(database)/documents/users/$(uid))
+               .data.get('role', '') == expected;
+    }
+
+    function myGuardianLinkPath() {
+      return /databases/$(database)/documents/guardianLinks/$(request.auth.uid);
+    }
+
+    // The signed-in account follows the rider whose account is riderUid.
+    // One document read, cached for the rest of the request.
+    function isGuardianOfUid(riderUid) {
+      return signedIn()
+          && riderUid is string
+          && riderUid != ''
+          && exists(myGuardianLinkPath())
+          && get(myGuardianLinkPath()).data.get('riderUid', '') == riderUid;
+    }
+
+    // Same, by roster id: the rider behind riders/{riderId}.authUid.
+    function isGuardianOfRoster(riderId) {
+      return signedIn()
+          && exists(myGuardianLinkPath())
+          && get(/databases/$(database)/documents/riders/$(riderId))
+               .data.get('authUid', '') == get(myGuardianLinkPath()).data.get('riderUid', '');
+    }
+
+    function isInviteCode(code) {
+      return code is string && code.matches('^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$');
+    }
+
+    function invitePath(code) {
+      return /databases/$(database)/documents/guardianInvites/$(code);
+    }
+
+    // Invite codes. A rider makes one; a guardian types it within 15
+    // minutes to link (guardianLinks/, below). The document id is the code.
+    //
+    // `get` is open to any signed-in account: a guardian has to look a
+    // code up before linking, and only knows the code, not whose it is.
+    // What that costs: someone who guesses a live code (one of ~887
+    // million, alive for 15 minutes) learns the rider's name. Listing is
+    // only ever the rider's own codes. Never updated: a code that collides
+    // with an existing one is refused and the app picks another.
+    match /guardianInvites/{code} {
+      allow get: if signedIn();
+      allow list: if signedIn() && resource.data.riderUid == request.auth.uid;
+      allow create: if signedIn()
+                    && isInviteCode(code)
+                    && userRoleIs(request.auth.uid, 'rider')
+                    && request.resource.data.keys().hasOnly(['riderUid', 'riderName', 'createdAt'])
+                    && request.resource.data.get('riderUid', '') == request.auth.uid
+                    && request.resource.data.get('riderName', 0) is string
+                    && request.resource.data.riderName.size() > 0
+                    && request.resource.data.riderName.size() <= 80
+                    && isServerTime(request.resource.data.get('createdAt', ''));
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.riderUid == request.auth.uid;
+    }
+
+    // Links. The document id is the guardian's uid, so a guardian follows
+    // at most one rider: a second link would be an update, and links are
+    // never updated. A rider may have any number of guardians.
+    //
+    // Created by the guardian, naming a live code: it exists, it belongs
+    // to the rider named here, and it is under 15 minutes old by the
+    // server's clock. guardianName must be the guardian's own fullName, so
+    // the rider sees who actually linked. Either side may delete the link;
+    // nobody else can read it.
+    match /guardianLinks/{guardianUid} {
+      allow get: if isOwner(guardianUid)
+                 || (signedIn() && resource.data.riderUid == request.auth.uid);
+      allow list: if signedIn() && resource.data.riderUid == request.auth.uid;
+      allow create: if isOwner(guardianUid)
+                    && userRoleIs(guardianUid, 'guardian')
+                    && request.resource.data.keys().hasOnly(
+                         ['riderUid', 'inviteCode', 'guardianName', 'relationship', 'createdAt'])
+                    && isInviteCode(request.resource.data.get('inviteCode', ''))
+                    && exists(invitePath(request.resource.data.inviteCode))
+                    && get(invitePath(request.resource.data.inviteCode)).data.riderUid
+                         == request.resource.data.get('riderUid', '')
+                    && request.time < get(invitePath(request.resource.data.inviteCode)).data.createdAt
+                                        + duration.value(15, 'm')
+                    && request.resource.data.get('guardianName', 0)
+                         == get(/databases/$(database)/documents/users/$(guardianUid)).data.get('fullName', '')
+                    && request.resource.data.get('relationship', 0) is string
+                    && request.resource.data.relationship.size() > 0
+                    && request.resource.data.relationship.size() <= 30
+                    && isServerTime(request.resource.data.get('createdAt', ''));
+      allow update: if false;
+      allow delete: if isOwner(guardianUid)
+                    || (signedIn() && resource.data.riderUid == request.auth.uid);
+    }
+
+    // A rider's phone-only emergency contacts: people without the app.
+    // The rider owns them; operators may read them, to call these people
+    // during an incident. Nothing here texts anyone.
+    function isEmergencyContact() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['name', 'relationship', 'phone', 'createdAt', 'updatedAt'])
+          && d.get('name', 0) is string && d.name.size() > 0 && d.name.size() <= 80
+          && d.get('relationship', 0) is string && d.relationship.size() <= 40
+          && d.get('phone', 0) is string && d.phone.size() >= 7 && d.phone.size() <= 20;
+    }
+
+    match /riderProfiles/{uid}/emergencyContacts/{contactId} {
+      allow read: if isOwner(uid) || isOperator();
+      allow create: if isOwner(uid)
+                    && userRoleIs(uid, 'rider')
+                    && isEmergencyContact()
+                    && isServerTime(request.resource.data.get('createdAt', ''))
+                    && isServerTime(request.resource.data.get('updatedAt', ''));
+      allow update: if isOwner(uid)
+                    && isEmergencyContact()
+                    && keeps('createdAt')
+                    && isServerTime(request.resource.data.get('updatedAt', ''));
+      allow delete: if isOwner(uid);
     }
 
     // The username index. Document id is the lowercased username.

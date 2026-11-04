@@ -41,7 +41,8 @@ class DashboardPage extends StatelessWidget {
       builder: (context, _) {
         return LayoutBuilder(
           builder: (context, constraints) {
-            final stacked = constraints.maxWidth < _stackBreakpoint ||
+            final stacked =
+                constraints.maxWidth < _stackBreakpoint ||
                 constraints.maxHeight < _minGridHeight;
             return Padding(
               padding: const EdgeInsets.all(_outerPadding),
@@ -126,10 +127,10 @@ class DashboardPage extends StatelessWidget {
       AlertsByAreaBarPanel(countsByArea: fleet.alertsByArea);
 
   Widget _mapPanel(FleetController fleet) => LiveFleetMapPanel(
-        riders: fleet.riders,
-        telemetry: fleet.telemetry,
-        lastSync: fleet.lastSync,
-      );
+    riders: fleet.riders,
+    telemetry: fleet.telemetry,
+    lastSync: fleet.lastSync,
+  );
 
   Widget _feedPanel(FleetController fleet) =>
       RecentAlertsFeedPanel(alerts: fleet.alerts);

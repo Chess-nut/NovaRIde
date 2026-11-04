@@ -24,8 +24,8 @@ import '../domain/repositories/auth_repository.dart';
 /// wrapper over the SDK.
 class FirebaseAuthRepository implements AuthRepository {
   FirebaseAuthRepository({fb.FirebaseAuth? auth, FirebaseFirestore? firestore})
-      : _auth = auth ?? fb.FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+    : _auth = auth ?? fb.FirebaseAuth.instance,
+      _firestore = firestore ?? FirebaseFirestore.instance;
 
   final fb.FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -105,8 +105,11 @@ class FirebaseAuthRepository implements AuthRepository {
       // Signed in with no usable profile is a state nothing downstream can
       // handle: the router would have a uid and no role. End the session
       // rather than let the app run in it.
-      AppLogger.e('Session for ${user.uid} has no usable profile; signing out.',
-          error: error, stackTrace: stack);
+      AppLogger.e(
+        'Session for ${user.uid} has no usable profile; signing out.',
+        error: error,
+        stackTrace: stack,
+      );
       await signOut();
       return null;
     }
@@ -192,8 +195,10 @@ class FirebaseAuthRepository implements AuthRepository {
   Future<String?> _emailForUsername(String username) async {
     final key = username.trim().toLowerCase();
     if (key.isEmpty) return null;
-    final snapshot =
-        await _firestore.collection(FirestoreCollections.usernames).doc(key).get();
+    final snapshot = await _firestore
+        .collection(FirestoreCollections.usernames)
+        .doc(key)
+        .get();
     if (!snapshot.exists) return null;
     final email = snapshot.data()?['email'];
     return email is String && email.isNotEmpty ? email : null;
@@ -274,9 +279,7 @@ class FirebaseAuthRepository implements AuthRepository {
       );
       final user = credential.user;
       if (user == null) {
-        throw const AuthFailure(
-          'The account was not created. Try again.',
-        );
+        throw const AuthFailure('The account was not created. Try again.');
       }
 
       try {
@@ -304,8 +307,12 @@ class FirebaseAuthRepository implements AuthRepository {
         // on it yet. The person retries and gets a clean attempt rather
         // than "that email is already in use" on an account they cannot
         // reach.
-        AppLogger.e('Sign-up for ${user.uid} failed after the Auth account '
-            'was created; removing it.', error: error, stackTrace: stack);
+        AppLogger.e(
+          'Sign-up for ${user.uid} failed after the Auth account '
+          'was created; removing it.',
+          error: error,
+          stackTrace: stack,
+        );
         try {
           await user.delete();
         } catch (deleteError, deleteStack) {
@@ -396,8 +403,9 @@ class FirebaseAuthRepository implements AuthRepository {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      final ref =
-          _firestore.collection(FirestoreCollections.users).doc(user.uid);
+      final ref = _firestore
+          .collection(FirestoreCollections.users)
+          .doc(user.uid);
       await ref.update(edit);
 
       // Re-read rather than patch the cache: the document is the truth,
@@ -430,8 +438,11 @@ class FirebaseAuthRepository implements AuthRepository {
       _cachedUid = user.uid;
       return profile;
     } catch (error, stack) {
-      AppLogger.e('ensureProfile failed for ${user.uid}; signing out.',
-          error: error, stackTrace: stack);
+      AppLogger.e(
+        'ensureProfile failed for ${user.uid}; signing out.',
+        error: error,
+        stackTrace: stack,
+      );
       await signOut();
       rethrow;
     }
@@ -473,23 +484,34 @@ class FirebaseAuthRepository implements AuthRepository {
     String? phoneNumber,
     String? fcmToken,
   }) {
-    return _withRetry(() => _firestore.runTransaction((transaction) async {
-          final userRef = _firestore
-              .collection(FirestoreCollections.users)
-              .doc(user.uid);
-          final existing = await transaction.get(userRef);
+    return _withRetry(
+      () => _firestore.runTransaction((transaction) async {
+        final userRef = _firestore
+            .collection(FirestoreCollections.users)
+            .doc(user.uid);
+        final existing = await transaction.get(userRef);
 
-          if (existing.exists) {
-            return _touchExisting(transaction, userRef, existing, user,
-                fcmToken: fcmToken);
-          }
-          return _createAll(transaction, userRef, user,
-              username: username,
-              fullName: fullName,
-              role: role,
-              phoneNumber: phoneNumber,
-              fcmToken: fcmToken);
-        }));
+        if (existing.exists) {
+          return _touchExisting(
+            transaction,
+            userRef,
+            existing,
+            user,
+            fcmToken: fcmToken,
+          );
+        }
+        return _createAll(
+          transaction,
+          userRef,
+          user,
+          username: username,
+          fullName: fullName,
+          role: role,
+          phoneNumber: phoneNumber,
+          fcmToken: fcmToken,
+        );
+      }),
+    );
   }
 
   /// The already-provisioned path, which is almost every call.
@@ -577,8 +599,9 @@ class FirebaseAuthRepository implements AuthRepository {
       fcmToken: fcmToken,
       serverTimestamp: FieldValue.serverTimestamp(),
     );
-    final profileDoc =
-        buildProfileDocument(serverTimestamp: FieldValue.serverTimestamp());
+    final profileDoc = buildProfileDocument(
+      serverTimestamp: FieldValue.serverTimestamp(),
+    );
     final claimDoc = buildUsernameClaim(
       uid: user.uid,
       email: email,
@@ -587,8 +610,15 @@ class FirebaseAuthRepository implements AuthRepository {
 
     // Dumped before the writes, so the trace survives a refusal — a
     // rejected transaction is exactly when it is wanted.
-    await _traceCreate(user, email, profileCollection, usernameKey, userDoc,
-        profileDoc, claimDoc);
+    await _traceCreate(
+      user,
+      email,
+      profileCollection,
+      usernameKey,
+      userDoc,
+      profileDoc,
+      claimDoc,
+    );
 
     transaction.set(userRef, userDoc);
     transaction.set(
@@ -619,7 +649,6 @@ class FirebaseAuthRepository implements AuthRepository {
       email: user.email ?? profile.email,
     );
   }
-
 
   // ---------------------------------------------- the payloads, exactly
   //
@@ -669,10 +698,7 @@ class FirebaseAuthRepository implements AuthRepository {
   static Map<String, Object?> buildProfileDocument({
     required Object serverTimestamp,
   }) {
-    return {
-      'createdAt': serverTimestamp,
-      'updatedAt': serverTimestamp,
-    };
+    return {'createdAt': serverTimestamp, 'updatedAt': serverTimestamp};
   }
 
   /// `usernames/{usernameLower}`. Exactly three fields — the rules use
@@ -683,11 +709,7 @@ class FirebaseAuthRepository implements AuthRepository {
     required String email,
     required Object serverTimestamp,
   }) {
-    return {
-      'uid': uid,
-      'email': email,
-      'createdAt': serverTimestamp,
-    };
+    return {'uid': uid, 'email': email, 'createdAt': serverTimestamp};
   }
 
   /// The update on every later sign-in. Three keys and no others: `role`
@@ -704,7 +726,6 @@ class FirebaseAuthRepository implements AuthRepository {
     };
   }
 
-
   // ------------------------------------------------------------- tracing
 
   /// Whether to dump every payload before writing it.
@@ -712,8 +733,10 @@ class FirebaseAuthRepository implements AuthRepository {
   /// On in debug builds, off in release — the dump contains a uid and an
   /// email address and has no business in a shipped log. Force it either
   /// way with `--dart-define=NOVARIDE_AUTH_TRACE=true|false`.
-  static const bool traceWrites =
-      bool.fromEnvironment('NOVARIDE_AUTH_TRACE', defaultValue: kDebugMode);
+  static const bool traceWrites = bool.fromEnvironment(
+    'NOVARIDE_AUTH_TRACE',
+    defaultValue: kDebugMode,
+  );
 
   /// Prints exactly what is about to be written, before it is written.
   ///
@@ -757,8 +780,10 @@ class FirebaseAuthRepository implements AuthRepository {
       ..writeln('user.email             : ${user.email}')
       ..writeln('token email claim      : $tokenEmail')
       ..writeln('email written to docs  : $email')
-      ..writeln('emails match (lowered) : '
-          '${email.toLowerCase() == tokenEmail.toLowerCase()}')
+      ..writeln(
+        'emails match (lowered) : '
+        '${email.toLowerCase() == tokenEmail.toLowerCase()}',
+      )
       ..writeln('token claim keys       : $claimKeys')
       ..writeln('user.isAnonymous       : ${user.isAnonymous}')
       ..writeln('user.emailVerified     : ${user.emailVerified}')

@@ -72,16 +72,9 @@ void main() {
       await signedInAt(tester, '/rider');
 
       expect(find.byType(HomePage), findsOneWidget);
-      expect(find.text('Juan Dela Cruz'), findsOneWidget);
-      expect(find.text('@juandc'), findsOneWidget);
-    });
-
-    // First and last word, so "Juan Dela Cruz" is JC and not JD.
-    testWidgets('derives the avatar initials from the real name',
-        (tester) async {
-      await signedInAt(tester, '/rider');
-      expect(find.text('JC'), findsOneWidget);
-      expect(find.text('JD'), findsNothing);
+      // First name only: the full name and @username live on Profile.
+      expect(find.text('Hi, Juan'), findsOneWidget);
+      expect(find.text('Hi, Deor'), findsNothing);
     });
 
     testWidgets('invents no telemetry', (tester) async {
@@ -90,25 +83,23 @@ void main() {
       for (final text in fabricated) {
         expect(find.text(text), findsNothing, reason: 'still showing "$text"');
       }
-      // Eight tiles with nothing behind them: battery, hardware,
-      // signal, impact, alcohol, speed, distance, duration.
-      //
-      // Two finders, because the trip metrics are RichText (the unit is
-      // a second span in a smaller size) and find.text does not look
-      // inside one without being asked.
+      // Five readings with nothing behind them: alcohol, posture, impact,
+      // location and speed. Battery, hardware, signal, distance and
+      // duration are gone from the screen rather than dashed: nothing
+      // will ever fill them.
       expect(find.text(Unavailable.dash), findsNWidgets(5));
-      expect(
-        find.textContaining(Unavailable.dash, findRichText: true),
-        findsNWidgets(8),
-      );
     });
 
     testWidgets('says plainly that no helmet is paired', (tester) async {
       await signedInAt(tester, '/rider');
-      expect(find.text('No helmet'), findsOneWidget);
-      expect(find.text('No trip in progress'), findsOneWidget);
-      // The green LIVE dot over three em dashes was the contradiction.
-      expect(find.text('LIVE'), findsNothing);
+      // The status card, and each of the four sensors.
+      expect(find.text('No helmet'), findsNWidgets(5));
+      expect(
+        find.text('Speed shows only while the helmet is live.'),
+        findsOneWidget,
+      );
+      // A green "Live" over a row of em dashes was the contradiction.
+      expect(find.text('Live'), findsNothing);
     });
   });
 
@@ -129,15 +120,37 @@ void main() {
       expect(find.text('Rider #NV-08567'), findsNothing);
     });
 
-    testWidgets('shows no trip count, distance or safety score',
-        (tester) async {
+    // First and last word, so "Juan Dela Cruz" is JC and not JD. Moved
+    // here from the home screen, which no longer draws an avatar.
+    testWidgets('derives the avatar initials from the real name', (
+      tester,
+    ) async {
+      await openProfile(tester);
+      expect(find.text('JC'), findsOneWidget);
+      expect(find.text('JD'), findsNothing);
+    });
+
+    testWidgets('shows no trip count, distance or safety score', (
+      tester,
+    ) async {
       await openProfile(tester);
 
       expect(find.text('142'), findsNothing);
       expect(find.text('1,204'), findsNothing);
       expect(find.text('92'), findsNothing);
-      expect(find.text('TOTAL TRIPS'), findsOneWidget);
-      expect(find.text(Unavailable.dash), findsNWidgets(3));
+      // The three stat tiles are gone rather than dashed: nothing
+      // computes trips, distance or a score, so they could only ever be
+      // empty. Home dropped its never-filled tiles for the same reason.
+      expect(find.text('Total trips'), findsNothing);
+      expect(find.text(Unavailable.dash), findsNothing);
+    });
+
+    testWidgets('has no rows that go nowhere', (tester) async {
+      await openProfile(tester);
+      // "Help & Support" did nothing when tapped.
+      expect(find.text('Help & Support'), findsNothing);
+      expect(find.text('NovaRide v4.2.0'), findsNothing);
+      expect(find.text('Privacy policy'), findsOneWidget);
     });
 
     testWidgets('does not claim a helmet is connected', (tester) async {

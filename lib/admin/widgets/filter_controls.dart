@@ -53,8 +53,9 @@ class FilterChipButton extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
           decoration: BoxDecoration(
-            color:
-                selected ? color.withValues(alpha: 0.18) : NovaColors.background,
+            color: selected
+                ? color.withValues(alpha: 0.18)
+                : NovaColors.background,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: selected

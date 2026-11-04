@@ -168,8 +168,10 @@ class FakeAuthRepository implements AuthRepository {
     String? phoneNumber,
     String? address,
   }) async {
-    calls.add('updateProfile:${fullName ?? ''}|${phoneNumber ?? ''}|'
-        '${address ?? ''}');
+    calls.add(
+      'updateProfile:${fullName ?? ''}|${phoneNumber ?? ''}|'
+      '${address ?? ''}',
+    );
     if (failWith != null) _fail();
     final current = _current;
     if (current == null) throw const AuthFailure('You are not signed in.');

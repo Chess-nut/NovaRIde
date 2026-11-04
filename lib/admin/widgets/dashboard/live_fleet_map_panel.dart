@@ -27,12 +27,14 @@ class LiveFleetMapPanel extends StatelessWidget {
     // and only with a position.
     final riderIds = {for (final r in riders) r.id};
     final plotted = telemetry
-        .where((t) =>
-            t.lat != null &&
-            t.lng != null &&
-            (t.riderId == null
-                ? t.deviceId != null
-                : riderIds.contains(t.riderId)))
+        .where(
+          (t) =>
+              t.lat != null &&
+              t.lng != null &&
+              (t.riderId == null
+                  ? t.deviceId != null
+                  : riderIds.contains(t.riderId)),
+        )
         .length;
 
     return DashPanel(

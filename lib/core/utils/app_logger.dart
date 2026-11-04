@@ -27,20 +27,20 @@ abstract final class AppLogger {
   static Logger _logger = _build();
 
   static Logger _build() => Logger(
-        // printTime is off: the debug console already stamps lines, and in
-        // release only warnings and above survive, which are rare enough to
-        // read in order.
-        printer: PrettyPrinter(
-          methodCount: 0,
-          errorMethodCount: 8,
-          lineLength: 100,
-          colors: !kReleaseMode,
-          printEmojis: !kReleaseMode,
-        ),
-        // Debug and info are development affordances; warning and above are
-        // things someone should see wherever the app is running.
-        level: kReleaseMode ? Level.warning : Level.debug,
-      );
+    // printTime is off: the debug console already stamps lines, and in
+    // release only warnings and above survive, which are rare enough to
+    // read in order.
+    printer: PrettyPrinter(
+      methodCount: 0,
+      errorMethodCount: 8,
+      lineLength: 100,
+      colors: !kReleaseMode,
+      printEmojis: !kReleaseMode,
+    ),
+    // Debug and info are development affordances; warning and above are
+    // things someone should see wherever the app is running.
+    level: kReleaseMode ? Level.warning : Level.debug,
+  );
 
   /// Swaps the underlying logger. For tests that need to assert on output,
   /// and for a later phase that adds a remote sink.

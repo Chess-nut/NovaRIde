@@ -57,8 +57,14 @@ class NovaWordmark extends StatelessWidget {
           fontWeight: FontWeight.w700,
         ),
         children: [
-          TextSpan(text: 'Nova', style: TextStyle(color: colors.textPrimary)),
-          TextSpan(text: 'Ride', style: TextStyle(color: colors.action)),
+          TextSpan(
+            text: 'Nova',
+            style: TextStyle(color: colors.textPrimary),
+          ),
+          TextSpan(
+            text: 'Ride',
+            style: TextStyle(color: colors.action),
+          ),
         ],
       ),
     );

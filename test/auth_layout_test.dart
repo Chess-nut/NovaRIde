@@ -101,8 +101,9 @@ void main() {
 
   // The forms are the ones at risk: the keyboard takes more than half the
   // screen, and a form that cannot scroll under it traps the last field.
-  testWidgets('the sign-up form scrolls when the keyboard is up',
-      (tester) async {
+  testWidgets('the sign-up form scrolls when the keyboard is up', (
+    tester,
+  ) async {
     await pumpAt(tester, const SignupPage(), small, keyboardInset: 280);
 
     expect(tester.takeException(), isNull);

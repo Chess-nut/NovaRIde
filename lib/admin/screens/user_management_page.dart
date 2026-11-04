@@ -89,8 +89,9 @@ class _UserManagementPageState extends State<UserManagementPage> {
     final active = riders.where((r) => r.isActive).length;
     final riding = riders.where((r) => r.status == RiderStatus.riding).length;
     final offline = riders.where((r) => r.status == RiderStatus.offline).length;
-    final helmets =
-        riders.where((r) => r.isActive && r.helmetId.isNotEmpty).length;
+    final helmets = riders
+        .where((r) => r.isActive && r.helmetId.isNotEmpty)
+        .length;
 
     final cards = <Widget>[
       KpiCard(
@@ -241,10 +242,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
             controller: _searchController,
             onChanged: (value) =>
                 setState(() => _query = value.trim().toLowerCase()),
-            style: const TextStyle(
-              color: NovaColors.primaryText,
-              fontSize: 13,
-            ),
+            style: const TextStyle(color: NovaColors.primaryText, fontSize: 13),
             decoration: InputDecoration(
               isDense: true,
               hintText: 'Search name, helmet ID or phone',
@@ -259,8 +257,10 @@ class _UserManagementPageState extends State<UserManagementPage> {
               ),
               filled: true,
               fillColor: NovaColors.background,
-              contentPadding:
-                  const EdgeInsets.symmetric(vertical: 11, horizontal: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                vertical: 11,
+                horizontal: 12,
+              ),
               border: _border(NovaColors.cardBorder),
               enabledBorder: _border(NovaColors.cardBorder),
               focusedBorder: _border(NovaColors.cyan),
@@ -285,9 +285,9 @@ class _UserManagementPageState extends State<UserManagementPage> {
   }
 
   OutlineInputBorder _border(Color color) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: color),
-      );
+    borderRadius: BorderRadius.circular(10),
+    borderSide: BorderSide(color: color),
+  );
 
   // ------------------------------------------------------------ table header
 
@@ -544,8 +544,9 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
     matches.sort((a, b) {
       final comparison = switch (_sort) {
-        _RosterSort.name =>
-          a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
+        _RosterSort.name => a.fullName.toLowerCase().compareTo(
+          b.fullName.toLowerCase(),
+        ),
         _RosterSort.helmetId => a.helmetId.compareTo(b.helmetId),
         _RosterSort.registered => a.registeredAt.compareTo(b.registeredAt),
       };
@@ -557,10 +558,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
 
   // ---------------------------------------------------------------- actions
 
-  Future<void> _openRiderForm(
-    FleetController fleet, {
-    Rider? rider,
-  }) async {
+  Future<void> _openRiderForm(FleetController fleet, {Rider? rider}) async {
     final result = await showDialog<Rider>(
       context: context,
       builder: (_) => RiderFormDialog(
@@ -606,7 +604,8 @@ class _UserManagementPageState extends State<UserManagementPage> {
     if (username == null || !mounted) return;
     _run(
       () => fleet.linkAppAccount(rider.id, username),
-      success: (email) => '${rider.fullName} linked to $email — they can '
+      success: (email) =>
+          '${rider.fullName} linked to $email — they can '
           'now see their own alerts in the app',
     );
   }
@@ -676,8 +675,18 @@ class _UserManagementPageState extends State<UserManagementPage> {
   /// "12 Mar 2025" — hand-rolled to stay dependency-free.
   static String _formatDate(DateTime date) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
@@ -712,12 +721,7 @@ class _MenuRow extends StatelessWidget {
   /// Explains why the entry is unavailable for the current role.
   final String? tooltip;
 
-  const _MenuRow(
-    this.icon,
-    this.label, {
-    this.disabled = false,
-    this.tooltip,
-  });
+  const _MenuRow(this.icon, this.label, {this.disabled = false, this.tooltip});
 
   @override
   Widget build(BuildContext context) {
@@ -732,8 +736,7 @@ class _MenuRow extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            color:
-                disabled ? NovaColors.secondaryText : NovaColors.primaryText,
+            color: disabled ? NovaColors.secondaryText : NovaColors.primaryText,
             fontSize: 13,
           ),
         ),

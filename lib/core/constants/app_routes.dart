@@ -39,25 +39,17 @@ abstract final class AppRoutes {
   static const guardianHome = 'guardianHome';
   static const guardianHomePath = '/guardian';
 
-  /// The guardian tabs the existing bottom bar switches between. They hang
-  /// off [guardianHomePath] so the section is one subtree.
+  /// The guardian tabs: Home, Map, Alerts, Profile. They hang off
+  /// [guardianHomePath] so the section is one subtree. (History merged
+  /// into Alerts; the unlinked Monitoring screen was removed.)
   static const guardianMap = 'guardianMap';
   static const guardianMapPath = '/guardian/map';
 
   static const guardianAlerts = 'guardianAlerts';
   static const guardianAlertsPath = '/guardian/alerts';
 
-  static const guardianHistory = 'guardianHistory';
-  static const guardianHistoryPath = '/guardian/history';
-
   static const guardianProfile = 'guardianProfile';
   static const guardianProfilePath = '/guardian/profile';
-
-  /// Reachable from the old route table but linked from nowhere in the UI.
-  /// Carried over so the move to go_router drops no destination; Phase 7
-  /// decides whether the screen survives.
-  static const guardianMonitoring = 'guardianMonitoring';
-  static const guardianMonitoringPath = '/guardian/monitoring';
 
   /// Paths a signed-out visitor is allowed to be on. Everything else
   /// redirects to [onboardingPath].

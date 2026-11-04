@@ -15,10 +15,10 @@ enum _AlertSort { newest, oldest, priority }
 
 extension _AlertSortLabel on _AlertSort {
   String get label => switch (this) {
-        _AlertSort.newest => 'Newest',
-        _AlertSort.oldest => 'Oldest',
-        _AlertSort.priority => 'Priority',
-      };
+    _AlertSort.newest => 'Newest',
+    _AlertSort.oldest => 'Oldest',
+    _AlertSort.priority => 'Priority',
+  };
 }
 
 /// Alert triage — where the console stops being a monitor and becomes a
@@ -36,11 +36,7 @@ class AdminAlertsPage extends StatefulWidget {
   /// still re-applies the filter.
   final int prefillToken;
 
-  const AdminAlertsPage({
-    super.key,
-    this.prefillQuery,
-    this.prefillToken = 0,
-  });
+  const AdminAlertsPage({super.key, this.prefillQuery, this.prefillToken = 0});
 
   @override
   State<AdminAlertsPage> createState() => _AdminAlertsPageState();
@@ -119,7 +115,8 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
           builder: (context, constraints) {
             // Too narrow for two panes, or too short for a fixed-height
             // column: either way the whole page scrolls.
-            final stacked = constraints.maxWidth < _stackBreakpoint ||
+            final stacked =
+                constraints.maxWidth < _stackBreakpoint ||
                 constraints.maxHeight < _minWideHeight;
             // The KPI row is sized to the width the cards actually get —
             // inside this padding. Sizing them to the outer width left the
@@ -383,7 +380,10 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
         ),
         filled: true,
         fillColor: NovaColors.background,
-        contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 12,
+          horizontal: 12,
+        ),
         border: _searchBorder(NovaColors.cardBorder),
         enabledBorder: _searchBorder(NovaColors.cardBorder),
         focusedBorder: _searchBorder(NovaColors.cyan),
@@ -392,9 +392,9 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   }
 
   OutlineInputBorder _searchBorder(Color color) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: color),
-      );
+    borderRadius: BorderRadius.circular(10),
+    borderSide: BorderSide(color: color),
+  );
 
   Widget _buildSortControl() {
     return PopupMenuButton<_AlertSort>(
@@ -425,7 +425,11 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.swap_vert, size: 16, color: NovaColors.secondaryText),
+            const Icon(
+              Icons.swap_vert,
+              size: 16,
+              color: NovaColors.secondaryText,
+            ),
             const SizedBox(width: 7),
             Text(
               'Sort: ${_sort.label}',
@@ -494,13 +498,12 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   }
 
   Widget _tileFor(AlertEvent alert) => AlertFeedTile(
-        key: ValueKey(alert.id),
-        alert: alert,
-        selected: alert.id == _selectedId,
-        onTap: () => setState(
-          () => _selectedId = _selectedId == alert.id ? null : alert.id,
-        ),
-      );
+    key: ValueKey(alert.id),
+    alert: alert,
+    selected: alert.id == _selectedId,
+    onTap: () =>
+        setState(() => _selectedId = _selectedId == alert.id ? null : alert.id),
+  );
 
   // ----------------------------------------------------------- filter + sort
 
@@ -529,12 +532,12 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
       _AlertSort.oldest => (a, b) => a.timestamp.compareTo(b.timestamp),
       // Critical first; ties keep newest-first so the freshest crash leads.
       _AlertSort.priority => (a, b) {
-          final byPriority = FleetController.priorityOf(a)
-              .index
-              .compareTo(FleetController.priorityOf(b).index);
-          if (byPriority != 0) return byPriority;
-          return b.timestamp.compareTo(a.timestamp);
-        },
+        final byPriority = FleetController.priorityOf(
+          a,
+        ).index.compareTo(FleetController.priorityOf(b).index);
+        if (byPriority != 0) return byPriority;
+        return b.timestamp.compareTo(a.timestamp);
+      },
     });
 
     return matches;
@@ -579,17 +582,24 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   }
 
   void _acknowledge(FleetController fleet, AlertEvent alert) {
-    _run(() => fleet.acknowledgeAlert(alert.id, actor: AdminSessionScope.of(context).name));
+    _run(
+      () => fleet.acknowledgeAlert(
+        alert.id,
+        actor: AdminSessionScope.of(context).name,
+      ),
+    );
   }
 
   void _resolve(FleetController fleet, AlertEvent alert) {
-    _run(() => fleet.resolveAlert(alert.id, actor: AdminSessionScope.of(context).name));
+    _run(
+      () => fleet.resolveAlert(
+        alert.id,
+        actor: AdminSessionScope.of(context).name,
+      ),
+    );
   }
 
-  Future<void> _promptDispatch(
-    FleetController fleet,
-    AlertEvent alert,
-  ) async {
+  Future<void> _promptDispatch(FleetController fleet, AlertEvent alert) async {
     final result = await showDialog<_DispatchChoice>(
       context: context,
       builder: (_) => _DispatchDialog(alert: alert),
@@ -723,7 +733,11 @@ class _AlertDetailPanel extends StatelessWidget {
             color: color.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(9),
           ),
-          child: Icon(AlertFeedTile.iconFor(alert.type), color: color, size: 18),
+          child: Icon(
+            AlertFeedTile.iconFor(alert.type),
+            color: color,
+            size: 18,
+          ),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -785,8 +799,8 @@ class _AlertDetailPanel extends StatelessWidget {
           label: 'Acknowledge',
           icon: Icons.visibility_outlined,
           color: NovaColors.cyan,
-          primary: allowed &&
-              alert.status.canTransitionTo(AlertStatus.acknowledged),
+          primary:
+              allowed && alert.status.canTransitionTo(AlertStatus.acknowledged),
           enabled: allowed,
           onPressed: onAcknowledge,
         ),
@@ -825,10 +839,7 @@ class _AlertDetailPanel extends StatelessWidget {
             Expanded(
               child: Text(
                 'Read-only — ${role.label} cannot act on alerts.',
-                style: const TextStyle(
-                  color: NovaColors.amber,
-                  fontSize: 11.5,
-                ),
+                style: const TextStyle(color: NovaColors.amber, fontSize: 11.5),
               ),
             ),
           ],
@@ -838,52 +849,53 @@ class _AlertDetailPanel extends StatelessWidget {
   }
 
   Widget _section(String title) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(
-          title,
-          style: const TextStyle(
-            color: NovaColors.secondaryText,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.9,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(
+      title,
+      style: const TextStyle(
+        color: NovaColors.secondaryText,
+        fontSize: 10,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.9,
+      ),
+    ),
+  );
 
   Widget _row(String label, String value, {Color? valueColor}) => Padding(
-        padding: const EdgeInsets.only(bottom: 5),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 92,
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: NovaColors.secondaryText,
-                  fontSize: 12,
-                ),
-              ),
+    padding: const EdgeInsets.only(bottom: 5),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 92,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: NovaColors.secondaryText,
+              fontSize: 12,
             ),
-            Expanded(
-              child: Text(
-                value,
-                style: TextStyle(
-                  color: valueColor ?? NovaColors.primaryText,
-                  fontSize: 12.5,
-                  fontWeight:
-                      valueColor == null ? FontWeight.w400 : FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              color: valueColor ?? NovaColors.primaryText,
+              fontSize: 12.5,
+              fontWeight: valueColor == null
+                  ? FontWeight.w400
+                  : FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _muted(String text) => Text(
-        text,
-        style: const TextStyle(color: NovaColors.secondaryText, fontSize: 12),
-      );
+    text,
+    style: const TextStyle(color: NovaColors.secondaryText, fontSize: 12),
+  );
 }
 
 /// Vertical audit trail. The first node is the alert firing itself — it has
@@ -927,7 +939,10 @@ class _AlertTimeline extends StatelessWidget {
       );
     }
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: nodes);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: nodes,
+    );
   }
 
   Widget _node({
@@ -948,10 +963,7 @@ class _AlertTimeline extends StatelessWidget {
                 width: 10,
                 height: 10,
                 margin: const EdgeInsets.only(top: 3),
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                ),
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
               if (!isLast)
                 Expanded(
@@ -1142,9 +1154,9 @@ class _DispatchDialogState extends State<_DispatchDialog> {
         ElevatedButton(
           onPressed: () {
             final note = _noteController.text.trim();
-            Navigator.of(context).pop(
-              _DispatchChoice(_responder, note.isEmpty ? null : note),
-            );
+            Navigator.of(
+              context,
+            ).pop(_DispatchChoice(_responder, note.isEmpty ? null : note));
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: NovaColors.pink,

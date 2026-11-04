@@ -10,7 +10,14 @@ enum AlertType { crash, alcoholWarning, lowBattery, sos }
 /// `pending` is a crash inside its false-positive countdown, which its
 /// rider may still cancel in the app; `cancelled` is one they did. Both are
 /// docs/FIRMWARE_CONTRACT.md §3.8.
-enum AlertStatus { pending, open, acknowledged, dispatched, resolved, cancelled }
+enum AlertStatus {
+  pending,
+  open,
+  acknowledged,
+  dispatched,
+  resolved,
+  cancelled,
+}
 
 /// How long a rider has to cancel a pending crash, from its server
 /// timestamp. The rules enforce the same 15 s (firestore.rules,
@@ -57,17 +64,16 @@ class Rider {
     RiderStatus? status,
     bool? isActive,
     DateTime? registeredAt,
-  }) =>
-      Rider(
-        id: id ?? this.id,
-        fullName: fullName ?? this.fullName,
-        helmetId: helmetId ?? this.helmetId,
-        phone: phone ?? this.phone,
-        status: status ?? this.status,
-        isActive: isActive ?? this.isActive,
-        registeredAt: registeredAt ?? this.registeredAt,
-        authUid: authUid,
-      );
+  }) => Rider(
+    id: id ?? this.id,
+    fullName: fullName ?? this.fullName,
+    helmetId: helmetId ?? this.helmetId,
+    phone: phone ?? this.phone,
+    status: status ?? this.status,
+    isActive: isActive ?? this.isActive,
+    registeredAt: registeredAt ?? this.registeredAt,
+    authUid: authUid,
+  );
 }
 
 /// One helmet's latest reading.
@@ -127,20 +133,19 @@ class HelmetTelemetry {
     double? lat,
     double? lng,
     DateTime? lastUpdate,
-  }) =>
-      HelmetTelemetry(
-        riderId: riderId,
-        deviceId: deviceId,
-        speedKmh: speedKmh ?? this.speedKmh,
-        alcoholDetected: alcoholDetected,
-        alcoholRawIndex: alcoholRawIndex,
-        accelMagnitudeG: accelMagnitudeG,
-        batteryPct: batteryPct,
-        gpsFix: gpsFix,
-        lat: lat ?? this.lat,
-        lng: lng ?? this.lng,
-        lastUpdate: lastUpdate ?? this.lastUpdate,
-      );
+  }) => HelmetTelemetry(
+    riderId: riderId,
+    deviceId: deviceId,
+    speedKmh: speedKmh ?? this.speedKmh,
+    alcoholDetected: alcoholDetected,
+    alcoholRawIndex: alcoholRawIndex,
+    accelMagnitudeG: accelMagnitudeG,
+    batteryPct: batteryPct,
+    gpsFix: gpsFix,
+    lat: lat ?? this.lat,
+    lng: lng ?? this.lng,
+    lastUpdate: lastUpdate ?? this.lastUpdate,
+  );
 }
 
 /// One audit entry in an alert's response history.
@@ -207,19 +212,18 @@ class AlertEvent {
     DateTime? timestamp,
     AlertStatus? status,
     List<AlertAction>? history,
-  }) =>
-      AlertEvent(
-        id: id ?? this.id,
-        riderId: riderId ?? this.riderId,
-        riderName: riderName ?? this.riderName,
-        type: type ?? this.type,
-        lat: lat ?? this.lat,
-        lng: lng ?? this.lng,
-        address: address ?? this.address,
-        timestamp: timestamp ?? this.timestamp,
-        status: status ?? this.status,
-        history: history ?? this.history,
-      );
+  }) => AlertEvent(
+    id: id ?? this.id,
+    riderId: riderId ?? this.riderId,
+    riderName: riderName ?? this.riderName,
+    type: type ?? this.type,
+    lat: lat ?? this.lat,
+    lng: lng ?? this.lng,
+    address: address ?? this.address,
+    timestamp: timestamp ?? this.timestamp,
+    status: status ?? this.status,
+    history: history ?? this.history,
+  );
 
   /// When the alert first reached [status], or null if it never did.
   DateTime? reachedAt(AlertStatus status) {
@@ -234,10 +238,10 @@ class AlertEvent {
 /// is its own state, so a helmet that sends nothing never reads as sober.
 extension AlcoholReadout on HelmetTelemetry {
   String get alcoholLabel => switch (alcoholDetected) {
-        true => 'Detected',
-        false => 'Not detected',
-        null => 'Not measured',
-      };
+    true => 'Detected',
+    false => 'Not detected',
+    null => 'Not measured',
+  };
 }
 
 /// Text for the numeric readings. A reading the helmet did not send is a
@@ -278,20 +282,20 @@ extension TelemetryReadout on HelmetTelemetry {
 
 extension RiderStatusLabel on RiderStatus {
   String get label => switch (this) {
-        RiderStatus.riding => 'Riding',
-        RiderStatus.idle => 'Idle',
-        RiderStatus.offline => 'Offline',
-        RiderStatus.emergency => 'Emergency',
-      };
+    RiderStatus.riding => 'Riding',
+    RiderStatus.idle => 'Idle',
+    RiderStatus.offline => 'Offline',
+    RiderStatus.emergency => 'Emergency',
+  };
 }
 
 extension AlertTypeLabel on AlertType {
   String get label => switch (this) {
-        AlertType.crash => 'Crash Detected',
-        AlertType.alcoholWarning => 'Alcohol Warning',
-        AlertType.lowBattery => 'Low Battery',
-        AlertType.sos => 'SOS Triggered',
-      };
+    AlertType.crash => 'Crash Detected',
+    AlertType.alcoholWarning => 'Alcohol Warning',
+    AlertType.lowBattery => 'Low Battery',
+    AlertType.sos => 'SOS Triggered',
+  };
 
   /// Crash and SOS are the two life-critical events.
   bool get isCritical => this == AlertType.crash || this == AlertType.sos;
@@ -299,13 +303,13 @@ extension AlertTypeLabel on AlertType {
 
 extension AlertStatusLabel on AlertStatus {
   String get label => switch (this) {
-        AlertStatus.pending => 'Awaiting rider',
-        AlertStatus.open => 'Open',
-        AlertStatus.acknowledged => 'Acknowledged',
-        AlertStatus.dispatched => 'Dispatched',
-        AlertStatus.resolved => 'Resolved',
-        AlertStatus.cancelled => 'Cancelled by rider',
-      };
+    AlertStatus.pending => 'Awaiting rider',
+    AlertStatus.open => 'Open',
+    AlertStatus.acknowledged => 'Acknowledged',
+    AlertStatus.dispatched => 'Dispatched',
+    AlertStatus.resolved => 'Resolved',
+    AlertStatus.cancelled => 'Cancelled by rider',
+  };
 
   /// Needs a dispatcher. A pending crash counts: it is on the board, and a
   /// dispatcher may act on it before the countdown ends.
@@ -327,22 +331,22 @@ extension AlertStatusLabel on AlertStatus {
   /// Skipping a step or moving backwards is rejected, so the audit trail can
   /// never claim a responder was sent to an alert nobody had acknowledged.
   AlertStatus? get nextStatus => switch (this) {
-        AlertStatus.pending => AlertStatus.acknowledged,
-        AlertStatus.open => AlertStatus.acknowledged,
-        AlertStatus.acknowledged => AlertStatus.dispatched,
-        AlertStatus.dispatched => AlertStatus.resolved,
-        AlertStatus.resolved => null,
-        AlertStatus.cancelled => null,
-      };
+    AlertStatus.pending => AlertStatus.acknowledged,
+    AlertStatus.open => AlertStatus.acknowledged,
+    AlertStatus.acknowledged => AlertStatus.dispatched,
+    AlertStatus.dispatched => AlertStatus.resolved,
+    AlertStatus.resolved => null,
+    AlertStatus.cancelled => null,
+  };
 
   bool canTransitionTo(AlertStatus target) => nextStatus == target;
 }
 
 extension ResponderTypeLabel on ResponderType {
   String get label => switch (this) {
-        ResponderType.medical => 'Medical / EMS',
-        ResponderType.police => 'Police',
-        ResponderType.fireRescue => 'Fire & Rescue',
-        ResponderType.barangay => 'Barangay Response',
-      };
+    ResponderType.medical => 'Medical / EMS',
+    ResponderType.police => 'Police',
+    ResponderType.fireRescue => 'Fire & Rescue',
+    ResponderType.barangay => 'Barangay Response',
+  };
 }

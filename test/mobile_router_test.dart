@@ -15,7 +15,7 @@ import 'package:novaride/core/constants/app_routes.dart';
 import 'package:novaride/features/auth/domain/entities/user_role.dart';
 import 'package:novaride/features/auth/presentation/pages/verify_email_page.dart';
 import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
-import 'package:novaride/features/guardian/presentation/pages/family_dashboard_page.dart';
+import 'package:novaride/features/guardian/presentation/pages/guardian_home_page.dart';
 import 'package:novaride/features/onboarding/presentation/pages/splash_page.dart';
 import 'package:novaride/features/onboarding/presentation/pages/welcome_page.dart';
 import 'package:novaride/features/rider/presentation/pages/home_page.dart';
@@ -164,10 +164,10 @@ void main() {
       expect(find.byType(HomePage), findsOneWidget);
     });
 
-    testWidgets('a signed-in guardian lands on the family dashboard',
+    testWidgets('a signed-in guardian lands on the guardian home',
         (tester) async {
       await pumpMobileApp(tester, auth: AuthState.signedIn(guardian));
-      expect(find.byType(FamilyDashboardPage), findsOneWidget);
+      expect(find.byType(GuardianHomePage), findsOneWidget);
     });
 
     testWidgets('an unconfirmed account is held on verify email',

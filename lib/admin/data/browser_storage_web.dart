@@ -21,9 +21,7 @@ JSObject? get _storage {
 
 String? read(String key) {
   try {
-    return _storage
-        ?.callMethod<JSString?>('getItem'.toJS, key.toJS)
-        ?.toDart;
+    return _storage?.callMethod<JSString?>('getItem'.toJS, key.toJS)?.toDart;
   } catch (_) {
     // Unreadable storage is the same as an empty one.
     return null;

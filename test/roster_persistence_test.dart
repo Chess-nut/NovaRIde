@@ -68,6 +68,7 @@ class _ScriptedRepository implements FleetRepository {
     log.add('link $riderId $username');
     return 'rider@example.test';
   }
+
   @override
   Future<void> unlinkAppAccount(String riderId) async =>
       log.add('unlink $riderId');
@@ -106,7 +107,9 @@ Rider _rider(String id, {String helmet = 'NR-H1-001', String name = 'Ana'}) =>
     );
 
 /// A controller over a scripted store that has already delivered [initial].
-(FleetController, _ScriptedRepository) _fleet([List<Rider> initial = const []]) {
+(FleetController, _ScriptedRepository) _fleet([
+  List<Rider> initial = const [],
+]) {
   final repo = _ScriptedRepository();
   final fleet = FleetController(repo);
   addTearDown(fleet.dispose);
@@ -132,8 +135,7 @@ void main() {
       repo.pending = Completer<Rider>();
 
       final future = fleet.addRider(_rider('R-001'));
-      expect(fleet.riders.map((r) => r.id), ['R-001'],
-          reason: 'shown at once');
+      expect(fleet.riders.map((r) => r.id), ['R-001'], reason: 'shown at once');
       expect(repo.log, ['add R-001']);
 
       // The store echoes the write through its stream, then answers.
@@ -146,48 +148,59 @@ void main() {
       expect(fleet.riders.length, 1, reason: 'never shown twice');
     });
 
-    test('a refused add is withdrawn and the message reaches the caller',
-        () async {
-      final (fleet, repo) = _fleet();
-      await _flush();
-      repo.failWith = const FleetWriteException('Firestore refused it.');
+    test(
+      'a refused add is withdrawn and the message reaches the caller',
+      () async {
+        final (fleet, repo) = _fleet();
+        await _flush();
+        repo.failWith = const FleetWriteException('Firestore refused it.');
 
-      await expectLater(
-        fleet.addRider(_rider('R-001')),
-        throwsA(isA<FleetWriteException>()
-            .having((e) => e.message, 'message', 'Firestore refused it.')),
-      );
-      expect(fleet.riders, isEmpty, reason: 'no ghost rider');
-    });
+        await expectLater(
+          fleet.addRider(_rider('R-001')),
+          throwsA(
+            isA<FleetWriteException>().having(
+              (e) => e.message,
+              'message',
+              'Firestore refused it.',
+            ),
+          ),
+        );
+        expect(fleet.riders, isEmpty, reason: 'no ghost rider');
+      },
+    );
 
     // A widget test only for its clock: the body runs on fake time, so the
     // deadline can be reached with pump() instead of waiting twenty seconds.
-    testWidgets('a write that never answers is rolled back after the deadline',
-        (tester) async {
-      final repo = _ScriptedRepository();
-      final fleet = FleetController(repo);
-      addTearDown(fleet.dispose);
-      repo.riders.add(const []);
-      await tester.pump();
-      repo.pending = Completer<Rider>(); // never completed
+    testWidgets(
+      'a write that never answers is rolled back after the deadline',
+      (tester) async {
+        final repo = _ScriptedRepository();
+        final fleet = FleetController(repo);
+        addTearDown(fleet.dispose);
+        repo.riders.add(const []);
+        await tester.pump();
+        repo.pending = Completer<Rider>(); // never completed
 
-      Object? error;
-      final done = fleet.addRider(_rider('R-001')).catchError((Object e) {
-        error = e;
-        return _placeholder;
-      });
-      await tester.pump();
-      expect(fleet.riders.length, 1, reason: 'optimistic while waiting');
+        Object? error;
+        final done = fleet.addRider(_rider('R-001')).catchError((Object e) {
+          error = e;
+          return _placeholder;
+        });
+        await tester.pump();
+        expect(fleet.riders.length, 1, reason: 'optimistic while waiting');
 
-      await tester.pump(FleetController.writeTimeout - const Duration(seconds: 1));
-      expect(fleet.riders.length, 1, reason: 'still waiting');
+        await tester.pump(
+          FleetController.writeTimeout - const Duration(seconds: 1),
+        );
+        expect(fleet.riders.length, 1, reason: 'still waiting');
 
-      await tester.pump(const Duration(seconds: 2));
-      await done;
-      expect(fleet.riders, isEmpty, reason: 'withdrawn at the deadline');
-      expect(error, isA<FleetWriteException>());
-      expect((error as FleetWriteException).message, contains('20 seconds'));
-    });
+        await tester.pump(const Duration(seconds: 2));
+        await done;
+        expect(fleet.riders, isEmpty, reason: 'withdrawn at the deadline');
+        expect(error, isA<FleetWriteException>());
+        expect((error as FleetWriteException).message, contains('20 seconds'));
+      },
+    );
 
     test('an add whose suggested id was taken follows the id the store '
         'assigned', () async {
@@ -197,8 +210,10 @@ void main() {
 
       final saved = await fleet.addRider(_rider('R-011', helmet: 'NR-H1-011'));
       expect(saved.id, 'R-012');
-      expect(fleet.riders.map((r) => r.id), ['R-010', 'R-012'],
-          reason: 'the suggested id is gone, the saved one is shown');
+      expect(fleet.riders.map((r) => r.id), [
+        'R-010',
+        'R-012',
+      ], reason: 'the suggested id is gone, the saved one is shown');
 
       // The store's snapshot arrives; the overlay steps aside without a flash.
       repo.riders.add([
@@ -209,41 +224,54 @@ void main() {
       expect(fleet.riders.map((r) => r.id), ['R-010', 'R-012']);
     });
 
-    test('a snapshot that predates the write does not un-show the rider',
-        () async {
-      final (fleet, repo) = _fleet([_rider('R-001')]);
-      await _flush();
-      repo.pending = Completer<Rider>();
+    test(
+      'a snapshot that predates the write does not un-show the rider',
+      () async {
+        final (fleet, repo) = _fleet([_rider('R-001')]);
+        await _flush();
+        repo.pending = Completer<Rider>();
 
-      final future = fleet.addRider(_rider('R-002', helmet: 'NR-H1-002'));
-      // An unrelated change lands first — somebody else's rider went idle.
-      repo.riders.add([_rider('R-001', name: 'Ana Renamed')]);
-      await _flush();
-      expect(fleet.riders.map((r) => r.id), ['R-001', 'R-002'],
-          reason: 'pending add survives an older snapshot');
-      expect(fleet.riderFor('R-001')!.fullName, 'Ana Renamed',
-          reason: 'and the snapshot itself is applied');
+        final future = fleet.addRider(_rider('R-002', helmet: 'NR-H1-002'));
+        // An unrelated change lands first — somebody else's rider went idle.
+        repo.riders.add([_rider('R-001', name: 'Ana Renamed')]);
+        await _flush();
+        expect(fleet.riders.map((r) => r.id), [
+          'R-001',
+          'R-002',
+        ], reason: 'pending add survives an older snapshot');
+        expect(
+          fleet.riderFor('R-001')!.fullName,
+          'Ana Renamed',
+          reason: 'and the snapshot itself is applied',
+        );
 
-      repo.pending!.complete(_rider('R-002', helmet: 'NR-H1-002'));
-      await future;
-      expect(fleet.riders.map((r) => r.id), ['R-001', 'R-002']);
-    });
+        repo.pending!.complete(_rider('R-002', helmet: 'NR-H1-002'));
+        await future;
+        expect(fleet.riders.map((r) => r.id), ['R-001', 'R-002']);
+      },
+    );
 
     test('a refused edit restores the previous values', () async {
       final (fleet, repo) = _fleet([_rider('R-001')]);
       await _flush();
       repo.pending = Completer<Rider>();
 
-      final future =
-          fleet.updateRider(_rider('R-001', name: 'Ana Edited'));
-      expect(fleet.riderFor('R-001')!.fullName, 'Ana Edited',
-          reason: 'shown at once');
+      final future = fleet.updateRider(_rider('R-001', name: 'Ana Edited'));
+      expect(
+        fleet.riderFor('R-001')!.fullName,
+        'Ana Edited',
+        reason: 'shown at once',
+      );
 
       repo.pending!.completeError(
-          const FleetWriteException('Only a Super Admin may edit.'));
+        const FleetWriteException('Only a Super Admin may edit.'),
+      );
       await expectLater(future, throwsA(isA<FleetWriteException>()));
-      expect(fleet.riderFor('R-001')!.fullName, 'Ana',
-          reason: 'rolled back to what the store has');
+      expect(
+        fleet.riderFor('R-001')!.fullName,
+        'Ana',
+        reason: 'rolled back to what the store has',
+      );
     });
 
     test('deactivation is a narrow write and shows at once', () async {
@@ -254,12 +282,12 @@ void main() {
       expect(fleet.riderFor('R-001')!.isActive, isFalse);
       expect(fleet.riderFor('R-001')!.status, RiderStatus.offline);
       await future;
-      expect(repo.log, ['active R-001 false'],
-          reason: 'isActive and status only — never the whole record');
+      expect(repo.log, [
+        'active R-001 false',
+      ], reason: 'isActive and status only — never the whole record');
     });
 
-    test('a failure cannot withdraw a newer write to the same rider',
-        () async {
+    test('a failure cannot withdraw a newer write to the same rider', () async {
       final (fleet, repo) = _fleet([_rider('R-001')]);
       await _flush();
 
@@ -273,8 +301,11 @@ void main() {
 
       firstCompleter.completeError(const FleetWriteException('nope'));
       await expectLater(first, throwsA(isA<FleetWriteException>()));
-      expect(fleet.riderFor('R-001')!.fullName, 'Second',
-          reason: 'the newer write still owns the row');
+      expect(
+        fleet.riderFor('R-001')!.fullName,
+        'Second',
+        reason: 'the newer write still owns the row',
+      );
 
       repo.pending!.complete(_rider('R-001', name: 'Second'));
       await second;
@@ -312,7 +343,9 @@ void main() {
       final repo = _ScriptedRepository();
       final auth = _SuperAdminAuth();
       addTearDown(auth.dispose);
-      await tester.pumpWidget(AdminApp(auth: auth, createRepository: () => repo));
+      await tester.pumpWidget(
+        AdminApp(auth: auth, createRepository: () => repo),
+      );
       await tester.enterText(find.byType(TextFormField).first, 'op@tip.edu.ph');
       await tester.enterText(find.byType(TextFormField).last, 'pw');
       await tester.pump();
@@ -337,19 +370,30 @@ void main() {
       await tester.tap(find.text('Add rider'));
       await _settle(tester);
 
-      expect(find.text('Renato Villanueva'), findsOneWidget,
-          reason: 'on the roster before the store answers');
+      expect(
+        find.text('Renato Villanueva'),
+        findsOneWidget,
+        reason: 'on the roster before the store answers',
+      );
       expect(repo.log, ['add R-001']);
 
-      repo.pending!.completeError(const FleetWriteException(
+      repo.pending!.completeError(
+        const FleetWriteException(
           'Firestore refused the change. Only a Super Admin may edit the '
-          'roster, and the security rules must be deployed.'));
+          'roster, and the security rules must be deployed.',
+        ),
+      );
       await _settle(tester);
 
-      expect(find.text('Renato Villanueva'), findsNothing,
-          reason: 'withdrawn — no ghost rider');
-      expect(find.textContaining('Firestore refused the change'),
-          findsOneWidget);
+      expect(
+        find.text('Renato Villanueva'),
+        findsNothing,
+        reason: 'withdrawn — no ghost rider',
+      );
+      expect(
+        find.textContaining('Firestore refused the change'),
+        findsOneWidget,
+      );
       expect(find.text('DISMISS'), findsOneWidget, reason: 'stays until read');
       expect(find.textContaining('Exception'), findsNothing);
 
@@ -357,8 +401,9 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('a duplicate helmet is refused inline, before any write',
-        (tester) async {
+    testWidgets('a duplicate helmet is refused inline, before any write', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -366,7 +411,9 @@ void main() {
       final repo = _ScriptedRepository();
       final auth = _SuperAdminAuth();
       addTearDown(auth.dispose);
-      await tester.pumpWidget(AdminApp(auth: auth, createRepository: () => repo));
+      await tester.pumpWidget(
+        AdminApp(auth: auth, createRepository: () => repo),
+      );
       await tester.enterText(find.byType(TextFormField).first, 'op@tip.edu.ph');
       await tester.enterText(find.byType(TextFormField).last, 'pw');
       await tester.pump();
@@ -398,58 +445,75 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('a Super Admin links a rider to their app account by username',
-        (tester) async {
-      tester.view.physicalSize = const Size(1600, 1000);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
+    testWidgets(
+      'a Super Admin links a rider to their app account by username',
+      (tester) async {
+        tester.view.physicalSize = const Size(1600, 1000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
 
-      final repo = _ScriptedRepository();
-      final auth = _SuperAdminAuth();
-      addTearDown(auth.dispose);
-      await tester.pumpWidget(AdminApp(auth: auth, createRepository: () => repo));
-      await tester.enterText(find.byType(TextFormField).first, 'op@tip.edu.ph');
-      await tester.enterText(find.byType(TextFormField).last, 'pw');
-      await tester.pump();
-      await tester.tap(find.text('SIGN IN'));
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1));
-      repo.riders.add([
-        _rider('R-001', helmet: 'NR-H1-001'),
-        Rider(
-          id: 'R-002',
-          fullName: 'Linked Rider',
-          helmetId: 'NR-H1-002',
-          phone: '+63 917 000 0002',
-          status: RiderStatus.idle,
-          authUid: 'uid-linked',
-        ),
-      ]);
-      repo.telemetry.add(const []);
-      repo.alerts.add(const []);
-      repo.connection.add(FleetConnection.connected);
-      await tester.pump();
+        final repo = _ScriptedRepository();
+        final auth = _SuperAdminAuth();
+        addTearDown(auth.dispose);
+        await tester.pumpWidget(
+          AdminApp(auth: auth, createRepository: () => repo),
+        );
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'op@tip.edu.ph',
+        );
+        await tester.enterText(find.byType(TextFormField).last, 'pw');
+        await tester.pump();
+        await tester.tap(find.text('SIGN IN'));
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 1));
+        repo.riders.add([
+          _rider('R-001', helmet: 'NR-H1-001'),
+          Rider(
+            id: 'R-002',
+            fullName: 'Linked Rider',
+            helmetId: 'NR-H1-002',
+            phone: '+63 917 000 0002',
+            status: RiderStatus.idle,
+            authUid: 'uid-linked',
+          ),
+        ]);
+        repo.telemetry.add(const []);
+        repo.alerts.add(const []);
+        repo.connection.add(FleetConnection.connected);
+        await tester.pump();
 
-      await tester.tap(find.text('User Management').first);
-      await tester.pump();
-      expect(find.text('APP'), findsOneWidget, reason: 'only R-002 is linked');
+        await tester.tap(find.text('User Management').first);
+        await tester.pump();
+        expect(
+          find.text('APP'),
+          findsOneWidget,
+          reason: 'only R-002 is linked',
+        );
 
-      await tester.tap(find.byTooltip('Rider actions').first);
-      await _settle(tester);
-      expect(find.text('Unlink app account'), findsNothing,
-          reason: 'nothing to unlink on an unlinked rider');
-      await tester.tap(find.text('Link app account…'));
-      await _settle(tester);
-      await tester.enterText(find.byType(TextField).last, 'juan');
-      await tester.tap(find.text('Link'));
-      await _settle(tester);
+        await tester.tap(find.byTooltip('Rider actions').first);
+        await _settle(tester);
+        expect(
+          find.text('Unlink app account'),
+          findsNothing,
+          reason: 'nothing to unlink on an unlinked rider',
+        );
+        await tester.tap(find.text('Link app account…'));
+        await _settle(tester);
+        await tester.enterText(find.byType(TextField).last, 'juan');
+        await tester.tap(find.text('Link'));
+        await _settle(tester);
 
-      expect(repo.log, ['link R-001 juan']);
-      expect(find.textContaining('linked to rider@example.test'), findsOneWidget);
+        expect(repo.log, ['link R-001 juan']);
+        expect(
+          find.textContaining('linked to rider@example.test'),
+          findsOneWidget,
+        );
 
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump();
-    });
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+    );
   });
 }
 

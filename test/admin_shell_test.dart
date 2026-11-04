@@ -55,7 +55,10 @@ void main() {
     await _useDesktopSurface(tester);
     await tester.pumpWidget(const AdminApp());
 
-    await tester.enterText(find.byType(TextFormField).first, 'nope@novaride.ph');
+    await tester.enterText(
+      find.byType(TextFormField).first,
+      'nope@novaride.ph',
+    );
     await tester.enterText(find.byType(TextFormField).last, 'wrong');
     // The button enables on the frame after both fields are filled.
     await tester.pump();
@@ -66,8 +69,9 @@ void main() {
     expect(find.text('TYPE OF RIDER STATUS'), findsNothing);
   });
 
-  testWidgets('mock login reaches the six-panel operations grid',
-      (tester) async {
+  testWidgets('mock login reaches the six-panel operations grid', (
+    tester,
+  ) async {
     await _useDesktopSurface(tester);
     await tester.pumpWidget(const AdminApp());
     await _signIn(tester);
@@ -136,8 +140,9 @@ void main() {
     await _tearDownTree(tester);
   });
 
-  testWidgets('narrow viewport stacks the panels without overflowing',
-      (tester) async {
+  testWidgets('narrow viewport stacks the panels without overflowing', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(900, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -193,8 +198,9 @@ void main() {
     await _tearDownTree(tester);
   });
 
-  testWidgets('viewer sees the alerts board but cannot act on it',
-      (tester) async {
+  testWidgets('viewer sees the alerts board but cannot act on it', (
+    tester,
+  ) async {
     await _useDesktopSurface(tester);
     await tester.pumpWidget(const AdminApp());
     await _signIn(tester, email: 'viewer@novaride.ph', password: 'viewer123');
@@ -219,8 +225,9 @@ void main() {
   /// The trap this guards: a role-filtered nav list and a static page list
   /// would desynchronise, so the title would name a different tab than the
   /// one on screen.
-  testWidgets('top bar title matches the visible page for every role',
-      (tester) async {
+  testWidgets('top bar title matches the visible page for every role', (
+    tester,
+  ) async {
     for (final account in [
       ('admin@novaride.ph', 'admin123'),
       ('dispatch@novaride.ph', 'dispatch123'),
@@ -256,8 +263,9 @@ void main() {
 
   // ------------------------------------------------------- shared fleet state
 
-  testWidgets('alerts page tracks the same live feed as the dashboard',
-      (tester) async {
+  testWidgets('alerts page tracks the same live feed as the dashboard', (
+    tester,
+  ) async {
     await _useDesktopSurface(tester);
     await tester.pumpWidget(const AdminApp());
     await _signIn(tester);

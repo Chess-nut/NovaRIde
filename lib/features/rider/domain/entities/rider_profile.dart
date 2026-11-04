@@ -18,11 +18,7 @@
 library;
 
 class RiderProfile {
-  const RiderProfile({
-    required this.uid,
-    this.createdAt,
-    this.updatedAt,
-  });
+  const RiderProfile({required this.uid, this.createdAt, this.updatedAt});
 
   final String uid;
   final DateTime? createdAt;

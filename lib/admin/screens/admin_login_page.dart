@@ -199,8 +199,11 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       // Log it for the developer; show the operator a sentence.
       debugPrint('AdminLoginPage: sign-in threw $error\n$stack');
       if (!mounted) return;
-      setState(() => _errorText = 'Sign-in failed. Try again, and tell a '
-          'Super Admin if it keeps happening.');
+      setState(
+        () => _errorText =
+            'Sign-in failed. Try again, and tell a '
+            'Super Admin if it keeps happening.',
+      );
       _selectPasswordForRetry();
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -455,7 +458,8 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                 focusColor: NovaColors.cyan.withValues(alpha: 0.3),
                 side: WidgetStateBorderSide.resolveWith(
                   (states) => BorderSide(
-                    color: states.contains(WidgetState.focused) ||
+                    color:
+                        states.contains(WidgetState.focused) ||
                             states.contains(WidgetState.selected)
                         ? NovaColors.cyan
                         : NovaColors.secondaryText,
@@ -694,7 +698,8 @@ class _FocusRingState extends State<_FocusRing> {
   void _onHighlightModeChanged(FocusHighlightMode _) => _update();
 
   void _update() {
-    final visible = widget.focusNode.hasFocus &&
+    final visible =
+        widget.focusNode.hasFocus &&
         FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
     if (visible != _visible && mounted) setState(() => _visible = visible);
   }

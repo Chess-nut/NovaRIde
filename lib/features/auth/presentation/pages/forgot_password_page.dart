@@ -128,7 +128,8 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 style: TextStyle(color: colors.textPrimary),
               ),
               const TextSpan(
-                text: ' has a NovaRide account, a reset link is on its way. '
+                text:
+                    ' has a NovaRide account, a reset link is on its way. '
                     'It expires in an hour.',
               ),
             ],

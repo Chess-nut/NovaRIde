@@ -1,41 +1,102 @@
 import 'package:flutter/material.dart';
-import 'package:novaride/shared/theme.dart';
-import '../widgets/nova_bottom_nav_bar.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// "Alerts" screen — shown when the SOS button is triggered, or when the
-/// ALERTS tab in the bottom nav bar is selected. Explains what happens
-/// when an emergency SOS is activated, plus current location and the
-/// contacts that will be notified.
-class AlertsPage extends StatelessWidget {
+import 'package:novaride/core/theme/app_colors.dart';
+import 'package:novaride/core/theme/app_spacing.dart';
+import 'package:novaride/core/theme/app_typography.dart';
+import 'package:novaride/core/utils/coordinates.dart';
+import 'package:novaride/core/widgets/nova_lists.dart';
+import 'package:novaride/core/widgets/nova_surfaces.dart';
+import 'package:novaride/shared/models/models.dart' show kCrashCountdown;
+
+import '../providers/helmet_telemetry_provider.dart';
+import '../providers/rider_alerts_provider.dart';
+import '../widgets/nova_bottom_nav_bar.dart';
+import '../widgets/rider_alert_tile.dart';
+import 'gps_map_page.dart';
+import 'profile/emergency_contacts_page.dart';
+import 'profile/helmet_settings_page.dart';
+
+/// "Alerts" — what happens in an emergency, where you are, who is told,
+/// and the alerts you have had. The Alerts tab, and where the Home SOS
+/// button leads.
+///
+/// Every line is now something true. It used to show "EDSA, Quezon
+/// City" at ±5.2 m as the current location, and two of the developers
+/// as the contacts to be notified. Now:
+///
+/// - the steps describe what the firmware and the crash countdown do;
+/// - the location is the helmet's last fix, or says there is none;
+/// - "who is told" names the real channels — the number set on the
+///   helmet, and the operations console;
+/// - recent alerts are `alerts/` for this rider, or an empty state.
+class AlertsPage extends ConsumerWidget {
   const AlertsPage({super.key});
 
-  // Extra accent colors used only on this screen.
-  static const _purple = Color(0xFF9B6BFF);
-  static const _orange = Color(0xFFF5A623);
-
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+
+    void open(Widget page) =>
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+
     return Scaffold(
-      backgroundColor: NovaColors.background,
+      backgroundColor: colors.surface,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          padding: const EdgeInsets.only(bottom: AppSpacing.xl),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildEmergencyBanner(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('What Will Happen'),
-              const SizedBox(height: 12),
-              _buildWhatWillHappenCard(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Current Location'),
-              const SizedBox(height: 12),
-              _buildCurrentLocationCard(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('Contacts to be Notified'),
-              const SizedBox(height: 12),
-              _buildContactsCard(),
+              const NovaScreenHeader(
+                title: 'Alerts',
+                subtitle: 'What happens when something goes wrong',
+                showBack: false,
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: kRiderGutter),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: AppSpacing.sm),
+                    const _EmergencyCard(),
+                    const SizedBox(height: AppSpacing.xxl),
+                    const NovaSectionLabel('Recent alerts'),
+                    const SizedBox(height: AppSpacing.md),
+                    const _RecentAlerts(),
+                    const SizedBox(height: AppSpacing.xxl),
+                    const NovaSectionLabel('Your location now'),
+                    const SizedBox(height: AppSpacing.md),
+                    _LocationCard(onOpenMap: () => open(const GpsMapPage())),
+                    const SizedBox(height: AppSpacing.xxl),
+                    const NovaSectionLabel('Who is told'),
+                    const SizedBox(height: AppSpacing.md),
+                    NovaListGroup(
+                      children: [
+                        NovaListRow(
+                          icon: Icons.sms_outlined,
+                          title: 'The helmet\'s emergency number',
+                          subtitle:
+                              'Texted by the helmet. Set on its setup page.',
+                          onTap: () => open(const HelmetSettingsPage()),
+                        ),
+                        const NovaListRow(
+                          icon: Icons.support_agent,
+                          title: 'NovaRide operations',
+                          subtitle:
+                              'The console sees the alert and your location.',
+                        ),
+                        NovaListRow(
+                          icon: Icons.contact_phone_outlined,
+                          title: 'Your emergency contacts',
+                          subtitle: 'Kept in the app. Not sent alerts yet.',
+                          onTap: () => open(const EmergencyContactsPage()),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -43,276 +104,167 @@ class AlertsPage extends StatelessWidget {
       bottomNavigationBar: const NovaBottomNavBar(selectedIndex: 2),
     );
   }
-
-  // ---- Top red "Emergency Alert System" banner ----
-  Widget _buildEmergencyBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: NovaColors.red.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.red.withValues(alpha: 0.4)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: NovaColors.red.withValues(alpha: 0.18),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.campaign_outlined, color: NovaColors.red, size: 22),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Emergency Alert System',
-            style: TextStyle(
-              color: NovaColors.red,
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Activating this emergency SOS will immediately send alerts to '
-            'all your emergency contacts and nearby TNVS services with your '
-            'current GPS location.',
-            style: TextStyle(
-              color: NovaColors.secondaryText,
-              fontSize: 13,
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        color: NovaColors.primaryText,
-        fontSize: 15,
-        fontWeight: FontWeight.w700,
-      ),
-    );
-  }
-
-  // ---- "What Will Happen" steps card ----
-  Widget _buildWhatWillHappenCard() {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Column(
-        children: [
-          _WhatHappensTile(
-            icon: Icons.sms_outlined,
-            iconColor: NovaColors.cyan,
-            title: 'SMS Alerts Sent',
-            subtitle: 'All emergency contacts receive immediate notification',
-          ),
-          _WhatHappensTile(
-            icon: Icons.location_on_outlined,
-            iconColor: NovaColors.green,
-            title: 'GPS Location Shared',
-            subtitle: 'Real-time coordinates transmitted instantly',
-          ),
-          _WhatHappensTile(
-            icon: Icons.directions_car_filled_outlined,
-            iconColor: _purple,
-            title: 'TNVS Services Notified',
-            subtitle: 'Nearby transport services alerted for assistance',
-          ),
-          _WhatHappensTile(
-            icon: Icons.radar,
-            iconColor: _orange,
-            title: 'Continuous Tracking',
-            subtitle: 'Location updates every 30 seconds',
-            isLast: true,
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---- Current Location card ----
-  Widget _buildCurrentLocationCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Column(
-        children: const [
-          _LocationRow(label: 'Latitude', value: '14.5995° N'),
-          SizedBox(height: 12),
-          _LocationRow(label: 'Longitude', value: '120.9842° E'),
-          SizedBox(height: 12),
-          _LocationRow(label: 'Address', value: 'EDSA, Quezon City'),
-          SizedBox(height: 12),
-          _LocationRow(label: 'Accuracy', value: '±5.2m', valueColor: NovaColors.green),
-        ],
-      ),
-    );
-  }
-
-  // ---- Contacts to be Notified card ----
-  Widget _buildContactsCard() {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Column(
-        children: const [
-          _ContactTile(name: 'David Chester M. Legarde (sibling)'),
-          _ContactTile(name: 'Denzil P. Legarde (sibling)'),
-          _ContactTile(name: 'Ralph Lluewyne U. Natal (sibling)'),
-          _ContactTile(name: 'Hanz Jibriel C. Agbayani (sibling)'),
-          _ContactTile(name: 'Emergency Services'),
-          _ContactTile(name: 'Nearby TNVS Services'),
-        ],
-      ),
-    );
-  }
 }
 
-/// One row in the "What Will Happen" card.
-class _WhatHappensTile extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final bool isLast;
-
-  const _WhatHappensTile({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    this.isLast = false,
-  });
+/// What an emergency sets in motion, in order.
+class _EmergencyCard extends StatelessWidget {
+  const _EmergencyCard();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      child: Row(
+    final colors = context.colors;
+    final seconds = kCrashCountdown.inSeconds;
+    final steps = [
+      (
+        Icons.car_crash,
+        'Crash detected',
+        'You get $seconds seconds to cancel a false alarm.',
+      ),
+      (
+        Icons.sms_outlined,
+        'Help is texted',
+        'The helmet sends its emergency number a map link to where you are.',
+      ),
+      (
+        Icons.support_agent,
+        'Operations alerted',
+        'The NovaRide console sees the alert and can send responders.',
+      ),
+      (
+        Icons.my_location,
+        'Location keeps updating',
+        'About every 30 seconds while the helmet is online.',
+      ),
+    ];
+
+    return NovaCard(
+      tone: NovaTone.critical,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: iconColor, size: 18),
+          Row(
+            children: [
+              Icon(Icons.sos, color: colors.critical, size: 24),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Text(
+                  'In an emergency',
+                  style: context.text.h2.copyWith(color: colors.critical),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
+          const SizedBox(height: AppSpacing.lg),
+          for (var i = 0; i < steps.length; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.lg),
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: NovaColors.primaryText,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+                Icon(steps[i].$1, size: 20, color: colors.textSecondary),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(steps[i].$2, style: context.text.title),
+                      const SizedBox(height: 2),
+                      Text(steps[i].$3, style: context.text.body),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(color: NovaColors.secondaryText, fontSize: 12),
                 ),
               ],
             ),
-          ),
+          ],
         ],
       ),
     );
   }
 }
 
-/// One label/value row in the Current Location card.
-class _LocationRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color? valueColor;
+/// This rider's latest alerts from `alerts/`, or why there are none.
+class _RecentAlerts extends ConsumerWidget {
+  const _RecentAlerts();
 
-  const _LocationRow({
-    required this.label,
-    required this.value,
-    this.valueColor,
-  });
+  static const _shown = 5;
 
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final linked = ref.watch(linkedRiderProvider).value;
+    final alertsAsync = ref.watch(riderAlertsProvider);
+
+    if (alertsAsync.hasError) {
+      return const NovaNote(
+        tone: NovaTone.critical,
+        icon: Icons.error_outline,
+        text:
+            'Couldn\'t load your alerts. They\'ll appear here once the '
+            'connection is back.',
+      );
+    }
+
+    final alerts = alertsAsync.value ?? const [];
+    if (alerts.isEmpty) {
+      return NovaEmptyState(
+        icon: Icons.verified_user_outlined,
+        title: 'No alerts',
+        message: linked == null
+            ? 'Alerts appear here once operations links your account to '
+                  'your helmet.'
+            : 'Nothing has happened. Alerts the helmet raises appear here.',
+      );
+    }
+
+    return NovaListGroup(
       children: [
-        Text(
-          label,
-          style: const TextStyle(color: NovaColors.secondaryText, fontSize: 13),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            color: valueColor ?? NovaColors.primaryText,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        for (final alert in alerts.take(_shown)) RiderAlertRow(alert: alert),
       ],
     );
   }
 }
 
-/// One row in the Contacts to be Notified card.
-class _ContactTile extends StatelessWidget {
-  final String name;
+/// The helmet's last GPS fix, or why there is none.
+class _LocationCard extends ConsumerWidget {
+  const _LocationCard({required this.onOpenMap});
 
-  const _ContactTile({required this.name});
+  final VoidCallback onOpenMap;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      child: Row(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = ref.watch(helmetTelemetryProvider).value;
+    final lat = t?.lat;
+    final lng = t?.lng;
+    final fix = t?.hasUsableFix;
+
+    if (lat == null || lng == null) {
+      return NovaEmptyState(
+        icon: Icons.location_off_outlined,
+        title: 'No location yet',
+        message: 'The helmet needs a GPS fix. Its antenna has to see the sky.',
+        action: TextButton(onPressed: onOpenMap, child: const Text('Open map')),
+      );
+    }
+
+    final takenAt = fixTakenAt(t?.lastSeen, t?.gpsAgeMs);
+    return NovaCard(
+      onTap: onOpenMap,
+      semanticLabel: 'Your location. Open map.',
+      child: Column(
         children: [
-          Expanded(
-            child: Text(
-              name,
-              style: const TextStyle(
-                color: NovaColors.primaryText,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+          NovaValueRow(label: 'Latitude', value: formatLatitude(lat)),
+          NovaValueRow(label: 'Longitude', value: formatLongitude(lng)),
+          NovaValueRow(
+            label: 'Fix',
+            value: switch (fix) {
+              true =>
+                t?.satellites == null
+                    ? 'Current'
+                    : 'Current · ${t!.satellites} satellites',
+              false => 'Old — last known position',
+              null => '—',
+            },
           ),
-          Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              color: NovaColors.green.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.check, color: NovaColors.green, size: 14),
-          ),
+          if (takenAt != null)
+            NovaValueRow(label: 'Fix taken', value: novaTimeAgo(takenAt)),
         ],
       ),
     );

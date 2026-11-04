@@ -168,11 +168,14 @@ void main() {
       expect(find.textContaining('Cannot reach Firestore'), findsOneWidget);
     });
 
-    testWidgets('anything else shows one fixed sentence, never the exception',
-        (tester) async {
+    testWidgets('anything else shows one fixed sentence, never the exception', (
+      tester,
+    ) async {
       final repo = await _openAlertsWithOneCrash(tester);
-      repo.failWith = Exception('[cloud_firestore/permission-denied] '
-          'Missing or insufficient permissions at alerts/A-101');
+      repo.failWith = Exception(
+        '[cloud_firestore/permission-denied] '
+        'Missing or insufficient permissions at alerts/A-101',
+      );
 
       await tester.ensureVisible(find.text('Acknowledge'));
       await tester.tap(find.text('Acknowledge'));

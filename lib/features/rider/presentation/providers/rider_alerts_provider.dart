@@ -9,10 +9,15 @@ import '../../domain/entities/rider_alert.dart';
 
 /// The roster entry linked to whoever is signed in, or null when nobody is
 /// signed in or no Super Admin has linked this account yet.
+///
+/// A guardian is never linked to a roster entry (the rules refuse it), so
+/// this is null for them without asking — the crash countdown that wraps
+/// every screen is the rider's alone. A guardian reaches the rider they
+/// follow through `followedRosterProvider` instead.
 final linkedRiderProvider = StreamProvider<LinkedRider?>((ref) {
-  final uid = ref.watch(authStateProvider).profile?.uid;
-  if (uid == null) return Stream.value(null);
-  return ref.watch(riderAlertRepositoryProvider).watchLinkedRider(uid);
+  final profile = ref.watch(authStateProvider).profile;
+  if (profile == null || !profile.isRider) return Stream.value(null);
+  return ref.watch(riderAlertRepositoryProvider).watchLinkedRider(profile.uid);
 });
 
 /// That rider's alerts, newest first. Empty while unlinked.

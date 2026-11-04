@@ -15,11 +15,11 @@ class FleetStatusDonutPanel extends StatelessWidget {
 
   /// Offline rides at 40% so the "nothing to see here" bucket stays quiet.
   static Color colorFor(RiderStatus status) => switch (status) {
-        RiderStatus.riding => NovaColors.green,
-        RiderStatus.idle => NovaColors.cyan,
-        RiderStatus.emergency => NovaColors.red,
-        RiderStatus.offline => NovaColors.secondaryText.withValues(alpha: 0.4),
-      };
+    RiderStatus.riding => NovaColors.green,
+    RiderStatus.idle => NovaColors.cyan,
+    RiderStatus.emergency => NovaColors.red,
+    RiderStatus.offline => NovaColors.secondaryText.withValues(alpha: 0.4),
+  };
 
   /// Fixed order — riding, idle, emergency, offline — so slices never swap
   /// places when the numbers move.
@@ -101,10 +101,7 @@ class FleetStatusDonutPanel extends StatelessWidget {
                   painter: _DonutPainter(
                     segments: [
                       for (final status in _order)
-                        (
-                          value: counts[status] ?? 0,
-                          color: colorFor(status),
-                        ),
+                        (value: counts[status] ?? 0, color: colorFor(status)),
                     ],
                     total: total,
                   ),

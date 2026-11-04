@@ -15,7 +15,10 @@ library;
 const consoleVersion = '1.0.0';
 
 /// Mirrors the `+N` build number in `pubspec.yaml` unless overridden.
-const consoleBuild = String.fromEnvironment('NOVARIDE_BUILD', defaultValue: '1');
+const consoleBuild = String.fromEnvironment(
+  'NOVARIDE_BUILD',
+  defaultValue: '1',
+);
 
 /// "v1.0.0 (1)", or "v1.0.0 (df2feb1)" for a tagged build.
 const consoleVersionLabel = 'v$consoleVersion ($consoleBuild)';

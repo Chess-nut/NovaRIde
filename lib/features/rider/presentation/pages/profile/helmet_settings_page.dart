@@ -1,100 +1,105 @@
 import 'package:flutter/material.dart';
-import 'package:novaride/shared/theme.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// "Helmet Settings" screen — device info for the paired smart helmet plus
-/// toggles for detection features. Opened from the Profile screen's
-/// ACCOUNT card.
-class HelmetSettingsPage extends StatefulWidget {
+import 'package:novaride/core/errors/firebase_failure_mapper.dart';
+import 'package:novaride/core/theme/app_colors.dart';
+import 'package:novaride/core/theme/app_spacing.dart';
+import 'package:novaride/core/theme/app_typography.dart';
+import 'package:novaride/core/widgets/nova_lists.dart';
+import 'package:novaride/core/widgets/nova_surfaces.dart';
+
+import '../../../domain/entities/helmet_telemetry.dart';
+import '../../providers/helmet_telemetry_provider.dart';
+
+/// "Helmet settings" — what the helmet is doing, and how to change what
+/// it does.
+///
+/// The device card reads the same live node as Home. It used to show
+/// 78% battery, -62 dBm and "NV-08567" under "Connected", none of which
+/// came from anywhere.
+///
+/// **The app cannot write to the helmet.** Its real settings — Wi‑Fi,
+/// the emergency number it texts, the alcohol threshold — are changed on
+/// the helmet's own setup page, so this screen says how, step by step,
+/// from the user manual. Detection is shown as it is (always on in this
+/// firmware) with switches the rider cannot flip, rather than switches
+/// that flip and change nothing. The Bluetooth "Auto-connect" toggle and
+/// "Unpair helmet" button are gone: the helmet talks over Wi‑Fi, and
+/// nothing pairs an account to a helmet yet.
+class HelmetSettingsPage extends ConsumerWidget {
   const HelmetSettingsPage({super.key});
 
   @override
-  State<HelmetSettingsPage> createState() => _HelmetSettingsPageState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final deviceId = ref.watch(helmetDeviceIdProvider);
+    final telemetryAsync = ref.watch(helmetTelemetryProvider);
+    final now = ref.watch(helmetClockProvider).value ?? DateTime.now();
 
-class _HelmetSettingsPageState extends State<HelmetSettingsPage> {
-  bool _autoConnect = true;
-  bool _impactDetection = true;
-  bool _alcoholDetection = true;
-  bool _ledIndicator = true;
-  bool _soundAlerts = false;
-  double _sensitivity = 1; // 0 = Low, 1 = Medium, 2 = High
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: NovaColors.background,
+      backgroundColor: colors.surface,
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
+            const NovaScreenHeader(
+              title: 'Helmet settings',
+              subtitle: 'What your helmet is doing',
+            ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                padding: const EdgeInsets.fromLTRB(
+                  kRiderGutter,
+                  AppSpacing.lg,
+                  kRiderGutter,
+                  AppSpacing.xl,
+                ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _buildDeviceCard(),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('CONNECTION'),
-                    const SizedBox(height: 12),
-                    _buildToggleCard([
-                      _ToggleRow(
-                        icon: Icons.bluetooth,
-                        iconColor: NovaColors.cyan,
-                        title: 'Auto-Connect',
-                        subtitle: 'Connect automatically when helmet is nearby',
-                        value: _autoConnect,
-                        onChanged: (v) => setState(() => _autoConnect = v),
-                      ),
-                    ]),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('DETECTION'),
-                    const SizedBox(height: 12),
-                    _buildToggleCard([
-                      _ToggleRow(
-                        icon: Icons.warning_amber_rounded,
-                        iconColor: NovaColors.pink,
-                        title: 'Impact Detection',
-                        subtitle: 'Detect crashes using onboard accelerometer',
-                        value: _impactDetection,
-                        onChanged: (v) => setState(() => _impactDetection = v),
-                      ),
-                      const Divider(height: 1, color: NovaColors.cardBorder, indent: 56),
-                      _ToggleRow(
-                        icon: Icons.local_bar_outlined,
-                        iconColor: NovaColors.amber,
-                        title: 'Alcohol Detection',
-                        subtitle: 'Warn when breath alcohol exceeds safe limit',
-                        value: _alcoholDetection,
-                        onChanged: (v) => setState(() => _alcoholDetection = v),
-                      ),
-                    ]),
-                    const SizedBox(height: 16),
-                    _buildSensitivityCard(),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('FEEDBACK'),
-                    const SizedBox(height: 12),
-                    _buildToggleCard([
-                      _ToggleRow(
-                        icon: Icons.lightbulb_outline,
-                        iconColor: NovaColors.green,
-                        title: 'LED Indicator',
-                        subtitle: 'Show status light on the helmet',
-                        value: _ledIndicator,
-                        onChanged: (v) => setState(() => _ledIndicator = v),
-                      ),
-                      const Divider(height: 1, color: NovaColors.cardBorder, indent: 56),
-                      _ToggleRow(
-                        icon: Icons.volume_up_outlined,
-                        iconColor: NovaColors.purple,
-                        title: 'Sound Alerts',
-                        subtitle: 'Play a beep on warnings and alerts',
-                        value: _soundAlerts,
-                        onChanged: (v) => setState(() => _soundAlerts = v),
-                      ),
-                    ]),
-                    const SizedBox(height: 28),
-                    _buildUnpairButton(),
+                    _DeviceCard(
+                      deviceId: deviceId,
+                      telemetryAsync: telemetryAsync,
+                      now: now,
+                      onRetry: () => ref.invalidate(helmetTelemetryProvider),
+                    ),
+                    const SizedBox(height: AppSpacing.xxl),
+                    const NovaSectionLabel('Detection'),
+                    const SizedBox(height: AppSpacing.md),
+                    const NovaListGroup(
+                      children: [
+                        NovaSwitchRow(
+                          icon: Icons.monitor_heart_outlined,
+                          title: 'Crash detection',
+                          subtitle: 'Accelerometer and tilt',
+                          value: true,
+                          onChanged: null,
+                        ),
+                        NovaSwitchRow(
+                          icon: Icons.water_drop_outlined,
+                          title: 'Alcohol detection',
+                          subtitle: 'MQ‑3 breath sensor',
+                          value: true,
+                          onChanged: null,
+                        ),
+                        NovaSwitchRow(
+                          icon: Icons.volume_up_outlined,
+                          title: 'Alarm sound',
+                          subtitle: 'Beeps on a warning',
+                          value: true,
+                          onChanged: null,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text(
+                      'Always on in this version of the helmet. Turning them '
+                      'off from the app is not supported yet.',
+                      style: context.text.caption,
+                    ),
+                    const SizedBox(height: AppSpacing.xxl),
+                    const NovaSectionLabel('Change settings on the helmet'),
+                    const SizedBox(height: AppSpacing.md),
+                    const _SetupSteps(),
                   ],
                 ),
               ),
@@ -104,343 +109,175 @@ class _HelmetSettingsPageState extends State<HelmetSettingsPage> {
       ),
     );
   }
+}
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 20, 4),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: 36,
-              height: 36,
-              alignment: Alignment.center,
-              child: const Icon(Icons.arrow_back, color: NovaColors.primaryText, size: 22),
-            ),
-          ),
-          const SizedBox(width: 4),
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Helmet Settings',
-                style: TextStyle(
-                  color: NovaColors.primaryText,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              SizedBox(height: 2),
-              Text(
-                'Manage your connected smart helmet',
-                style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+/// The helmet's identity and live state.
+class _DeviceCard extends StatelessWidget {
+  const _DeviceCard({
+    required this.deviceId,
+    required this.telemetryAsync,
+    required this.now,
+    required this.onRetry,
+  });
 
-  // ---- Connected device summary ----
-  Widget _buildDeviceCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
+  final String deviceId;
+  final AsyncValue<HelmetTelemetry?> telemetryAsync;
+  final DateTime now;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final failed = telemetryAsync.hasError && !telemetryAsync.isLoading;
+    final t = failed ? null : telemetryAsync.value;
+    final waiting = !failed && !telemetryAsync.hasValue;
+    final live =
+        t != null && t.online == true && t.isFresh(now, helmetStaleAfter);
+
+    final (String pill, NovaTone tone) = failed
+        ? ('Error', NovaTone.critical)
+        : waiting
+        ? ('Connecting…', NovaTone.offline)
+        : t == null
+        ? ('Never reported', NovaTone.offline)
+        : live
+        ? ('Live', NovaTone.safe)
+        : ('Offline', NovaTone.offline);
+
+    final lastSeen = t?.lastSeen;
+    final ip = t?.ip;
+    final connection = ip == null
+        ? null
+        : ip == 'cellular'
+        ? 'Cellular'
+        : 'Wi‑Fi · $ip';
+    final fix = t?.hasUsableFix;
+    final satellites = t?.satellites;
+
+    return NovaCard(
+      tone: failed ? NovaTone.critical : NovaTone.neutral,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: NovaColors.green.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.sports_motorsports, color: NovaColors.green, size: 22),
+              Icon(
+                Icons.sports_motorsports_outlined,
+                size: 28,
+                color: colors.textSecondary,
               ),
-              const SizedBox(width: 12),
-              const Expanded(
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'NovaRide Smart Helmet',
-                      style: TextStyle(
-                        color: NovaColors.primaryText,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'ESP32 · Firmware v4.2',
-                      style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
-                    ),
+                    Text('NovaRide helmet', style: context.text.h2),
+                    Text(deviceId, style: context.text.bodyMuted),
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: NovaColors.green.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Icon(Icons.circle, color: NovaColors.green, size: 7),
-                    SizedBox(width: 5),
-                    Text(
-                      'Connected',
-                      style: TextStyle(
-                        color: NovaColors.green,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              NovaPill(label: pill, tone: tone),
             ],
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: const [
-              Expanded(child: _DeviceStat(icon: Icons.battery_charging_full, label: '78%', sub: 'BATTERY')),
-              Expanded(child: _DeviceStat(icon: Icons.podcasts, label: '-62 dBm', sub: 'SIGNAL')),
-              Expanded(child: _DeviceStat(icon: Icons.tag, label: 'NV-08567', sub: 'HELMET ID')),
-            ],
-          ),
+          const SizedBox(height: AppSpacing.md),
+          if (failed) ...[
+            Text(messageFor(telemetryAsync.error!), style: context.text.body),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(onPressed: onRetry, child: const Text('Retry')),
+            ),
+          ] else ...[
+            NovaValueRow(
+              label: 'Last report',
+              value: lastSeen == null ? '—' : novaTimeAgo(lastSeen, now),
+            ),
+            NovaValueRow(label: 'Connection', value: connection ?? '—'),
+            NovaValueRow(
+              label: 'Crash sensor',
+              value: switch (t?.accelerometerReady) {
+                true => 'Ready',
+                false => 'Not ready',
+                null => '—',
+              },
+            ),
+            NovaValueRow(
+              label: 'GPS',
+              value: switch (fix) {
+                true =>
+                  satellites == null ? 'Fix' : 'Fix · $satellites satellites',
+                false => 'No fix',
+                null => '—',
+              },
+            ),
+            // Said outright, so nobody goes looking for it.
+            const NovaValueRow(label: 'Battery', value: 'Not measured'),
+          ],
         ],
       ),
     );
   }
+}
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        color: NovaColors.secondaryText,
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1,
-      ),
-    );
-  }
+/// How to change the helmet's real settings, from the user manual.
+class _SetupSteps extends StatelessWidget {
+  const _SetupSteps();
 
-  Widget _buildToggleCard(List<Widget> children) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
-      child: Column(children: children),
-    );
-  }
+  static const _steps = [
+    (
+      'Turn the helmet on',
+      'Power the board, then press PWR on the AIR780E. Wait about a minute.',
+    ),
+    (
+      'Join its Wi‑Fi',
+      'Connect your phone to "SmartGPS-Setup" (password in the user '
+          'manual). Turn mobile data off so the phone stays on it.',
+    ),
+    (
+      'Open the setup page',
+      'In a browser go to http://192.168.4.1 — http, not https.',
+    ),
+    (
+      'Change what you need',
+      'Home Wi‑Fi (2.4 GHz only), the emergency number it texts, and the '
+          'alcohol threshold (about 1900). Tap Save after each.',
+    ),
+  ];
 
-  // ---- Impact sensitivity slider ----
-  Widget _buildSensitivityCard() {
-    const labels = ['Low', 'Medium', 'High'];
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-      decoration: BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NovaColors.cardBorder),
-      ),
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return NovaCard(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Impact Sensitivity',
-            style: TextStyle(
-              color: NovaColors.primaryText,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '${labels[_sensitivity.round()]} sensitivity — higher may trigger more false alerts',
-            style: const TextStyle(color: NovaColors.secondaryText, fontSize: 11.5),
-          ),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: NovaColors.cyan,
-              inactiveTrackColor: NovaColors.cardBorder,
-              thumbColor: NovaColors.cyan,
-              overlayColor: NovaColors.cyan.withValues(alpha: 0.15),
-              valueIndicatorColor: NovaColors.cyan,
-            ),
-            child: Slider(
-              value: _sensitivity,
-              min: 0,
-              max: 2,
-              divisions: 2,
-              label: labels[_sensitivity.round()],
-              onChanged: (v) => setState(() => _sensitivity = v),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUnpairButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 50,
-      child: OutlinedButton.icon(
-        onPressed: () => _confirmUnpair(context),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: NovaColors.red),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
-        icon: const Icon(Icons.link_off, color: NovaColors.red, size: 18),
-        label: const Text(
-          'UNPAIR HELMET',
-          style: TextStyle(
-            color: NovaColors.red,
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1,
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _confirmUnpair(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: NovaColors.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Unpair Helmet',
-          style: TextStyle(color: NovaColors.primaryText, fontWeight: FontWeight.w700),
-        ),
-        content: const Text(
-          'Your helmet will stop sending telemetry and safety alerts until '
-          'you pair it again. Continue?',
-          style: TextStyle(color: NovaColors.secondaryText),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel', style: TextStyle(color: NovaColors.secondaryText)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Unpair', style: TextStyle(color: NovaColors.red)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DeviceStat extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String sub;
-
-  const _DeviceStat({required this.icon, required this.label, required this.sub});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: NovaColors.secondaryText, size: 18),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            color: NovaColors.primaryText,
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          sub,
-          style: const TextStyle(color: NovaColors.secondaryText, fontSize: 9.5, letterSpacing: 0.4),
-        ),
-      ],
-    );
-  }
-}
-
-class _ToggleRow extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _ToggleRow({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: iconColor, size: 16),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
+          for (var i = 0; i < _steps.length; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.lg),
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: NovaColors.primaryText,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: colors.border,
+                    shape: BoxShape.circle,
                   ),
+                  child: Text('${i + 1}', style: context.text.label),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(color: NovaColors.secondaryText, fontSize: 11.5),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_steps[i].$1, style: context.text.title),
+                      const SizedBox(height: 2),
+                      Text(_steps[i].$2, style: context.text.bodyMuted),
+                    ],
+                  ),
                 ),
               ],
             ),
-          ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: NovaColors.cyan,
-            activeTrackColor: NovaColors.cyan.withValues(alpha: 0.3),
-            inactiveThumbColor: NovaColors.secondaryText,
-            inactiveTrackColor: NovaColors.cardBorder,
-          ),
+          ],
         ],
       ),
     );

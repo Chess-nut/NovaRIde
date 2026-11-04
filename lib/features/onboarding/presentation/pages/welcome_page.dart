@@ -134,14 +134,12 @@ class _Capability extends StatelessWidget {
             children: [
               Text(
                 title,
-                style:
-                    AppTypography.title.copyWith(color: colors.textPrimary),
+                style: AppTypography.title.copyWith(color: colors.textPrimary),
               ),
               const SizedBox(height: 2),
               Text(
                 detail,
-                style:
-                    AppTypography.caption.copyWith(color: colors.textMuted),
+                style: AppTypography.caption.copyWith(color: colors.textMuted),
               ),
             ],
           ),

@@ -40,7 +40,7 @@ class ConsoleBackend {
 
   /// The in-process simulation, exactly as the console ran before Firebase.
   ConsoleBackend.simulation()
-      : this(createRepository: MockFleetRepository.new, auth: LocalAdminAuth());
+    : this(createRepository: MockFleetRepository.new, auth: LocalAdminAuth());
 }
 
 /// Decides, once at startup, where the console's fleet data comes from and
@@ -64,8 +64,9 @@ class FleetBootstrap {
 
   /// `--dart-define=NOVARIDE_FORCE_SIMULATION=true` keeps a configured
   /// machine on the simulation, for offline rehearsals.
-  static const forceSimulation =
-      bool.fromEnvironment('NOVARIDE_FORCE_SIMULATION');
+  static const forceSimulation = bool.fromEnvironment(
+    'NOVARIDE_FORCE_SIMULATION',
+  );
 
   /// `--dart-define=SEED_FIRESTORE=true` writes the simulation's seed fleet
   /// into an empty Firestore once a Super Admin signs in. Never automatic;
@@ -88,18 +89,24 @@ class FleetBootstrap {
         await Firebase.initializeApp(options: options);
       }
     } catch (error) {
-      debugPrint('FleetBootstrap: Firebase failed to initialise — $error. '
-          'Falling back to the simulation.');
+      debugPrint(
+        'FleetBootstrap: Firebase failed to initialise — $error. '
+        'Falling back to the simulation.',
+      );
       return ConsoleBackend.simulation();
     }
 
     if (seedRequested) {
-      debugPrint('FleetBootstrap: SEED_FIRESTORE set — the seed runs after a '
-          'Super Admin signs in.');
+      debugPrint(
+        'FleetBootstrap: SEED_FIRESTORE set — the seed runs after a '
+        'Super Admin signs in.',
+      );
     }
 
-    debugPrint('FleetBootstrap: Cloud Firestore (${options.projectId}), '
-        'helmet telemetry also from Realtime Database.');
+    debugPrint(
+      'FleetBootstrap: Cloud Firestore (${options.projectId}), '
+      'helmet telemetry also from Realtime Database.',
+    );
     return ConsoleBackend(
       // The URL is explicit: firebase.json has no databaseURL, and the
       // default instance would be the us-central1 host, which returns
@@ -126,8 +133,10 @@ class FleetBootstrap {
   static Future<void> seedAfterSignIn(AdminUser user) async {
     if (!seedRequested || Firebase.apps.isEmpty) return;
     if (user.role != AdminRole.superAdmin) {
-      debugPrint('FleetBootstrap: SEED_FIRESTORE set, but ${user.email} is a '
-          '${user.role.label} — only a Super Admin may seed. Skipped.');
+      debugPrint(
+        'FleetBootstrap: SEED_FIRESTORE set, but ${user.email} is a '
+        '${user.role.label} — only a Super Admin may seed. Skipped.',
+      );
       return;
     }
     try {
@@ -185,8 +194,10 @@ class FleetBootstrap {
         measurementId: map['measurementId'] as String?,
       );
     } catch (error) {
-      debugPrint('FleetBootstrap: $configAsset is unusable ($error) — '
-          'simulation.');
+      debugPrint(
+        'FleetBootstrap: $configAsset is unusable ($error) — '
+        'simulation.',
+      );
       return null;
     }
   }

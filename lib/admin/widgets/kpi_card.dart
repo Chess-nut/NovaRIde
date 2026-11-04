@@ -14,8 +14,8 @@ import 'package:novaride/shared/theme.dart';
 int kpiCardsPerRow(double width) => width >= 990
     ? 5
     : width >= 760
-        ? 3
-        : 2;
+    ? 3
+    : 2;
 
 /// One headline metric on the dashboard KPI row.
 class KpiCard extends StatelessWidget {
@@ -45,10 +45,14 @@ class KpiCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: alarmed ? NovaColors.red.withValues(alpha: 0.08) : NovaColors.card,
+        color: alarmed
+            ? NovaColors.red.withValues(alpha: 0.08)
+            : NovaColors.card,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: alarmed ? NovaColors.red.withValues(alpha: 0.5) : NovaColors.cardBorder,
+          color: alarmed
+              ? NovaColors.red.withValues(alpha: 0.5)
+              : NovaColors.cardBorder,
         ),
       ),
       child: Column(
@@ -90,7 +94,10 @@ class KpiCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             caption,
-            style: const TextStyle(color: NovaColors.secondaryText, fontSize: 11),
+            style: const TextStyle(
+              color: NovaColors.secondaryText,
+              fontSize: 11,
+            ),
           ),
         ],
       ),

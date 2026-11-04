@@ -67,10 +67,16 @@ class _CrashCountdownGateState extends ConsumerState<CrashCountdownGate> {
   @override
   void initState() {
     super.initState();
-    ref.listenManual(riderAlertsProvider, (_, next) => _onAlerts(next.value ?? const []),
-        fireImmediately: true);
-    ref.listenManual(linkedRiderProvider, (_, next) => _onRider(next.value),
-        fireImmediately: true);
+    ref.listenManual(
+      riderAlertsProvider,
+      (_, next) => _onAlerts(next.value ?? const []),
+      fireImmediately: true,
+    );
+    ref.listenManual(
+      linkedRiderProvider,
+      (_, next) => _onRider(next.value),
+      fireImmediately: true,
+    );
   }
 
   @override
@@ -97,13 +103,17 @@ class _CrashCountdownGateState extends ConsumerState<CrashCountdownGate> {
     final clock = DateTime.now();
     for (final a in alerts) {
       final ends = a.countdownEndsAt;
-      if (ends == null || !ends.isAfter(clock) || _dismissed.contains(a.id)) continue;
+      if (ends == null || !ends.isAfter(clock) || _dismissed.contains(a.id))
+        continue;
       setState(() {
         _active = a;
         _phase = _Phase.counting;
       });
       _ticker?.cancel();
-      _ticker = Timer.periodic(const Duration(milliseconds: 250), (_) => _tick());
+      _ticker = Timer.periodic(
+        const Duration(milliseconds: 250),
+        (_) => _tick(),
+      );
       return;
     }
   }
@@ -140,7 +150,9 @@ class _CrashCountdownGateState extends ConsumerState<CrashCountdownGate> {
       _lastCancelled = alert;
       _settle(_Phase.cancelled);
     } on Failure catch (failure) {
-      AppLogger.w('countdown: cancel of ${alert.id} refused: ${failure.message}');
+      AppLogger.w(
+        'countdown: cancel of ${alert.id} refused: ${failure.message}',
+      );
       _settle(_Phase.failed);
     } on TimeoutException {
       AppLogger.w('countdown: cancel of ${alert.id} timed out');
@@ -161,9 +173,13 @@ class _CrashCountdownGateState extends ConsumerState<CrashCountdownGate> {
     if (rider == null || cancelled == null || _standingDown) return;
     if (rider.status != 'emergency') return;
     final arrived = cancelled.timestamp;
-    if (arrived == null || !arrived.add(_standDownWindow).isAfter(DateTime.now())) return;
+    if (arrived == null ||
+        !arrived.add(_standDownWindow).isAfter(DateTime.now()))
+      return;
     final alerts = ref.read(riderAlertsProvider).value ?? const [];
-    final otherLive = alerts.any((a) => a.id != cancelled.id && a.isCritical && a.isLive);
+    final otherLive = alerts.any(
+      (a) => a.id != cancelled.id && a.isCritical && a.isLive,
+    );
     if (otherLive) return;
 
     _standingDown = true;
@@ -192,7 +208,8 @@ class _CrashCountdownGateState extends ConsumerState<CrashCountdownGate> {
     return Stack(
       children: [
         widget.child,
-        if (active != null) Positioned.fill(child: _buildOverlay(context, active)),
+        if (active != null)
+          Positioned.fill(child: _buildOverlay(context, active)),
       ],
     );
   }
@@ -203,38 +220,39 @@ class _CrashCountdownGateState extends ConsumerState<CrashCountdownGate> {
     final ends = alert.countdownEndsAt;
     final remaining = ends == null
         ? 0
-        : (ends.difference(DateTime.now()).inMilliseconds / 1000)
-            .ceil()
-            .clamp(0, kCrashCountdown.inSeconds);
+        : (ends.difference(DateTime.now()).inMilliseconds / 1000).ceil().clamp(
+            0,
+            kCrashCountdown.inSeconds,
+          );
 
     final (Color tone, String headline, String body) = switch (_phase) {
       _Phase.counting || _Phase.cancelling => (
-          colors.critical,
-          'Crash detected',
-          'Are you OK? If you don\'t respond, the dispatcher is alerted when '
-              'the timer reaches zero.',
-        ),
+        colors.critical,
+        'Crash detected',
+        'Are you OK? If you don\'t respond, the dispatcher is alerted when '
+            'the timer reaches zero.',
+      ),
       _Phase.cancelled => (
-          colors.safe,
-          'Alert cancelled',
-          'Nobody has been dispatched. Ride safe.',
-        ),
+        colors.safe,
+        'Alert cancelled',
+        'Nobody has been dispatched. Ride safe.',
+      ),
       _Phase.escalated => (
-          colors.critical,
-          'The dispatcher has been alerted',
-          'Help is being arranged. Keep your phone with you; they may call.',
-        ),
+        colors.critical,
+        'The dispatcher has been alerted',
+        'Help is being arranged. Keep your phone with you; they may call.',
+      ),
       _Phase.takenUp => (
-          colors.critical,
-          'A dispatcher is responding',
-          'Help is being arranged. Keep your phone with you; they may call.',
-        ),
+        colors.critical,
+        'A dispatcher is responding',
+        'Help is being arranged. Keep your phone with you; they may call.',
+      ),
       _Phase.failed => (
-          colors.warning,
-          'The alert could not be cancelled',
-          'It may have been too late, or the phone could not reach NovaRide. '
-              'The dispatcher has the alert and may call you.',
-        ),
+        colors.warning,
+        'The alert could not be cancelled',
+        'It may have been too late, or the phone could not reach NovaRide. '
+            'The dispatcher has the alert and may call you.',
+      ),
     };
 
     final counting = _phase == _Phase.counting || _phase == _Phase.cancelling;
@@ -254,14 +272,21 @@ class _CrashCountdownGateState extends ConsumerState<CrashCountdownGate> {
                 color: tone,
               ),
               const SizedBox(height: AppSpacing.lg),
-              Text(headline, textAlign: TextAlign.center, style: text.h1.copyWith(color: tone)),
+              Text(
+                headline,
+                textAlign: TextAlign.center,
+                style: text.h1.copyWith(color: tone),
+              ),
               if (counting) ...[
                 const SizedBox(height: AppSpacing.xl),
                 Text(
                   '$remaining',
                   key: const ValueKey('countdown-seconds'),
                   textAlign: TextAlign.center,
-                  style: text.display.copyWith(color: colors.textPrimary, fontSize: 96),
+                  style: text.display.copyWith(
+                    color: colors.textPrimary,
+                    fontSize: 96,
+                  ),
                 ),
               ],
               const SizedBox(height: AppSpacing.lg),

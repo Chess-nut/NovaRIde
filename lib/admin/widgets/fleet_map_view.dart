@@ -386,8 +386,10 @@ class FleetMapPainter extends CustomPainter {
       painter.paint(
         canvas,
         Offset(
-          (anchor.dx - painter.width / 2)
-              .clamp(2.0, size.width - painter.width - 2),
+          (anchor.dx - painter.width / 2).clamp(
+            2.0,
+            size.width - painter.width - 2,
+          ),
           (anchor.dy - 16).clamp(2.0, size.height - painter.height - 2),
         ),
       );

@@ -28,8 +28,10 @@ abstract final class AppTheme {
     AppColors colors, {
     Brightness brightness = Brightness.dark,
   }) {
-    final textTheme =
-        AppTypography.textTheme(colors.textPrimary, colors.textSecondary);
+    final textTheme = AppTypography.textTheme(
+      colors.textPrimary,
+      colors.textSecondary,
+    );
 
     return ThemeData(
       useMaterial3: true,
@@ -121,8 +123,9 @@ abstract final class AppTheme {
         filled: false,
         contentPadding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
         labelStyle: AppTypography.label.copyWith(color: colors.textSecondary),
-        floatingLabelStyle:
-            AppTypography.label.copyWith(color: colors.textSecondary),
+        floatingLabelStyle: AppTypography.label.copyWith(
+          color: colors.textSecondary,
+        ),
         hintStyle: AppTypography.body.copyWith(color: colors.textMuted),
         helperStyle: AppTypography.caption.copyWith(color: colors.textMuted),
         errorStyle: AppTypography.caption.copyWith(color: colors.critical),
@@ -158,7 +161,9 @@ abstract final class AppTheme {
 
       snackBarTheme: SnackBarThemeData(
         backgroundColor: colors.surfaceRaised,
-        contentTextStyle: AppTypography.body.copyWith(color: colors.textPrimary),
+        contentTextStyle: AppTypography.body.copyWith(
+          color: colors.textPrimary,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
@@ -189,9 +194,7 @@ abstract final class AppTheme {
         ),
         checkColor: WidgetStatePropertyAll(colors.onAction),
         side: BorderSide(color: colors.borderStrong, width: 1.5),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(4),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       ),
       iconTheme: IconThemeData(color: colors.textSecondary),
     );

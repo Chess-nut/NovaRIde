@@ -27,12 +27,10 @@ import '../features/auth/presentation/pages/login_page.dart';
 import '../features/auth/presentation/pages/signup_page.dart';
 import '../features/auth/presentation/pages/verify_email_page.dart';
 import '../features/auth/presentation/providers/auth_state.dart';
-import '../features/guardian/presentation/pages/family_dashboard_page.dart';
-import '../features/guardian/presentation/pages/family_emergency_alert_page.dart';
-import '../features/guardian/presentation/pages/family_incident_history_page.dart';
-import '../features/guardian/presentation/pages/family_live_location_page.dart';
-import '../features/guardian/presentation/pages/family_monitoring_page.dart';
-import '../features/guardian/presentation/pages/family_profile_page.dart';
+import '../features/guardian/presentation/pages/guardian_alerts_page.dart';
+import '../features/guardian/presentation/pages/guardian_home_page.dart';
+import '../features/guardian/presentation/pages/guardian_map_page.dart';
+import '../features/guardian/presentation/pages/guardian_profile_page.dart';
 import '../features/onboarding/presentation/pages/role_selection_page.dart';
 import '../features/onboarding/presentation/pages/splash_page.dart';
 import '../features/onboarding/presentation/pages/welcome_page.dart';
@@ -175,39 +173,27 @@ final List<RouteBase> _routes = [
     name: AppRoutes.riderHome,
     builder: (context, state) => const HomePage(),
   ),
-  // The guardian section. The tabs are siblings rather than children
-  // because the existing bottom bar replaces the whole screen on a tap
-  // instead of nesting; a ShellRoute would change that behaviour, and
-  // Phase 7 is where the family dashboards get reworked.
+  // The guardian section: four tabs, siblings rather than children, so a
+  // tab tap replaces the screen (context.go) as the rider's bar does.
   GoRoute(
     path: AppRoutes.guardianHomePath,
     name: AppRoutes.guardianHome,
-    builder: (context, state) => const FamilyDashboardPage(),
+    builder: (context, state) => const GuardianHomePage(),
   ),
   GoRoute(
     path: AppRoutes.guardianMapPath,
     name: AppRoutes.guardianMap,
-    builder: (context, state) => const FamilyLiveLocationPage(),
+    builder: (context, state) => const GuardianMapPage(),
   ),
   GoRoute(
     path: AppRoutes.guardianAlertsPath,
     name: AppRoutes.guardianAlerts,
-    builder: (context, state) => const FamilyEmergencyAlertPage(),
-  ),
-  GoRoute(
-    path: AppRoutes.guardianHistoryPath,
-    name: AppRoutes.guardianHistory,
-    builder: (context, state) => const FamilyIncidentHistoryPage(),
+    builder: (context, state) => const GuardianAlertsPage(),
   ),
   GoRoute(
     path: AppRoutes.guardianProfilePath,
     name: AppRoutes.guardianProfile,
-    builder: (context, state) => const FamilyProfilePage(),
-  ),
-  GoRoute(
-    path: AppRoutes.guardianMonitoringPath,
-    name: AppRoutes.guardianMonitoring,
-    builder: (context, state) => const FamilyMonitoringPage(),
+    builder: (context, state) => const GuardianProfilePage(),
   ),
 ];
 

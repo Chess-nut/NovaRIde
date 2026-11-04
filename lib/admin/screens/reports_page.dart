@@ -15,19 +15,19 @@ enum ReportRange { today, week, month, all }
 
 extension ReportRangeLabel on ReportRange {
   String get label => switch (this) {
-        ReportRange.today => 'Today',
-        ReportRange.week => '7 days',
-        ReportRange.month => '30 days',
-        ReportRange.all => 'All',
-      };
+    ReportRange.today => 'Today',
+    ReportRange.week => '7 days',
+    ReportRange.month => '30 days',
+    ReportRange.all => 'All',
+  };
 
   /// Cut-off for the range, or null for "everything".
   Duration? get window => switch (this) {
-        ReportRange.today => const Duration(days: 1),
-        ReportRange.week => const Duration(days: 7),
-        ReportRange.month => const Duration(days: 30),
-        ReportRange.all => null,
-      };
+    ReportRange.today => const Duration(days: 1),
+    ReportRange.week => const Duration(days: 7),
+    ReportRange.month => const Duration(days: 30),
+    ReportRange.all => null,
+  };
 }
 
 /// Reports and response-time analytics.
@@ -177,7 +177,12 @@ class _ReportsPageState extends State<ReportsPage> {
       _Stat('Avg. resolve', _mean(resolveTimes), NovaColors.green),
       _Stat('Fastest acknowledge', _min(ackTimes), NovaColors.green),
       _Stat('Slowest acknowledge', _max(ackTimes), NovaColors.amber),
-      _Stat('Acted on', null, NovaColors.purple, override: '${ackTimes.length}'),
+      _Stat(
+        'Acted on',
+        null,
+        NovaColors.purple,
+        override: '${ackTimes.length}',
+      ),
     ];
 
     return Container(
@@ -262,12 +267,17 @@ class _ReportsPageState extends State<ReportsPage> {
 
     // Last seven calendar days, oldest first.
     for (var offset = 6; offset >= 0; offset--) {
-      final day = DateTime(today.year, today.month, today.day)
-          .subtract(Duration(days: offset));
+      final day = DateTime(
+        today.year,
+        today.month,
+        today.day,
+      ).subtract(Duration(days: offset));
       final next = day.add(const Duration(days: 1));
       counts.add(
         alerts
-            .where((a) => !a.timestamp.isBefore(day) && a.timestamp.isBefore(next))
+            .where(
+              (a) => !a.timestamp.isBefore(day) && a.timestamp.isBefore(next),
+            )
             .length,
       );
       labels.add(weekdays[day.weekday - 1]);
@@ -398,11 +408,11 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   static String _typeShort(AlertType type) => switch (type) {
-        AlertType.crash => 'Crash',
-        AlertType.sos => 'SOS',
-        AlertType.alcoholWarning => 'Alcohol',
-        AlertType.lowBattery => 'Battery',
-      };
+    AlertType.crash => 'Crash',
+    AlertType.sos => 'SOS',
+    AlertType.alcoholWarning => 'Alcohol',
+    AlertType.lowBattery => 'Battery',
+  };
 
   /// Largest-remainder rounding, so the printed shares always total exactly
   /// 100% instead of 99% or 101% after independent rounding.
@@ -428,16 +438,13 @@ class _ReportsPageState extends State<ReportsPage> {
 
   // --------------------------------------------------------- incident table
 
-  Widget _buildIncidentTable(
-    FleetController fleet,
-    List<AlertEvent> alerts,
-  ) {
+  Widget _buildIncidentTable(FleetController fleet, List<AlertEvent> alerts) {
     // Severity first, then newest — the table reads as a triage list.
     final sorted = List.of(alerts)
       ..sort((a, b) {
-        final byPriority = FleetController.priorityOf(a)
-            .index
-            .compareTo(FleetController.priorityOf(b).index);
+        final byPriority = FleetController.priorityOf(
+          a,
+        ).index.compareTo(FleetController.priorityOf(b).index);
         if (byPriority != 0) return byPriority;
         return b.timestamp.compareTo(a.timestamp);
       });
@@ -525,10 +532,10 @@ class _ReportsPageState extends State<ReportsPage> {
     final resolved = alert.reachedAt(AlertStatus.resolved);
 
     Widget cell(String text, {Color color = NovaColors.primaryText}) => Text(
-          text,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: color, fontSize: 12.5),
-        );
+      text,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(color: color, fontSize: 12.5),
+    );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
@@ -539,10 +546,16 @@ class _ReportsPageState extends State<ReportsPage> {
       ),
       child: Row(
         children: [
-          Expanded(flex: 2, child: cell(alert.id, color: NovaColors.secondaryText)),
+          Expanded(
+            flex: 2,
+            child: cell(alert.id, color: NovaColors.secondaryText),
+          ),
           Expanded(
             flex: 3,
-            child: cell(alert.type.label, color: AlertFeedTile.colorFor(alert.type)),
+            child: cell(
+              alert.type.label,
+              color: AlertFeedTile.colorFor(alert.type),
+            ),
           ),
           Expanded(flex: 3, child: cell(alert.riderName)),
           Expanded(
@@ -559,7 +572,9 @@ class _ReportsPageState extends State<ReportsPage> {
           Expanded(
             flex: 2,
             child: cell(
-              ack == null ? '—' : formatDuration(ack.difference(alert.timestamp)),
+              ack == null
+                  ? '—'
+                  : formatDuration(ack.difference(alert.timestamp)),
               color: ack == null ? NovaColors.secondaryText : NovaColors.cyan,
             ),
           ),
@@ -613,10 +628,7 @@ class _ReportsPageState extends State<ReportsPage> {
             children: [
               const Text(
                 'Select all and copy into a spreadsheet.',
-                style: TextStyle(
-                  color: NovaColors.secondaryText,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
               ),
               const SizedBox(height: 10),
               Expanded(
@@ -686,24 +698,26 @@ String buildIncidentCsv(FleetController fleet, List<AlertEvent> alerts) {
     final dispatched = alert.reachedAt(AlertStatus.dispatched);
     final resolved = alert.reachedAt(AlertStatus.resolved);
 
-    rows.add([
-      alert.id,
-      alert.type.label,
-      alert.riderId,
-      alert.riderName,
-      fleet.riderFor(alert.riderId)?.helmetId ?? '',
-      district.name,
-      alert.address,
-      alert.status.label,
-      formatIso(alert.timestamp),
-      formatIso(ack),
-      formatIso(dispatched),
-      formatIso(resolved),
-      ack == null ? '' : '${ack.difference(alert.timestamp).inSeconds}',
-      resolved == null
-          ? ''
-          : '${resolved.difference(alert.timestamp).inSeconds}',
-    ].map(_csvField).join(','));
+    rows.add(
+      [
+        alert.id,
+        alert.type.label,
+        alert.riderId,
+        alert.riderName,
+        fleet.riderFor(alert.riderId)?.helmetId ?? '',
+        district.name,
+        alert.address,
+        alert.status.label,
+        formatIso(alert.timestamp),
+        formatIso(ack),
+        formatIso(dispatched),
+        formatIso(resolved),
+        ack == null ? '' : '${ack.difference(alert.timestamp).inSeconds}',
+        resolved == null
+            ? ''
+            : '${resolved.difference(alert.timestamp).inSeconds}',
+      ].map(_csvField).join(','),
+    );
   }
 
   return rows.join('\n');

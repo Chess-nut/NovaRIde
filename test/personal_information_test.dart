@@ -49,7 +49,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.person_outline).last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Personal Information'));
+    await tester.tap(find.text('Personal information'));
     await tester.pumpAndSettle();
     expect(find.byType(PersonalInformationPage), findsOneWidget);
     return repository;
@@ -72,14 +72,17 @@ void main() {
 
   // Three editable fields, not five. The rules refuse a change to email
   // or username, so offering them would be offering a failure.
-  testWidgets('offers exactly the fields the rules let it change',
-      (tester) async {
+  testWidgets('offers exactly the fields the rules let it change', (
+    tester,
+  ) async {
     await open(tester);
 
     expect(find.byType(TextFormField), findsNWidgets(3));
     expect(find.text('Usernames cannot be changed.'), findsOneWidget);
-    expect(find.text('Changing your email is not supported yet.'),
-        findsOneWidget);
+    expect(
+      find.text('Changing your email is not supported yet.'),
+      findsOneWidget,
+    );
     expect(find.byIcon(Icons.lock_outline), findsNWidgets(2));
   });
 
@@ -89,8 +92,8 @@ void main() {
     await tester.enterText(find.byType(TextFormField).at(0), 'Juana Dela Cruz');
     await tester.enterText(find.byType(TextFormField).at(1), '09181234567');
     await tester.enterText(find.byType(TextFormField).at(2), 'Taguig City');
-    await tester.ensureVisible(find.text('SAVE CHANGES'));
-    await tester.tap(find.text('SAVE CHANGES'));
+    await tester.ensureVisible(find.text('Save changes'));
+    await tester.tap(find.text('Save changes'));
     await tester.pumpAndSettle();
 
     expect(
@@ -103,13 +106,10 @@ void main() {
   // Sign-up never asks for an address, so demanding one on a first edit
   // would block a save that changes something else entirely.
   testWidgets('accepts a blank address', (tester) async {
-    final repository = await open(
-      tester,
-      profile: rider.copyWith(address: ''),
-    );
+    final repository = await open(tester, profile: rider.copyWith(address: ''));
 
-    await tester.ensureVisible(find.text('SAVE CHANGES'));
-    await tester.tap(find.text('SAVE CHANGES'));
+    await tester.ensureVisible(find.text('Save changes'));
+    await tester.tap(find.text('Save changes'));
     await tester.pumpAndSettle();
 
     expect(repository.calls.any((c) => c.startsWith('updateProfile')), isTrue);
@@ -119,8 +119,8 @@ void main() {
     final repository = await open(tester);
 
     await tester.enterText(find.byType(TextFormField).at(1), '12345');
-    await tester.ensureVisible(find.text('SAVE CHANGES'));
-    await tester.tap(find.text('SAVE CHANGES'));
+    await tester.ensureVisible(find.text('Save changes'));
+    await tester.tap(find.text('Save changes'));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('mobile number like'), findsOneWidget);
@@ -139,12 +139,14 @@ void main() {
     );
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Juana Dela Cruz');
-    await tester.ensureVisible(find.text('SAVE CHANGES'));
-    await tester.tap(find.text('SAVE CHANGES'));
+    await tester.ensureVisible(find.text('Save changes'));
+    await tester.tap(find.text('Save changes'));
     await tester.pumpAndSettle();
 
     expect(
-      find.text('No connection to NovaRide. Check your internet and try again.'),
+      find.text(
+        'No connection to NovaRide. Check your internet and try again.',
+      ),
       findsOneWidget,
     );
     expect(find.byType(PersonalInformationPage), findsOneWidget);

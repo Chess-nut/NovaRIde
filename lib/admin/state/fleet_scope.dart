@@ -114,7 +114,8 @@ class _FleetHostState extends State<FleetHost> {
   @override
   void initState() {
     super.initState();
-    final create = widget.createRepository ??
+    final create =
+        widget.createRepository ??
         FleetSourceScope.maybeOf(context)?.createRepository ??
         MockFleetRepository.new;
     _fleet = FleetController(create());

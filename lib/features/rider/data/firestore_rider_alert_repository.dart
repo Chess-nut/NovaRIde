@@ -12,7 +12,7 @@ import '../domain/repositories/rider_alert_repository.dart';
 /// a query the rules cannot prove from its filters is refused whole.
 class FirestoreRiderAlertRepository implements RiderAlertRepository {
   FirestoreRiderAlertRepository({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -27,11 +27,17 @@ class FirestoreRiderAlertRepository implements RiderAlertRepository {
         .where('authUid', isEqualTo: uid)
         .limit(1)
         .snapshots()
-        .map((snapshot) => snapshot.docs.isEmpty
-            ? null
-            : LinkedRider.fromMap(snapshot.docs.first.id, snapshot.docs.first.data()))
-        .handleError((Object error, StackTrace stack) =>
-            throw failureFrom(error, stack));
+        .map(
+          (snapshot) => snapshot.docs.isEmpty
+              ? null
+              : LinkedRider.fromMap(
+                  snapshot.docs.first.id,
+                  snapshot.docs.first.data(),
+                ),
+        )
+        .handleError(
+          (Object error, StackTrace stack) => throw failureFrom(error, stack),
+        );
   }
 
   @override
@@ -42,11 +48,15 @@ class FirestoreRiderAlertRepository implements RiderAlertRepository {
         .orderBy('timestamp', descending: true)
         .limit(_alertLimit)
         .snapshots()
-        .map((snapshot) => [
-              for (final doc in snapshot.docs) RiderAlert.fromMap(doc.id, doc.data()),
-            ])
-        .handleError((Object error, StackTrace stack) =>
-            throw failureFrom(error, stack));
+        .map(
+          (snapshot) => [
+            for (final doc in snapshot.docs)
+              RiderAlert.fromMap(doc.id, doc.data()),
+          ],
+        )
+        .handleError(
+          (Object error, StackTrace stack) => throw failureFrom(error, stack),
+        );
   }
 
   @override
@@ -56,10 +66,10 @@ class FirestoreRiderAlertRepository implements RiderAlertRepository {
     required bool standDown,
   }) async {
     final batch = _firestore.batch();
-    batch.update(_firestore.collection(FirestoreCollections.alerts).doc(alertId), {
-      'status': 'cancelled',
-      'cancelledAt': FieldValue.serverTimestamp(),
-    });
+    batch.update(
+      _firestore.collection(FirestoreCollections.alerts).doc(alertId),
+      {'status': 'cancelled', 'cancelledAt': FieldValue.serverTimestamp()},
+    );
     if (standDown) {
       batch.update(
         _firestore.collection(FirestoreCollections.riders).doc(riderId),
@@ -74,7 +84,10 @@ class FirestoreRiderAlertRepository implements RiderAlertRepository {
   }
 
   @override
-  Future<void> standDown({required String riderId, required String alertId}) async {
+  Future<void> standDown({
+    required String riderId,
+    required String alertId,
+  }) async {
     try {
       await _firestore
           .collection(FirestoreCollections.riders)
@@ -86,6 +99,8 @@ class FirestoreRiderAlertRepository implements RiderAlertRepository {
   }
 
   /// Exactly what isRiderStandDown in firestore.rules admits.
-  static Map<String, Object> _standDownFields(String alertId) =>
-      {'status': 'riding', 'statusClearedBy': alertId};
+  static Map<String, Object> _standDownFields(String alertId) => {
+    'status': 'riding',
+    'statusClearedBy': alertId,
+  };
 }

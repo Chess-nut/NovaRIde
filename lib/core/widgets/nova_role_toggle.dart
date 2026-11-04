@@ -46,8 +46,9 @@ class NovaRoleToggle extends StatelessWidget {
           _Segment(
             label: 'Family',
             selected: value == UserRole.guardian,
-            onTap:
-                onChanged == null ? null : () => onChanged!(UserRole.guardian),
+            onTap: onChanged == null
+                ? null
+                : () => onChanged!(UserRole.guardian),
           ),
         ],
       ),

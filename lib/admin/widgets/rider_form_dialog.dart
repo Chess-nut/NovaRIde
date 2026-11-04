@@ -204,28 +204,25 @@ class _RiderFormDialogState extends State<RiderFormDialog> {
   );
 
   Widget _label(String text) => Text(
-        text,
-        style: const TextStyle(
-          color: NovaColors.secondaryText,
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.9,
-        ),
-      );
+    text,
+    style: const TextStyle(
+      color: NovaColors.secondaryText,
+      fontSize: 10,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.9,
+    ),
+  );
 
   InputDecoration _decoration(String hint) {
     OutlineInputBorder border(Color color) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: color),
-        );
+      borderRadius: BorderRadius.circular(10),
+      borderSide: BorderSide(color: color),
+    );
 
     return InputDecoration(
       isDense: true,
       hintText: hint,
-      hintStyle: const TextStyle(
-        color: NovaColors.secondaryText,
-        fontSize: 13,
-      ),
+      hintStyle: const TextStyle(color: NovaColors.secondaryText, fontSize: 13),
       filled: true,
       fillColor: NovaColors.background,
       contentPadding: const EdgeInsets.symmetric(vertical: 13, horizontal: 12),
@@ -267,8 +264,9 @@ class _StatusOption extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
-            color:
-                selected ? color.withValues(alpha: 0.18) : NovaColors.background,
+            color: selected
+                ? color.withValues(alpha: 0.18)
+                : NovaColors.background,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: selected

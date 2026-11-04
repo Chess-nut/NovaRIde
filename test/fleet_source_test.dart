@@ -76,8 +76,7 @@ Future<void> _useDesktopSurface(WidgetTester tester) async {
 }
 
 Future<void> _signIn(WidgetTester tester) async {
-  await tester.enterText(
-      find.byType(TextFormField).first, 'admin@novaride.ph');
+  await tester.enterText(find.byType(TextFormField).first, 'admin@novaride.ph');
   await tester.enterText(find.byType(TextFormField).last, 'admin123');
   // The button enables on the frame after both fields are filled.
   await tester.pump();
@@ -93,8 +92,9 @@ Future<void> _tearDownTree(WidgetTester tester) async {
 
 void main() {
   group('top bar source chip', () {
-    testWidgets('a bare AdminApp runs on the simulation and says so',
-        (tester) async {
+    testWidgets('a bare AdminApp runs on the simulation and says so', (
+      tester,
+    ) async {
       await _useDesktopSurface(tester);
       await tester.pumpWidget(const AdminApp());
       await _signIn(tester);
@@ -115,17 +115,22 @@ void main() {
       await _signIn(tester);
 
       expect(find.text('FIRESTORE'), findsOneWidget);
-      expect(find.text('CONNECTING'), findsOneWidget,
-          reason: 'nothing has arrived yet');
+      expect(
+        find.text('CONNECTING'),
+        findsOneWidget,
+        reason: 'nothing has arrived yet',
+      );
 
       repo.connection.add(FleetConnection.connected);
       await tester.pump();
       expect(find.text('LIVE'), findsOneWidget);
 
-      repo.connection.add(const FleetConnection(
-        FleetConnectionState.disconnected,
-        'Showing cached data',
-      ));
+      repo.connection.add(
+        const FleetConnection(
+          FleetConnectionState.disconnected,
+          'Showing cached data',
+        ),
+      );
       await tester.pump();
       expect(find.text('OFFLINE'), findsOneWidget);
 
@@ -134,85 +139,109 @@ void main() {
   });
 
   group('FleetController over an async source', () {
-    test('starts empty, loads as streams arrive, and writes go to the repo',
-        () async {
-      final repo = _CloudLikeRepository();
-      final fleet = FleetController(repo);
-      addTearDown(fleet.dispose);
+    test(
+      'starts empty, loads as streams arrive, and writes go to the repo',
+      () async {
+        final repo = _CloudLikeRepository();
+        final fleet = FleetController(repo);
+        addTearDown(fleet.dispose);
 
-      expect(fleet.isLoaded, isFalse);
-      expect(fleet.riders, isEmpty);
-      expect(fleet.source, FleetSource.firestore);
+        expect(fleet.isLoaded, isFalse);
+        expect(fleet.riders, isEmpty);
+        expect(fleet.source, FleetSource.firestore);
 
-      repo.riders.add(MockData.riders);
-      repo.telemetry.add(MockData.telemetry);
-      repo.alerts.add(MockData.alerts);
-      await Future<void>.delayed(Duration.zero);
+        repo.riders.add(MockData.riders);
+        repo.telemetry.add(MockData.telemetry);
+        repo.alerts.add(MockData.alerts);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(fleet.isLoaded, isTrue);
-      expect(fleet.riders.length, MockData.riders.length);
-      expect(fleet.trailFor('R-001'), hasLength(1),
-          reason: 'first telemetry seeds the breadcrumb');
+        expect(fleet.isLoaded, isTrue);
+        expect(fleet.riders.length, MockData.riders.length);
+        expect(
+          fleet.trailFor('R-001'),
+          hasLength(1),
+          reason: 'first telemetry seeds the breadcrumb',
+        );
 
-      // Rule checks still run locally and synchronously.
-      expect(() => fleet.resolveAlert('A-101', actor: 'Ops'), throwsStateError);
-      expect(repo.writes, isEmpty);
+        // Rule checks still run locally and synchronously.
+        expect(
+          () => fleet.resolveAlert('A-101', actor: 'Ops'),
+          throwsStateError,
+        );
+        expect(repo.writes, isEmpty);
 
-      await fleet.acknowledgeAlert('A-101', actor: 'Ops');
-      expect(repo.writes, ['transition A-101 acknowledged']);
+        await fleet.acknowledgeAlert('A-101', actor: 'Ops');
+        expect(repo.writes, ['transition A-101 acknowledged']);
 
-      // Nothing changes locally until the source echoes the write back.
-      expect(fleet.alerts.firstWhere((a) => a.id == 'A-101').status,
-          AlertStatus.open);
-    });
+        // Nothing changes locally until the source echoes the write back.
+        expect(
+          fleet.alerts.firstWhere((a) => a.id == 'A-101').status,
+          AlertStatus.open,
+        );
+      },
+    );
 
-    test('a pending crash awaits its rider for 15 s, then shows as open',
-        () async {
-      final repo = _CloudLikeRepository();
-      final fleet = FleetController(repo);
-      addTearDown(fleet.dispose);
+    test(
+      'a pending crash awaits its rider for 15 s, then shows as open',
+      () async {
+        final repo = _CloudLikeRepository();
+        final fleet = FleetController(repo);
+        addTearDown(fleet.dispose);
 
-      AlertEvent crash(String id, AlertStatus status, Duration age) =>
-          MockData.alerts.first.copyWith(
-            id: id,
-            type: AlertType.crash,
-            status: status,
-            timestamp: DateTime.now().subtract(age),
-          );
-      repo.riders.add(MockData.riders);
-      repo.telemetry.add(MockData.telemetry);
-      repo.alerts.add([
-        crash('fresh', AlertStatus.pending, const Duration(seconds: 2)),
-        crash('expiring', AlertStatus.pending,
-            kCrashCountdown - const Duration(milliseconds: 150)),
-        crash('expired', AlertStatus.pending, const Duration(seconds: 40)),
-        crash('cancelled', AlertStatus.cancelled, const Duration(seconds: 5)),
-      ]);
-      await Future<void>.delayed(Duration.zero);
+        AlertEvent crash(String id, AlertStatus status, Duration age) =>
+            MockData.alerts.first.copyWith(
+              id: id,
+              type: AlertType.crash,
+              status: status,
+              timestamp: DateTime.now().subtract(age),
+            );
+        repo.riders.add(MockData.riders);
+        repo.telemetry.add(MockData.telemetry);
+        repo.alerts.add([
+          crash('fresh', AlertStatus.pending, const Duration(seconds: 2)),
+          crash(
+            'expiring',
+            AlertStatus.pending,
+            kCrashCountdown - const Duration(milliseconds: 150),
+          ),
+          crash('expired', AlertStatus.pending, const Duration(seconds: 40)),
+          crash('cancelled', AlertStatus.cancelled, const Duration(seconds: 5)),
+        ]);
+        await Future<void>.delayed(Duration.zero);
 
-      AlertStatus statusOf(String id) =>
-          fleet.alerts.firstWhere((a) => a.id == id).status;
-      expect(statusOf('fresh'), AlertStatus.pending);
-      expect(statusOf('expiring'), AlertStatus.pending);
-      expect(statusOf('expired'), AlertStatus.open,
-          reason: 'the rules no longer let the rider cancel it');
-      expect(statusOf('cancelled').isActive, isFalse,
-          reason: 'a false positive is over, not open');
-      expect(AlertStatus.pending.isOpen, isTrue,
-          reason: 'on the board, and a dispatcher may act on it at once');
+        AlertStatus statusOf(String id) =>
+            fleet.alerts.firstWhere((a) => a.id == id).status;
+        expect(statusOf('fresh'), AlertStatus.pending);
+        expect(statusOf('expiring'), AlertStatus.pending);
+        expect(
+          statusOf('expired'),
+          AlertStatus.open,
+          reason: 'the rules no longer let the rider cancel it',
+        );
+        expect(
+          statusOf('cancelled').isActive,
+          isFalse,
+          reason: 'a false positive is over, not open',
+        );
+        expect(
+          AlertStatus.pending.isOpen,
+          isTrue,
+          reason: 'on the board, and a dispatcher may act on it at once',
+        );
 
-      // No new snapshot arrives when a clock runs out.
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      expect(statusOf('expiring'), AlertStatus.open);
-      expect(statusOf('fresh'), AlertStatus.pending);
+        // No new snapshot arrives when a clock runs out.
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        expect(statusOf('expiring'), AlertStatus.open);
+        expect(statusOf('fresh'), AlertStatus.pending);
 
-      await fleet.acknowledgeAlert('fresh', actor: 'Ops');
-      expect(repo.writes, ['transition fresh acknowledged'],
-          reason: 'the countdown never holds a responder back');
-    });
+        await fleet.acknowledgeAlert('fresh', actor: 'Ops');
+        expect(repo.writes, [
+          'transition fresh acknowledged',
+        ], reason: 'the countdown never holds a responder back');
+      },
+    );
 
-    test('resolving the last critical alert also releases the rider',
-        () async {
+    test('resolving the last critical alert also releases the rider', () async {
       final repo = _CloudLikeRepository();
       final fleet = FleetController(repo);
       addTearDown(fleet.dispose);
@@ -227,10 +256,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       await fleet.resolveAlert('A-101', actor: 'Ops');
-      expect(repo.writes, [
-        'transition A-101 resolved',
-        'status R-003 idle',
-      ]);
+      expect(repo.writes, ['transition A-101 resolved', 'status R-003 idle']);
     });
 
     test('the mock repository satisfies the same contract synchronously', () {

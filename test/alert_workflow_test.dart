@@ -29,20 +29,26 @@ void main() {
       final fleet = _controller();
 
       fleet.acknowledgeAlert('A-101', actor: 'Ops Admin');
-      expect(fleet.alerts.firstWhere((a) => a.id == 'A-101').status,
-          AlertStatus.acknowledged);
+      expect(
+        fleet.alerts.firstWhere((a) => a.id == 'A-101').status,
+        AlertStatus.acknowledged,
+      );
 
       fleet.dispatchAlert(
         'A-101',
         actor: 'Ops Admin',
         responder: ResponderType.medical,
       );
-      expect(fleet.alerts.firstWhere((a) => a.id == 'A-101').status,
-          AlertStatus.dispatched);
+      expect(
+        fleet.alerts.firstWhere((a) => a.id == 'A-101').status,
+        AlertStatus.dispatched,
+      );
 
       fleet.resolveAlert('A-101', actor: 'Ops Admin');
-      expect(fleet.alerts.firstWhere((a) => a.id == 'A-101').status,
-          AlertStatus.resolved);
+      expect(
+        fleet.alerts.firstWhere((a) => a.id == 'A-101').status,
+        AlertStatus.resolved,
+      );
     });
 
     test('the enum knows its own successor', () {
@@ -51,7 +57,10 @@ void main() {
       expect(AlertStatus.dispatched.nextStatus, AlertStatus.resolved);
       expect(AlertStatus.resolved.nextStatus, isNull);
 
-      expect(AlertStatus.open.canTransitionTo(AlertStatus.acknowledged), isTrue);
+      expect(
+        AlertStatus.open.canTransitionTo(AlertStatus.acknowledged),
+        isTrue,
+      );
       expect(AlertStatus.open.canTransitionTo(AlertStatus.resolved), isFalse);
     });
   });
@@ -103,8 +112,11 @@ void main() {
       final fleet = _controller();
 
       fleet.acknowledgeAlert('A-101', actor: 'Ops');
-      fleet.dispatchAlert('A-101',
-          actor: 'Ops', responder: ResponderType.medical);
+      fleet.dispatchAlert(
+        'A-101',
+        actor: 'Ops',
+        responder: ResponderType.medical,
+      );
       fleet.resolveAlert('A-101', actor: 'Ops');
 
       expect(
@@ -201,8 +213,11 @@ void main() {
       expect(fleet.riderFor('R-003')!.status, RiderStatus.emergency);
 
       fleet.acknowledgeAlert('A-101', actor: 'Ops');
-      fleet.dispatchAlert('A-101',
-          actor: 'Ops', responder: ResponderType.medical);
+      fleet.dispatchAlert(
+        'A-101',
+        actor: 'Ops',
+        responder: ResponderType.medical,
+      );
 
       expect(
         fleet.riderFor('R-003')!.status,
@@ -221,8 +236,11 @@ void main() {
       final before = fleet.riderFor('R-010')!.status;
 
       fleet.acknowledgeAlert('A-099', actor: 'Ops');
-      fleet.dispatchAlert('A-099',
-          actor: 'Ops', responder: ResponderType.barangay);
+      fleet.dispatchAlert(
+        'A-099',
+        actor: 'Ops',
+        responder: ResponderType.barangay,
+      );
       fleet.resolveAlert('A-099', actor: 'Ops');
 
       expect(fleet.riderFor('R-010')!.status, before);
@@ -235,13 +253,22 @@ void main() {
       expect(before, greaterThan(0));
 
       fleet.acknowledgeAlert('A-101', actor: 'Ops');
-      expect(fleet.openCriticalCount, before,
-          reason: 'acknowledged is still active');
+      expect(
+        fleet.openCriticalCount,
+        before,
+        reason: 'acknowledged is still active',
+      );
 
-      fleet.dispatchAlert('A-101',
-          actor: 'Ops', responder: ResponderType.medical);
-      expect(fleet.openCriticalCount, before,
-          reason: 'dispatched is still active');
+      fleet.dispatchAlert(
+        'A-101',
+        actor: 'Ops',
+        responder: ResponderType.medical,
+      );
+      expect(
+        fleet.openCriticalCount,
+        before,
+        reason: 'dispatched is still active',
+      );
 
       fleet.resolveAlert('A-101', actor: 'Ops');
       expect(fleet.openCriticalCount, before - 1);
@@ -259,8 +286,11 @@ void main() {
       expect(fleet.averageAcknowledgeTime, isNotNull);
       expect(fleet.averageResolveTime, isNull);
 
-      fleet.dispatchAlert('A-101',
-          actor: 'Ops', responder: ResponderType.medical);
+      fleet.dispatchAlert(
+        'A-101',
+        actor: 'Ops',
+        responder: ResponderType.medical,
+      );
       fleet.resolveAlert('A-101', actor: 'Ops');
       expect(fleet.averageResolveTime, isNotNull);
     });
@@ -300,8 +330,11 @@ void main() {
       // 40-alert cap ages it off, the rider becomes eligible again — both are
       // correct, so assert the invariant rather than a fixed status.
       if (stillActive) {
-        expect(r3.status, RiderStatus.emergency,
-            reason: 'operator-owned alert was overwritten by stand-down');
+        expect(
+          r3.status,
+          RiderStatus.emergency,
+          reason: 'operator-owned alert was overwritten by stand-down',
+        );
       }
     });
   });

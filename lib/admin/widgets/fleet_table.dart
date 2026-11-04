@@ -109,10 +109,12 @@ class FleetTable extends StatelessWidget {
         color: selected
             ? NovaColors.cyan.withValues(alpha: 0.10)
             : isEmergency
-                ? NovaColors.red.withValues(alpha: 0.10)
-                : Colors.transparent,
+            ? NovaColors.red.withValues(alpha: 0.10)
+            : Colors.transparent,
         border: border,
-        borderRadius: (isEmergency || selected) ? BorderRadius.circular(8) : null,
+        borderRadius: (isEmergency || selected)
+            ? BorderRadius.circular(8)
+            : null,
       ),
       child: Row(
         children: [
@@ -227,10 +229,7 @@ class FleetTable extends StatelessWidget {
         children: [
           Expanded(
             flex: _columns[0].flex,
-            child: _cell(
-              'Unassigned device',
-              color: NovaColors.secondaryText,
-            ),
+            child: _cell('Unassigned device', color: NovaColors.secondaryText),
           ),
           Expanded(
             flex: _columns[1].flex,
@@ -242,8 +241,7 @@ class FleetTable extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: NovaColors.cardBorder),
@@ -275,7 +273,11 @@ class FleetTable extends StatelessWidget {
     );
   }
 
-  Widget _cell(String text, {Color color = NovaColors.primaryText, bool bold = false}) {
+  Widget _cell(
+    String text, {
+    Color color = NovaColors.primaryText,
+    bool bold = false,
+  }) {
     return Text(
       text,
       overflow: TextOverflow.ellipsis,

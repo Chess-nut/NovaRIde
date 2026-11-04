@@ -9,10 +9,10 @@ enum AdminRole { superAdmin, dispatcher, viewer }
 
 extension AdminRoleCapabilities on AdminRole {
   String get label => switch (this) {
-        AdminRole.superAdmin => 'Super Admin',
-        AdminRole.dispatcher => 'Dispatcher',
-        AdminRole.viewer => 'Viewer',
-      };
+    AdminRole.superAdmin => 'Super Admin',
+    AdminRole.dispatcher => 'Dispatcher',
+    AdminRole.viewer => 'Viewer',
+  };
 
   /// Acknowledge / dispatch / resolve an alert.
   bool get canActOnAlerts =>
@@ -28,14 +28,14 @@ extension AdminRoleCapabilities on AdminRole {
 
   /// Shown in a tooltip on every control this role cannot use.
   String get restrictionMessage => switch (this) {
-        AdminRole.superAdmin => '',
-        AdminRole.dispatcher =>
-          'Dispatchers cannot change the rider roster. Sign in as a Super '
-              'Admin to manage riders.',
-        AdminRole.viewer =>
-          'Viewers have read-only access. Sign in as a Dispatcher or Super '
-              'Admin to act on alerts.',
-      };
+    AdminRole.superAdmin => '',
+    AdminRole.dispatcher =>
+      'Dispatchers cannot change the rider roster. Sign in as a Super '
+          'Admin to manage riders.',
+    AdminRole.viewer =>
+      'Viewers have read-only access. Sign in as a Dispatcher or Super '
+          'Admin to act on alerts.',
+  };
 }
 
 /// Parses a role as stored in a custom claim or an `admins/{uid}` document.
@@ -69,8 +69,11 @@ class AdminUser {
 
   /// "Ops Admin" → "OA". Used by the top-bar avatar.
   String get initials {
-    final parts =
-        name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
     if (parts.isEmpty) return '?';
     if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
     return (parts.first.substring(0, 1) + parts.last.substring(0, 1))
@@ -151,8 +154,8 @@ class AdminSessionScope extends InheritedWidget {
   });
 
   static AdminUser of(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<AdminSessionScope>();
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<AdminSessionScope>();
     assert(
       scope != null,
       'AdminSessionScope.of() found no AdminShell ancestor. Admin pages must '

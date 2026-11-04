@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'package:novaride/shared/theme.dart';
+import 'package:novaride/core/theme/app_colors.dart';
+import 'package:novaride/core/theme/app_spacing.dart';
+import 'package:novaride/core/theme/app_typography.dart';
 
 import '../pages/alerts_page.dart';
 import '../pages/analytics_page.dart';
@@ -12,30 +14,33 @@ import '../pages/profile_page.dart';
 /// Lives here rather than inside a screen so every rider screen can reuse it
 /// without importing another screen — it just needs to be told which tab is
 /// currently selected.
+///
+/// On Signal: 12px sentence-case labels (they were 9px capitals), each tab
+/// a full-height 48px+ target with a button role, and the selected tab
+/// marked by a pill behind its icon and brighter text rather than by
+/// colour alone. Green is not used here — in Signal green means "safe".
 class NovaBottomNavBar extends StatelessWidget {
   final int selectedIndex;
 
   const NovaBottomNavBar({super.key, required this.selectedIndex});
 
+  static const _tabs = [
+    (Icons.home_outlined, 'Home'),
+    (Icons.show_chart, 'Analytics'),
+    (Icons.notifications_none, 'Alerts'),
+    (Icons.person_outline, 'Profile'),
+  ];
+
   void _onTabTapped(BuildContext context, int index) {
     if (index == selectedIndex) return;
 
-    switch (index) {
-      case 0:
-        Navigator.of(context).pushReplacement(_noAnimationRoute(const HomePage()));
-        break;
-      case 1:
-        Navigator.of(context).pushReplacement(_noAnimationRoute(const AnalyticsPage()));
-        break;
-      case 2:
-        Navigator.of(context).pushReplacement(_noAnimationRoute(const AlertsPage()));
-        break;
-      case 3:
-        Navigator.of(context).pushReplacement(_noAnimationRoute(const ProfilePage()));
-        break;
-      default:
-        break;
-    }
+    final Widget page = switch (index) {
+      0 => const HomePage(),
+      1 => const AnalyticsPage(),
+      2 => const AlertsPage(),
+      _ => const ProfilePage(),
+    };
+    Navigator.of(context).pushReplacement(_noAnimationRoute(page));
   }
 
   /// A page route with no transition animation — the new screen just
@@ -50,42 +55,27 @@ class NovaBottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: NovaColors.card,
-        border: Border(top: BorderSide(color: NovaColors.cardBorder)),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 10),
+    final colors = context.colors;
+
+    return Material(
+      color: colors.surfaceRaised,
       child: SafeArea(
         top: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _NavItem(
-              icon: Icons.home_filled,
-              label: 'HOME',
-              selected: selectedIndex == 0,
-              onTap: () => _onTabTapped(context, 0),
-            ),
-            _NavItem(
-              icon: Icons.show_chart,
-              label: 'ANALYTICS',
-              selected: selectedIndex == 1,
-              onTap: () => _onTabTapped(context, 1),
-            ),
-            _NavItem(
-              icon: Icons.notifications_none,
-              label: 'ALERTS',
-              selected: selectedIndex == 2,
-              onTap: () => _onTabTapped(context, 2),
-            ),
-            _NavItem(
-              icon: Icons.person_outline,
-              label: 'PROFILE',
-              selected: selectedIndex == 3,
-              onTap: () => _onTabTapped(context, 3),
-            ),
-          ],
+        child: SizedBox(
+          height: 72,
+          child: Row(
+            children: [
+              for (var i = 0; i < _tabs.length; i++)
+                Expanded(
+                  child: _NavItem(
+                    icon: _tabs[i].$1,
+                    label: _tabs[i].$2,
+                    selected: selectedIndex == i,
+                    onTap: () => _onTabTapped(context, i),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -96,31 +86,47 @@ class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool selected;
-  final VoidCallback? onTap;
+  final VoidCallback onTap;
 
   const _NavItem({
     required this.icon,
     required this.label,
-    this.selected = false,
-    this.onTap,
+    required this.selected,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? NovaColors.cyan : NovaColors.secondaryText;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+    final colors = context.colors;
+    final color = selected ? colors.textPrimary : colors.textSecondary;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 4),
+            AnimatedContainer(
+              duration: AppDurations.fast,
+              width: 56,
+              height: 30,
+              decoration: BoxDecoration(
+                color: selected ? colors.border : Colors.transparent,
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(height: AppSpacing.xs),
             Text(
               label,
-              style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w600),
+              style: AppTypography.caption.copyWith(
+                color: color,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),

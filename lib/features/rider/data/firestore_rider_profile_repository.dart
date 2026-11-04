@@ -12,7 +12,7 @@ import '../domain/repositories/rider_profile_repository.dart';
 /// without anything having to refresh.
 class FirestoreRiderProfileRepository implements RiderProfileRepository {
   FirestoreRiderProfileRepository({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -22,11 +22,15 @@ class FirestoreRiderProfileRepository implements RiderProfileRepository {
         .collection(FirestoreCollections.riderProfiles)
         .doc(uid)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.exists ? RiderProfile.fromMap(uid, snapshot.data()) : null)
+        .map(
+          (snapshot) => snapshot.exists
+              ? RiderProfile.fromMap(uid, snapshot.data())
+              : null,
+        )
         // The interface's error contract: a Failure with a sentence on
         // it, never a raw FirebaseException reaching a widget.
-        .handleError((Object error, StackTrace stack) =>
-            throw failureFrom(error, stack));
+        .handleError(
+          (Object error, StackTrace stack) => throw failureFrom(error, stack),
+        );
   }
 }

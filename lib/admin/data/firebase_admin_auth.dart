@@ -28,8 +28,8 @@ class FirebaseAdminAuth implements AdminAuth {
   /// `Firebase.initializeApp` — `FleetBootstrap` does — because reading
   /// `FirebaseAuth.instance` before that throws.
   FirebaseAdminAuth({FirebaseAuth? auth, FirebaseFirestore? firestore})
-      : _auth = auth ?? FirebaseAuth.instance,
-        _db = firestore ?? FirebaseFirestore.instance;
+    : _auth = auth ?? FirebaseAuth.instance,
+      _db = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _db;
@@ -68,8 +68,10 @@ class FirebaseAdminAuth implements AdminAuth {
     try {
       operator = await _resolve(user, typedEmail: email.trim());
     } on FirebaseException catch (error) {
-      debugPrint('FirebaseAdminAuth: role lookup failed — '
-          '${error.plugin}/${error.code}');
+      debugPrint(
+        'FirebaseAdminAuth: role lookup failed — '
+        '${error.plugin}/${error.code}',
+      );
       await _auth.signOut();
       throw AdminAuthException(messageForFirebaseCode(error.code));
     } catch (error, stack) {
@@ -81,8 +83,10 @@ class FirebaseAdminAuth implements AdminAuth {
     if (operator == null) {
       // Authenticated, but not provisioned for the console. End the Firebase
       // session so a half-signed-in principal is never left behind.
-      debugPrint('FirebaseAdminAuth: ${user.uid} has no role claim and no '
-          'admins/${user.uid} document — denied.');
+      debugPrint(
+        'FirebaseAdminAuth: ${user.uid} has no role claim and no '
+        'admins/${user.uid} document — denied.',
+      );
       await _auth.signOut();
       throw const AdminAuthException(notProvisionedMessage);
     }
@@ -125,8 +129,10 @@ class FirebaseAdminAuth implements AdminAuth {
     try {
       final operator = await _resolve(user, typedEmail: user.email ?? '');
       if (operator == null) {
-        debugPrint('FirebaseAdminAuth: restored session ${user.uid} is not '
-            'provisioned — signing out.');
+        debugPrint(
+          'FirebaseAdminAuth: restored session ${user.uid} is not '
+          'provisioned — signing out.',
+        );
         await _auth.signOut();
         return null;
       }
@@ -134,8 +140,10 @@ class FirebaseAdminAuth implements AdminAuth {
       _currentUid = user.uid;
       return operator;
     } catch (error) {
-      debugPrint('FirebaseAdminAuth: could not resolve restored session — '
-          '$error. Signing out.');
+      debugPrint(
+        'FirebaseAdminAuth: could not resolve restored session — '
+        '$error. Signing out.',
+      );
       await _auth.signOut();
       return null;
     }
@@ -158,15 +166,18 @@ class FirebaseAdminAuth implements AdminAuth {
       profile = snapshot.data();
     } on FirebaseException {
       if (role == null) rethrow;
-      debugPrint('FirebaseAdminAuth: admins/${user.uid} unreadable; using '
-          'the claim and the account name instead.');
+      debugPrint(
+        'FirebaseAdminAuth: admins/${user.uid} unreadable; using '
+        'the claim and the account name instead.',
+      );
     }
 
     role ??= parseAdminRole(profile?['role']);
     if (role == null) return null;
 
     final email = _firstNonBlank([user.email, typedEmail]) ?? '';
-    final name = _firstNonBlank([
+    final name =
+        _firstNonBlank([
           profile?['name'],
           user.displayName,
           email.split('@').first,
@@ -212,8 +223,7 @@ String messageForFirebaseCode(String code) {
     'user-not-found' ||
     'invalid-credential' ||
     'invalid-login-credentials' ||
-    'INVALID_LOGIN_CREDENTIALS' =>
-      'Incorrect email or password.',
+    'INVALID_LOGIN_CREDENTIALS' => 'Incorrect email or password.',
     'invalid-email' => 'That is not a valid email address.',
     'missing-password' => 'Enter your password.',
     'user-disabled' =>
@@ -225,8 +235,7 @@ String messageForFirebaseCode(String code) {
     'user-token-expired' ||
     'user-token-revoked' ||
     'requires-recent-login' ||
-    'unauthenticated' =>
-      'Your session has expired. Sign in again.',
+    'unauthenticated' => 'Your session has expired. Sign in again.',
     // firebase_auth and cloud_firestore — connectivity
     'network-request-failed' || 'unavailable' || 'deadline-exceeded' =>
       'Cannot reach Firebase. Check the connection and try again.',

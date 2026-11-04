@@ -6,9 +6,9 @@ enum FleetSource { simulation, firestore }
 
 extension FleetSourceLabel on FleetSource {
   String get label => switch (this) {
-        FleetSource.simulation => 'SIMULATION',
-        FleetSource.firestore => 'FIRESTORE',
-      };
+    FleetSource.simulation => 'SIMULATION',
+    FleetSource.firestore => 'FIRESTORE',
+  };
 }
 
 /// Health of the link between the console and its data source.

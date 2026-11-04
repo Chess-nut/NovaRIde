@@ -20,11 +20,12 @@ import {
 } from './helpers.js';
 
 const closedPaths = [
-  // Reserved in docs/FIRESTORE_SCHEMA.md §2 and still unbuilt. The rider
-  // app's emergency contacts live on riderProfiles/ for now.
+  // Reserved in docs/FIRESTORE_SCHEMA.md §2. The rider app's emergency
+  // contacts live at riderProfiles/{uid}/emergencyContacts/ instead
+  // (guardian_link.test.js); the top-level path stays closed.
   ['emergencyContacts', 'some-id'],
-  // The guardian-to-rider link Phase 7 will need. Named here so the day
-  // it is added, this line is what has to change.
+  // The guardian link was built as guardianLinks/ (guardian_link.test.js);
+  // this earlier placeholder name stays closed.
   ['riderLinks', 'some-id'],
   ['anythingElse', 'some-id'],
 ];

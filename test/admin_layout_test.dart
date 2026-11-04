@@ -153,16 +153,22 @@ void main() {
         AdminApp(auth: auth, createRepository: _EmptyRepository.new),
       );
       await _signIn(tester);
-      expect(tester.takeException(), isNull,
-          reason: 'first page after sign-in');
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'first page after sign-in',
+      );
 
       await _visitEveryTab(
         tester,
         on: 'an empty Firestore at $label',
         onTab: (tab) {
           if (tab == 'Alerts') {
-            expect(find.text('No alerts match these filters'), findsOneWidget,
-                reason: 'the empty state is what this test is about');
+            expect(
+              find.text('No alerts match these filters'),
+              findsOneWidget,
+              reason: 'the empty state is what this test is about',
+            );
           }
         },
       );
@@ -176,7 +182,9 @@ void main() {
     await useProjectorSurface(tester, projectorSize);
     await tester.pumpWidget(const AdminApp());
     await tester.enterText(
-        find.byType(TextFormField).first, 'admin@novaride.ph');
+      find.byType(TextFormField).first,
+      'admin@novaride.ph',
+    );
     await tester.enterText(find.byType(TextFormField).last, 'admin123');
     await tester.pump();
     await tester.tap(find.text('SIGN IN'));

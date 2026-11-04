@@ -17,11 +17,15 @@ import 'package:novaride/features/auth/domain/entities/user_profile.dart';
 import 'package:novaride/features/auth/domain/entities/user_role.dart';
 import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
 
+import 'package:novaride/features/guardian/domain/repositories/guardian_link_repository.dart';
+import 'package:novaride/features/rider/domain/repositories/emergency_contact_repository.dart';
 import 'package:novaride/features/rider/domain/repositories/helmet_telemetry_repository.dart';
 import 'package:novaride/features/rider/domain/repositories/rider_alert_repository.dart';
 import 'package:novaride/features/rider/domain/repositories/rider_profile_repository.dart';
 
 import 'fake_auth_repository.dart';
+import 'fake_emergency_contact_repository.dart';
+import 'fake_guardian_link_repository.dart';
 import 'fake_helmet_telemetry_repository.dart';
 import 'fake_rider_alert_repository.dart';
 import 'fake_rider_profile_repository.dart';
@@ -53,6 +57,8 @@ Future<void> pumpMobileApp(
   RiderProfileRepository? riderProfiles,
   RiderAlertRepository? riderAlerts,
   HelmetTelemetryRepository? helmetTelemetry,
+  GuardianLinkRepository? guardianLinks,
+  EmergencyContactRepository? emergencyContacts,
   bool settle = true,
 }) async {
   await tester.pumpWidget(
@@ -74,6 +80,11 @@ Future<void> pumpMobileApp(
         // The rider home screen watches the helmet as soon as it builds.
         helmetTelemetryRepositoryProvider.overrideWithValue(
             helmetTelemetry ?? FakeHelmetTelemetryRepository()),
+        // Every guardian screen, and the rider's Emergency contacts.
+        guardianLinkRepositoryProvider.overrideWithValue(
+            guardianLinks ?? FakeGuardianLinkRepository()),
+        emergencyContactRepositoryProvider.overrideWithValue(
+            emergencyContacts ?? FakeEmergencyContactRepository()),
         if (auth != null)
           authStateProvider.overrideWith(() => FixedAuthController(auth)),
       ],

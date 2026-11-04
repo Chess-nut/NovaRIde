@@ -16,11 +16,13 @@ import 'shared/theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final backend = await FleetBootstrap.resolve();
-  runApp(AdminApp(
-    createRepository: backend.createRepository,
-    auth: backend.auth,
-    projectId: backend.projectId,
-  ));
+  runApp(
+    AdminApp(
+      createRepository: backend.createRepository,
+      auth: backend.auth,
+      projectId: backend.projectId,
+    ),
+  );
 }
 
 class AdminApp extends StatefulWidget {
@@ -36,12 +38,7 @@ class AdminApp extends StatefulWidget {
   /// the simulation.
   final String? projectId;
 
-  const AdminApp({
-    super.key,
-    this.createRepository,
-    this.auth,
-    this.projectId,
-  });
+  const AdminApp({super.key, this.createRepository, this.auth, this.projectId});
 
   @override
   State<AdminApp> createState() => _AdminAppState();

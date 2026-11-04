@@ -64,8 +64,10 @@ void main() {
     final riders = MockData.riders;
 
     test('rejects a serial already assigned to somebody else', () {
-      final error =
-          RiderValidation.validateHelmetId('NR-H1-003', existing: riders);
+      final error = RiderValidation.validateHelmetId(
+        'NR-H1-003',
+        existing: riders,
+      );
       expect(error, isNotNull);
       expect(error, contains('already assigned'));
     });
@@ -99,7 +101,10 @@ void main() {
 
     test('an empty roster has nothing to clash with', () {
       expect(
-        RiderValidation.validateHelmetId('NR-H1-001', existing: const <Rider>[]),
+        RiderValidation.validateHelmetId(
+          'NR-H1-001',
+          existing: const <Rider>[],
+        ),
         isNull,
       );
     });

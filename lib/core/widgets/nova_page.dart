@@ -61,11 +61,11 @@ class NovaPage extends StatelessWidget {
                   ),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      minHeight: centred ? constraints.maxHeight - AppSpacing.xxxl : 0,
+                      minHeight: centred
+                          ? constraints.maxHeight - AppSpacing.xxxl
+                          : 0,
                     ),
-                    child: centred
-                        ? Center(child: child)
-                        : child,
+                    child: centred ? Center(child: child) : child,
                   ),
                 ),
               ),

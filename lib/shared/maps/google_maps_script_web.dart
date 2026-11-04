@@ -14,19 +14,22 @@ import 'package:web/web.dart' as web;
 /// way and never throws out of startup.
 Future<void> loadGoogleMapsScript(String apiKey) async {
   if (apiKey.isEmpty) {
-    debugPrint('GoogleMaps: GOOGLE_MAPS_API_KEY_WEB not set — maps will not '
-        'render on web. Pass it with --dart-define (see lib/shared/maps/).');
+    debugPrint(
+      'GoogleMaps: GOOGLE_MAPS_API_KEY_WEB not set — maps will not '
+      'render on web. Pass it with --dart-define (see lib/shared/maps/).',
+    );
     return;
   }
 
   final loaded = Completer<void>();
   final script = web.HTMLScriptElement()
-    ..src = 'https://maps.googleapis.com/maps/api/js?key=${Uri.encodeQueryComponent(apiKey)}'
+    ..src =
+        'https://maps.googleapis.com/maps/api/js?key=${Uri.encodeQueryComponent(apiKey)}'
     ..async = true
     ..onload = ((web.Event _) => loaded.complete()).toJS
     ..onerror = ((web.Event _) => loaded.completeError(
-          StateError('the Maps JavaScript API script failed to load'),
-        )).toJS;
+      StateError('the Maps JavaScript API script failed to load'),
+    )).toJS;
   web.document.head!.append(script);
 
   try {

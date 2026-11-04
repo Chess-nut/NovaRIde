@@ -20,7 +20,10 @@ abstract final class Validators {
     if (value.isEmpty) return 'Enter your email address.';
     final at = value.indexOf('@');
     final dot = value.lastIndexOf('.');
-    if (at < 1 || dot < at + 2 || dot == value.length - 1 || value.contains(' ')) {
+    if (at < 1 ||
+        dot < at + 2 ||
+        dot == value.length - 1 ||
+        value.contains(' ')) {
       return 'That does not look like an email address.';
     }
     return null;

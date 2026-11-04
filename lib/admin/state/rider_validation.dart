@@ -13,8 +13,9 @@ class RiderValidation {
   static final RegExp helmetIdPattern = RegExp(r'^NR-H1-\d{3}$');
 
   /// Normalized Philippine mobile: `+63 9XX XXX XXXX`.
-  static final RegExp normalizedPhonePattern =
-      RegExp(r'^\+63 9\d{2} \d{3} \d{4}$');
+  static final RegExp normalizedPhonePattern = RegExp(
+    r'^\+63 9\d{2} \d{3} \d{4}$',
+  );
 
   static const int minNameLength = 3;
 

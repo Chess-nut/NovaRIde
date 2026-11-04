@@ -15,9 +15,10 @@ class FakeHelmetTelemetryRepository implements HelmetTelemetryRepository {
 
   /// Emits whatever the test pushes, including errors, and nothing until
   /// it does — which is the "no snapshot yet" state.
-  FakeHelmetTelemetryRepository.controlled(StreamController<HelmetTelemetry?> controller)
-      : telemetry = null,
-        _stream = controller.stream;
+  FakeHelmetTelemetryRepository.controlled(
+    StreamController<HelmetTelemetry?> controller,
+  ) : telemetry = null,
+      _stream = controller.stream;
 
   final HelmetTelemetry? telemetry;
   final Stream<HelmetTelemetry?>? _stream;

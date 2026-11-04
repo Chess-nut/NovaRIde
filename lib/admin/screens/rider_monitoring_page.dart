@@ -147,9 +147,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
             telemetry: fleet.telemetry,
             selectedRiderId: selectedId,
             onRiderTap: fleet.selectRider,
-            trail: selectedId == null
-                ? const []
-                : fleet.trailFor(selectedId),
+            trail: selectedId == null ? const [] : fleet.trailFor(selectedId),
           ),
           Positioned(
             bottom: 8,
@@ -190,10 +188,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
             child: Center(
               child: Text(
                 'No riders match this search',
-                style: TextStyle(
-                  color: NovaColors.secondaryText,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
               ),
             ),
           )
@@ -241,8 +236,10 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
             ),
             filled: true,
             fillColor: NovaColors.background,
-            contentPadding:
-                const EdgeInsets.symmetric(vertical: 11, horizontal: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 11,
+              horizontal: 12,
+            ),
             border: _border(NovaColors.cardBorder),
             enabledBorder: _border(NovaColors.cardBorder),
             focusedBorder: _border(NovaColors.cyan),
@@ -273,9 +270,9 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
   }
 
   OutlineInputBorder _border(Color color) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: color),
-      );
+    borderRadius: BorderRadius.circular(10),
+    borderSide: BorderSide(color: color),
+  );
 
   List<Rider> _filteredRiders(FleetController fleet) {
     return fleet.riders.where((rider) {
@@ -283,9 +280,9 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
         return false;
       }
       if (_query.isEmpty) return true;
-      return '${rider.fullName} ${rider.helmetId}'
-          .toLowerCase()
-          .contains(_query);
+      return '${rider.fullName} ${rider.helmetId}'.toLowerCase().contains(
+        _query,
+      );
     }).toList();
   }
 
@@ -332,10 +329,7 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
               Text(
                 'Pick a row in the roster or click a dot on the map.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: NovaColors.secondaryText,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
               ),
             ],
           ),
@@ -344,8 +338,10 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
     }
 
     final telemetry = fleet.telemetryFor(rider.id);
-    final riderAlerts =
-        fleet.alerts.where((a) => a.riderId == rider.id).take(4).toList();
+    final riderAlerts = fleet.alerts
+        .where((a) => a.riderId == rider.id)
+        .take(4)
+        .toList();
 
     return _Card(
       title: 'Rider detail',
@@ -505,7 +501,8 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
 
   Widget _buildLocateButton(FleetController fleet, Rider rider) {
     return Tooltip(
-      message: 'Highlights this rider on the basemap. The map window is fixed, '
+      message:
+          'Highlights this rider on the basemap. The map window is fixed, '
           'so the view does not re-centre.',
       child: SizedBox(
         width: double.infinity,
@@ -541,32 +538,32 @@ class _RiderMonitoringPageState extends State<RiderMonitoringPage> {
   }
 
   Widget _kv(String label, String value) => Padding(
-        padding: const EdgeInsets.only(bottom: 5),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 112,
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: NovaColors.secondaryText,
-                  fontSize: 12,
-                ),
-              ),
+    padding: const EdgeInsets.only(bottom: 5),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 112,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: NovaColors.secondaryText,
+              fontSize: 12,
             ),
-            Expanded(
-              child: Text(
-                value,
-                style: const TextStyle(
-                  color: NovaColors.primaryText,
-                  fontSize: 12.5,
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: NovaColors.primaryText,
+              fontSize: 12.5,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 
   static String _clock(DateTime t) {
     String two(int v) => v.toString().padLeft(2, '0');

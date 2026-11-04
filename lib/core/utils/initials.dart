@@ -25,6 +25,15 @@ String initialsFrom(String? name) {
   return '${words.first[0]}${words.last[0]}'.toUpperCase();
 }
 
+/// The word to greet someone by — "Juan" from "Juan Dela Cruz".
+///
+/// Returns an empty string for a blank name, so a caller can fall back to
+/// a greeting without one rather than "Hi, ".
+String firstNameFrom(String? name) {
+  final words = (name ?? '').trim().split(RegExp(r'\s+'));
+  return words.first;
+}
+
 extension on String {
   /// The first one or two characters, whichever there are.
   String get characters2 => length >= 2 ? substring(0, 2) : this;

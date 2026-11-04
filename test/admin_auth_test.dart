@@ -150,13 +150,17 @@ void main() {
       expect(seen, [user, null]);
     });
 
-    test('rejects a wrong password with the operator-facing message',
-        () async {
+    test('rejects a wrong password with the operator-facing message', () async {
       final auth = LocalAdminAuth();
       await expectLater(
         auth.signIn('admin@novaride.ph', 'nope'),
-        throwsA(isA<AdminAuthException>()
-            .having((e) => e.message, 'message', 'Invalid email or password')),
+        throwsA(
+          isA<AdminAuthException>().having(
+            (e) => e.message,
+            'message',
+            'Invalid email or password',
+          ),
+        ),
       );
       expect(auth.currentUser, isNull);
     });
@@ -164,20 +168,33 @@ void main() {
 
   group('messageForFirebaseCode', () {
     test('maps the codes the login page is required to explain', () {
-      expect(messageForFirebaseCode('wrong-password'),
-          'Incorrect email or password.');
-      expect(messageForFirebaseCode('invalid-credential'),
-          'Incorrect email or password.');
-      expect(messageForFirebaseCode('user-not-found'),
-          messageForFirebaseCode('wrong-password'),
-          reason: 'one message for both, or the login page is an '
-              'account-enumeration oracle');
-      expect(messageForFirebaseCode('too-many-requests'),
-          contains('Too many failed attempts'));
-      expect(messageForFirebaseCode('network-request-failed'),
-          contains('Cannot reach Firebase'));
-      expect(messageForFirebaseCode('permission-denied'),
-          contains('security rules may not be deployed'));
+      expect(
+        messageForFirebaseCode('wrong-password'),
+        'Incorrect email or password.',
+      );
+      expect(
+        messageForFirebaseCode('invalid-credential'),
+        'Incorrect email or password.',
+      );
+      expect(
+        messageForFirebaseCode('user-not-found'),
+        messageForFirebaseCode('wrong-password'),
+        reason:
+            'one message for both, or the login page is an '
+            'account-enumeration oracle',
+      );
+      expect(
+        messageForFirebaseCode('too-many-requests'),
+        contains('Too many failed attempts'),
+      );
+      expect(
+        messageForFirebaseCode('network-request-failed'),
+        contains('Cannot reach Firebase'),
+      );
+      expect(
+        messageForFirebaseCode('permission-denied'),
+        contains('security rules may not be deployed'),
+      );
     });
 
     test('never surfaces a raw code, known or not', () {
@@ -211,17 +228,24 @@ void main() {
       addTearDown(auth.dispose);
       await tester.pumpWidget(AdminApp(auth: auth));
 
-      expect(_renderedAddresses(tester), isEmpty,
-          reason: 'an operations console does not list its operators on '
-              'the front door');
+      expect(
+        _renderedAddresses(tester),
+        isEmpty,
+        reason:
+            'an operations console does not list its operators on '
+            'the front door',
+      );
       for (final role in AdminRole.values) {
         expect(find.text(role.label.toUpperCase()), findsNothing);
       }
       for (final account in demoAccounts) {
         expect(find.text(account.password), findsNothing);
       }
-      expect(find.textContaining('Simulation mode'), findsNothing,
-          reason: 'live is the expected state; only the simulation says so');
+      expect(
+        find.textContaining('Simulation mode'),
+        findsNothing,
+        reason: 'live is the expected state; only the simulation says so',
+      );
       expect(find.textContaining(consoleVersionLabel), findsOneWidget);
     });
 
@@ -237,8 +261,7 @@ void main() {
       expect(auth.signInCalls, hasLength(1));
       expect(find.text('SIGN IN'), findsNothing);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      final button =
-          tester.widget<ElevatedButton>(find.byType(ElevatedButton));
+      final button = tester.widget<ElevatedButton>(find.byType(ElevatedButton));
       expect(button.onPressed, isNull);
 
       await tester.tap(find.byType(ElevatedButton), warnIfMissed: false);
@@ -291,8 +314,9 @@ void main() {
   });
 
   group('login page form', () {
-    testWidgets('the button enables only once both fields are filled',
-        (tester) async {
+    testWidgets('the button enables only once both fields are filled', (
+      tester,
+    ) async {
       await _useDesktopSurface(tester);
       final auth = _ScriptedAuth();
       addTearDown(auth.dispose);
@@ -311,14 +335,18 @@ void main() {
       expect(button().onPressed, isNotNull);
     });
 
-    testWidgets('a malformed email is caught inline, before any round-trip',
-        (tester) async {
+    testWidgets('a malformed email is caught inline, before any round-trip', (
+      tester,
+    ) async {
       await _useDesktopSurface(tester);
       final auth = _ScriptedAuth();
       addTearDown(auth.dispose);
       await tester.pumpWidget(AdminApp(auth: auth));
 
-      await tester.enterText(find.byType(TextFormField).first, 'not-an-address');
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'not-an-address',
+      );
       await tester.enterText(find.byType(TextFormField).last, 'secret');
       // The button enables on the frame after both fields are filled.
       await tester.pump();
@@ -327,8 +355,11 @@ void main() {
 
       expect(find.text('Enter a valid email address.'), findsOneWidget);
       expect(auth.signInCalls, isEmpty, reason: 'never reached the provider');
-      expect(_focused?.debugLabel, 'login-email',
-          reason: 'the cursor goes to the field that needs fixing');
+      expect(
+        _focused?.debugLabel,
+        'login-email',
+        reason: 'the cursor goes to the field that needs fixing',
+      );
 
       // Typing again re-checks on every keystroke, so the message goes the
       // moment the address is well-formed.
@@ -337,8 +368,9 @@ void main() {
       expect(find.text('Enter a valid email address.'), findsNothing);
     });
 
-    testWidgets('the email is checked on blur, not while it is being typed',
-        (tester) async {
+    testWidgets('the email is checked on blur, not while it is being typed', (
+      tester,
+    ) async {
       await _useDesktopSurface(tester);
       final auth = _ScriptedAuth();
       addTearDown(auth.dispose);
@@ -346,8 +378,11 @@ void main() {
 
       await tester.enterText(find.byType(TextFormField).first, 'half@');
       await tester.pump();
-      expect(find.text('Enter a valid email address.'), findsNothing,
-          reason: 'still typing');
+      expect(
+        find.text('Enter a valid email address.'),
+        findsNothing,
+        reason: 'still typing',
+      );
 
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
@@ -391,36 +426,39 @@ void main() {
       await _tearDownTree(tester);
     });
 
-    testWidgets('the sign-in error clears as soon as the operator types again',
-        (tester) async {
-      await _useDesktopSurface(tester);
-      final auth = _ScriptedAuth()
-        ..failWith = const AdminAuthException('Incorrect email or password.');
-      addTearDown(auth.dispose);
-      await tester.pumpWidget(AdminApp(auth: auth));
+    testWidgets(
+      'the sign-in error clears as soon as the operator types again',
+      (tester) async {
+        await _useDesktopSurface(tester);
+        final auth = _ScriptedAuth()
+          ..failWith = const AdminAuthException('Incorrect email or password.');
+        addTearDown(auth.dispose);
+        await tester.pumpWidget(AdminApp(auth: auth));
 
-      await _fillAndSubmit(tester, _operator.email);
-      await tester.pumpAndSettle();
-      expect(find.text('Incorrect email or password.'), findsOneWidget);
+        await _fillAndSubmit(tester, _operator.email);
+        await tester.pumpAndSettle();
+        expect(find.text('Incorrect email or password.'), findsOneWidget);
 
-      // The cursor is on the password with the old one selected, so the
-      // retry is just typing.
-      expect(_focused?.debugLabel, 'login-password');
-      final password = tester
-          .widgetList<TextFormField>(find.byType(TextFormField))
-          .last
-          .controller!;
-      expect(password.selection.start, 0);
-      expect(password.selection.end, password.text.length);
+        // The cursor is on the password with the old one selected, so the
+        // retry is just typing.
+        expect(_focused?.debugLabel, 'login-password');
+        final password = tester
+            .widgetList<TextFormField>(find.byType(TextFormField))
+            .last
+            .controller!;
+        expect(password.selection.start, 0);
+        expect(password.selection.end, password.text.length);
 
-      await tester.enterText(find.byType(TextFormField).last, 'another try');
-      await tester.pump();
-      expect(find.text('Incorrect email or password.'), findsNothing);
-    });
+        await tester.enterText(find.byType(TextFormField).last, 'another try');
+        await tester.pump();
+        expect(find.text('Incorrect email or password.'), findsNothing);
+      },
+    );
 
     testWidgets('remembering the email keeps the address — only the address '
-        '— for the next sign-in, and unticking forgets it at once',
-        (tester) async {
+        '— for the next sign-in, and unticking forgets it at once', (
+      tester,
+    ) async {
       await _useDesktopSurface(tester);
       addTearDown(RememberedEmail.clear);
       final auth = _ScriptedAuth();
@@ -443,11 +481,17 @@ void main() {
           .widgetList<TextFormField>(find.byType(TextFormField))
           .toList();
       expect(fields.first.controller!.text, _operator.email);
-      expect(fields.last.controller!.text, isEmpty,
-          reason: 'the password is never stored');
+      expect(
+        fields.last.controller!.text,
+        isEmpty,
+        reason: 'the password is never stored',
+      );
       expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
-      expect(_focused?.debugLabel, 'login-password',
-          reason: 'the cursor starts where the typing does');
+      expect(
+        _focused?.debugLabel,
+        'login-password',
+        reason: 'the cursor starts where the typing does',
+      );
 
       await tester.tap(find.byType(Checkbox));
       await tester.pump();
@@ -481,15 +525,21 @@ void main() {
       await tab();
       expect(_focused?.debugLabel, 'login-submit');
       await tab();
-      expect(_focused?.context?.findAncestorWidgetOfExactType<IconButton>(),
-          isNotNull, reason: 'show-password toggle is reachable');
+      expect(
+        _focused?.context?.findAncestorWidgetOfExactType<IconButton>(),
+        isNotNull,
+        reason: 'show-password toggle is reachable',
+      );
       // Space on the focused toggle reveals the password.
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await tester.pump();
       expect(find.byTooltip('Hide password'), findsOneWidget);
       await tab();
-      expect(_focused?.context?.findAncestorWidgetOfExactType<Checkbox>(),
-          isNotNull, reason: 'remember-email checkbox is reachable');
+      expect(
+        _focused?.context?.findAncestorWidgetOfExactType<Checkbox>(),
+        isNotNull,
+        reason: 'remember-email checkbox is reachable',
+      );
     });
 
     testWidgets('fields, toggle and button are labelled for assistive '
@@ -523,8 +573,11 @@ void main() {
       await tester.pumpWidget(const AdminApp());
 
       expect(find.textContaining('Simulation mode'), findsOneWidget);
-      expect(_renderedAddresses(tester), isEmpty,
-          reason: 'the demo accounts are documented, not displayed');
+      expect(
+        _renderedAddresses(tester),
+        isEmpty,
+        reason: 'the demo accounts are documented, not displayed',
+      );
       for (final account in demoAccounts) {
         expect(find.text(account.password), findsNothing);
       }
@@ -537,7 +590,9 @@ void main() {
       await tester.pumpWidget(const AdminApp());
 
       await tester.enterText(
-          find.byType(TextFormField).first, 'nope@novaride.ph');
+        find.byType(TextFormField).first,
+        'nope@novaride.ph',
+      );
       await tester.enterText(find.byType(TextFormField).last, 'wrong');
       // The button enables on the frame after both fields are filled.
       await tester.pump();
@@ -584,8 +639,11 @@ void main() {
 
       expect(find.text('NovaRide TNVS Operations'), findsOneWidget);
       expect(find.text('TYPE OF RIDER STATUS'), findsNothing);
-      expect(find.text('Quinn Lunatal'), findsNothing,
-          reason: 'no stale session data');
+      expect(
+        find.text('Quinn Lunatal'),
+        findsNothing,
+        reason: 'no stale session data',
+      );
     });
 
     testWidgets('the shell also leaves when a different operator takes over '
@@ -600,11 +658,13 @@ void main() {
 
       // Another tab signed in as someone else; this shell would otherwise
       // keep acting under the wrong name.
-      auth.emit(const AdminUser(
-        name: 'Someone Else',
-        email: 'qdplegarde@tip.edu.ph',
-        role: AdminRole.viewer,
-      ));
+      auth.emit(
+        const AdminUser(
+          name: 'Someone Else',
+          email: 'qdplegarde@tip.edu.ph',
+          role: AdminRole.viewer,
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('NovaRide TNVS Operations'), findsOneWidget);

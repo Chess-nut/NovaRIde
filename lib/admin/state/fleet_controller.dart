@@ -26,12 +26,12 @@ enum AlertPriority { critical, high, medium, low, none }
 
 extension AlertPriorityLabel on AlertPriority {
   String get label => switch (this) {
-        AlertPriority.critical => 'Critical',
-        AlertPriority.high => 'High',
-        AlertPriority.medium => 'Medium',
-        AlertPriority.low => 'Low',
-        AlertPriority.none => 'None',
-      };
+    AlertPriority.critical => 'Critical',
+    AlertPriority.high => 'High',
+    AlertPriority.medium => 'Medium',
+    AlertPriority.low => 'Low',
+    AlertPriority.none => 'None',
+  };
 }
 
 /// Live fleet state for the whole console, fed by one [FleetRepository].
@@ -56,17 +56,17 @@ extension AlertPriorityLabel on AlertPriority {
 class FleetController extends ChangeNotifier {
   FleetController(this._repository) {
     _ridersSub = _repository.watchRiders().listen(
-          _onRiders,
-          onError: (Object e) => debugPrint('FleetController riders: $e'),
-        );
+      _onRiders,
+      onError: (Object e) => debugPrint('FleetController riders: $e'),
+    );
     _telemetrySub = _repository.watchTelemetry().listen(
-          _onTelemetry,
-          onError: (Object e) => debugPrint('FleetController telemetry: $e'),
-        );
+      _onTelemetry,
+      onError: (Object e) => debugPrint('FleetController telemetry: $e'),
+    );
     _alertsSub = _repository.watchAlerts().listen(
-          _onAlerts,
-          onError: (Object e) => debugPrint('FleetController alerts: $e'),
-        );
+      _onAlerts,
+      onError: (Object e) => debugPrint('FleetController alerts: $e'),
+    );
     _connectionSub = _repository.watchConnection().listen(_onConnection);
   }
 
@@ -157,8 +157,10 @@ class FleetController extends ChangeNotifier {
 
   /// Helmets reporting with no rider assigned. Shown as their own rows,
   /// never hidden.
-  List<HelmetTelemetry> get unassignedTelemetry =>
-      [for (final t in _telemetry) if (t.riderId == null) t];
+  List<HelmetTelemetry> get unassignedTelemetry => [
+    for (final t in _telemetry)
+      if (t.riderId == null) t,
+  ];
 
   /// An unassigned helmet by device id. Selection holds either a rider id or
   /// one of these, so the table and map can drill into a helmet with no
@@ -262,7 +264,11 @@ class FleetController extends ChangeNotifier {
   /// one, dropping the oldest once the cap is reached so a long session
   /// cannot grow the trail unbounded.
   void _recordTrailPoint(HelmetTelemetry telemetry) {
-    final (riderId, lat, lng) = (telemetry.riderId, telemetry.lat, telemetry.lng);
+    final (riderId, lat, lng) = (
+      telemetry.riderId,
+      telemetry.lat,
+      telemetry.lng,
+    );
     // Trails are per rider; an unassigned helmet or one with no position
     // has nothing to draw.
     if (riderId == null || lat == null || lng == null) return;
@@ -324,8 +330,7 @@ class FleetController extends ChangeNotifier {
   /// Mean time from an alert firing to an operator acknowledging it — the
   /// headline "Golden Hour" number the console exists to shrink.
   /// Null until at least one alert has been acknowledged.
-  Duration? get averageAcknowledgeTime =>
-      _meanTimeTo(AlertStatus.acknowledged);
+  Duration? get averageAcknowledgeTime => _meanTimeTo(AlertStatus.acknowledged);
 
   Duration? get averageResolveTime => _meanTimeTo(AlertStatus.resolved);
 

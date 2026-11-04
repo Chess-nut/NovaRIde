@@ -1,62 +1,74 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:novaride/shared/theme.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// "GPS / Map" screen — shows the rider's real-time location, trajectory,
-/// and heading on a map, per the Capstone scope's GPS/Map Page module.
+import 'package:novaride/core/theme/app_colors.dart';
+import 'package:novaride/core/theme/app_spacing.dart';
+import 'package:novaride/core/theme/app_typography.dart';
+import 'package:novaride/core/utils/coordinates.dart';
+import 'package:novaride/core/widgets/nova_lists.dart';
+import 'package:novaride/core/widgets/nova_surfaces.dart';
+import 'package:novaride/core/widgets/unavailable.dart';
+
+import '../../domain/entities/helmet_telemetry.dart';
+import '../providers/helmet_telemetry_provider.dart';
+
+/// "Location" — where the helmet last was, on Signal.
 ///
-/// NOTE ON THE MAP RENDERING: this draws a stylized, dark-themed map with
-/// a `CustomPainter` instead of embedding real Google Maps tiles. Two
-/// reasons: (1) `google_maps_flutter` needs a billed Google Maps API key
-/// wired into AndroidManifest.xml / Info.plist / web/index.html before it
-/// renders anything — without that setup it just shows a gray box, which
-/// is a common capstone-demo failure mode; (2) Google's default map tiles
-/// are light-themed and would clash with NovaRide's dark UI unless a
-/// custom map-style JSON is also applied. The layout below (marker,
-/// heading, breadcrumb trail, HUD cards) is built so swapping the
-/// `CustomPaint` for a real `GoogleMap` widget later is a drop-in
-/// replacement — everything around it stays the same.
-class GpsMapPage extends StatefulWidget {
+/// **Live.** Reads the same helmet node as Home. It used to show a
+/// scripted trip — 42 km/h heading NE on Makati Ave, ±4.8 m — over a
+/// drawn-in route.
+///
+/// **The map is still a drawing, not tiles.** `google_maps_flutter`
+/// needs a billed key wired into native config before it renders; until
+/// then this paints a dark street grid with the helmet as a dot in the
+/// middle. Swapping the [CustomPaint] for a `GoogleMap` centred on
+/// [HelmetTelemetry.lat]/[HelmetTelemetry.lng] is the drop-in upgrade.
+///
+/// What is gone, because nothing measured it: the heading arrow (the
+/// firmware sends no heading), the accuracy figure (no HDOP), the route
+/// trail, and the "follow me" toggle, which had nothing to follow.
+/// "Share" now really copies a link.
+class GpsMapPage extends ConsumerWidget {
   const GpsMapPage({super.key});
 
   @override
-  State<GpsMapPage> createState() => _GpsMapPageState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final now = ref.watch(helmetClockProvider).value ?? DateTime.now();
+    final telemetryAsync = ref.watch(helmetTelemetryProvider);
+    final t = telemetryAsync.value;
+    final live =
+        t != null && t.online == true && t.isFresh(now, helmetStaleAfter);
+    final hasPosition = t?.lat != null && t?.lng != null;
 
-class _GpsMapPageState extends State<GpsMapPage> {
-  // Mock live telemetry — matches the active trip shown on the Home screen
-  // (Makati Ave → BGC, 42 km/h). Phase 2 replaces this with a Firebase
-  // stream keyed off the NEO-6M GPS module, per Chapter 3.
-  static const double _speedKmh = 42;
-  static const double _headingDegrees = 48; // NE
-  static const double _lat = 14.5547;
-  static const double _lng = 121.0244;
-  static const double _accuracyM = 4.8;
-  static const String _address = 'Makati Ave, Makati City';
-
-  bool _followMode = true;
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: NovaColors.background,
+      backgroundColor: colors.surface,
       body: Stack(
         children: [
-          // ---- Full-bleed stylized map ----
           Positioned.fill(
-            child: CustomPaint(
-              painter: _MapPainter(heading: _headingDegrees),
+            child: Semantics(
+              label: hasPosition
+                  ? 'Map with the helmet\'s last position at the centre'
+                  : 'Map with no position yet',
+              child: CustomPaint(
+                painter: _MapPainter(
+                  showMarker: hasPosition,
+                  grid: colors.border,
+                  avenue: colors.borderStrong,
+                  ground: colors.surfaceSunken,
+                  marker: live ? colors.riding : colors.offline,
+                  markerRing: colors.surface,
+                ),
+              ),
             ),
           ),
-
           SafeArea(
             child: Column(
               children: [
-                _buildHeader(context),
+                _TopBar(telemetry: t, live: live, now: now),
                 const Spacer(),
-                _buildFollowToggle(),
-                const SizedBox(height: 12),
-                _buildBottomSheet(),
+                _DetailsSheet(telemetry: t, live: live, now: now),
               ],
             ),
           ),
@@ -64,65 +76,68 @@ class _GpsMapPageState extends State<GpsMapPage> {
       ),
     );
   }
+}
 
-  // ---- Back arrow + title, floating over the map ----
-  Widget _buildHeader(BuildContext context) {
+/// Back, and how fresh the position is, over the map.
+class _TopBar extends StatelessWidget {
+  const _TopBar({
+    required this.telemetry,
+    required this.live,
+    required this.now,
+  });
+
+  final HelmetTelemetry? telemetry;
+  final bool live;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final t = telemetry;
+    final taken = fixTakenAt(t?.lastSeen, t?.gpsAgeMs);
+    final label = t?.lat == null
+        ? 'No GPS fix yet'
+        : taken == null
+        ? 'Last known position'
+        : 'Fix taken ${novaTimeAgo(taken, now)}';
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.sm,
+        kRiderGutter,
+        0,
+      ),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: NovaColors.card.withValues(alpha: 0.92),
-                shape: BoxShape.circle,
-                border: Border.all(color: NovaColors.cardBorder),
-              ),
-              child: const Icon(Icons.arrow_back, color: NovaColors.primaryText, size: 20),
+          IconButton(
+            tooltip: 'Back',
+            onPressed: () => Navigator.of(context).maybePop(),
+            style: IconButton.styleFrom(
+              backgroundColor: colors.surfaceRaised,
+              fixedSize: const Size.square(AppSizes.minTouchTarget),
             ),
+            icon: Icon(Icons.arrow_back, color: colors.textPrimary),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: NovaColors.card.withValues(alpha: 0.92),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: NovaColors.cardBorder),
+            child: NovaCard(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.md,
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.location_on, color: NovaColors.cyan, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _address,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: NovaColors.primaryText,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                  Icon(
+                    Icons.location_on_outlined,
+                    size: 18,
+                    color: colors.textSecondary,
                   ),
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: const BoxDecoration(color: NovaColors.green, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 5),
-                  const Text(
-                    'LIVE',
-                    style: TextStyle(
-                      color: NovaColors.green,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                    ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(child: Text(label, style: context.text.label)),
+                  NovaPill(
+                    label: live ? 'Live' : 'Offline',
+                    tone: live ? NovaTone.safe : NovaTone.offline,
                   ),
                 ],
               ),
@@ -132,147 +147,101 @@ class _GpsMapPageState extends State<GpsMapPage> {
       ),
     );
   }
+}
 
-  // ---- Recenter / follow-mode pill, floating above the bottom sheet ----
-  Widget _buildFollowToggle() {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 16),
-        child: GestureDetector(
-          onTap: () => setState(() => _followMode = !_followMode),
-          child: Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: _followMode ? NovaColors.cyan : NovaColors.card.withValues(alpha: 0.92),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: _followMode ? NovaColors.cyan : NovaColors.cardBorder,
-              ),
-              boxShadow: _followMode
-                  ? [BoxShadow(color: NovaColors.cyan.withValues(alpha: 0.35), blurRadius: 14)]
-                  : null,
-            ),
-            child: Icon(
-              Icons.my_location,
-              color: _followMode ? Colors.black : NovaColors.secondaryText,
-              size: 20,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+/// Speed, satellites, coordinates, and a link to share.
+class _DetailsSheet extends StatelessWidget {
+  const _DetailsSheet({
+    required this.telemetry,
+    required this.live,
+    required this.now,
+  });
 
-  // ---- Speed / heading / accuracy HUD + coordinates + share ----
-  Widget _buildBottomSheet() {
-    final cardinal = _cardinalFromDegrees(_headingDegrees);
+  final HelmetTelemetry? telemetry;
+  final bool live;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final t = telemetry;
+    final lat = t?.lat;
+    final lng = t?.lng;
+    // An old speed shown as current is worse than none.
+    final speed = live ? t?.speedKmph : null;
+    final satellites = t?.satellites;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-      decoration: const BoxDecoration(
-        color: NovaColors.card,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border(top: BorderSide(color: NovaColors.cardBorder)),
+      padding: const EdgeInsets.fromLTRB(
+        kRiderGutter,
+        AppSpacing.xl,
+        kRiderGutter,
+        AppSpacing.xl,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surfaceRaised,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppRadius.lg),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: NovaColors.cardBorder,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
-                child: _HudStat(
-                  icon: Icons.speed,
-                  color: NovaColors.cyan,
-                  value: _speedKmh.toStringAsFixed(0),
+                child: _Stat(
+                  label: 'Speed',
+                  value: speed?.toStringAsFixed(0),
                   unit: 'km/h',
-                  label: 'SPEED',
                 ),
               ),
               Expanded(
-                child: _HudStat(
-                  icon: Icons.explore_outlined,
-                  color: NovaColors.green,
-                  value: cardinal,
-                  unit: '${_headingDegrees.toStringAsFixed(0)}°',
-                  label: 'HEADING',
+                child: _Stat(
+                  label: 'Satellites',
+                  value: satellites?.toString(),
                 ),
               ),
               Expanded(
-                child: _HudStat(
-                  icon: Icons.gps_fixed,
-                  color: NovaColors.purple,
-                  value: '±${_accuracyM.toStringAsFixed(1)}',
-                  unit: 'm',
-                  label: 'ACCURACY',
+                child: _Stat(
+                  label: 'Fix',
+                  value: switch (t?.hasUsableFix) {
+                    true => 'Current',
+                    false => 'Old',
+                    null => null,
+                  },
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: NovaColors.background,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: NovaColors.cardBorder),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _CoordLabel(label: 'LATITUDE', value: '${_lat.toStringAsFixed(4)}° N'),
-                ),
-                Container(width: 1, height: 28, color: NovaColors.cardBorder),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _CoordLabel(label: 'LONGITUDE', value: '${_lng.toStringAsFixed(4)}° E'),
-                ),
-              ],
-            ),
+          const SizedBox(height: AppSpacing.lg),
+          Divider(height: 1, color: colors.border),
+          const SizedBox(height: AppSpacing.sm),
+          NovaValueRow(
+            label: 'Latitude',
+            value: lat == null ? Unavailable.dash : formatLatitude(lat),
           ),
-          const SizedBox(height: 14),
+          NovaValueRow(
+            label: 'Longitude',
+            value: lng == null ? Unavailable.dash : formatLongitude(lng),
+          ),
+          const SizedBox(height: AppSpacing.lg),
           SizedBox(
-            height: 48,
+            height: AppSizes.buttonHeight,
             child: OutlinedButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: NovaColors.card,
-                    behavior: SnackBarBehavior.floating,
-                    content: Text(
-                      'Location link copied — share it with a contact',
-                      style: TextStyle(color: NovaColors.primaryText),
-                    ),
-                  ),
-                );
-              },
+              onPressed: lat == null || lng == null
+                  ? null
+                  : () => _copyLink(context, t?.mapsUrl, lat, lng),
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: NovaColors.cyan),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                foregroundColor: colors.textPrimary,
+                side: BorderSide(color: colors.borderStrong),
+                shape: const StadiumBorder(),
+                textStyle: AppTypography.title,
               ),
-              icon: const Icon(Icons.share_location_outlined, color: NovaColors.cyan, size: 18),
-              label: const Text(
-                'SHARE MY LOCATION',
-                style: TextStyle(
-                  color: NovaColors.cyan,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.6,
-                ),
-              ),
+              icon: const Icon(Icons.link, size: 20),
+              label: const Text('Copy map link'),
             ),
           ),
         ],
@@ -280,197 +249,128 @@ class _GpsMapPageState extends State<GpsMapPage> {
     );
   }
 
-  String _cardinalFromDegrees(double degrees) {
-    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-    final index = ((degrees % 360) / 45).round() % 8;
-    return directions[index];
+  /// The firmware's own Google Maps link when it sent one, else one built
+  /// from the coordinates.
+  Future<void> _copyLink(
+    BuildContext context,
+    String? mapsUrl,
+    double lat,
+    double lng,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final link = (mapsUrl != null && mapsUrl.isNotEmpty)
+        ? mapsUrl
+        : 'https://maps.google.com/?q=$lat,$lng';
+    await Clipboard.setData(ClipboardData(text: link));
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('Map link copied. Paste it to share.')),
+      );
   }
 }
 
-/// Small stat block used in the HUD row (speed / heading / accuracy).
-class _HudStat extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String value;
-  final String unit;
+class _Stat extends StatelessWidget {
+  const _Stat({required this.label, required this.value, this.unit});
+
   final String label;
 
-  const _HudStat({
-    required this.icon,
-    required this.color,
-    required this.value,
-    required this.unit,
-    required this.label,
-  });
+  /// Null is no reading: a dash.
+  final String? value;
+  final String? unit;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 18),
-        const SizedBox(height: 6),
-        RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: value,
-                style: const TextStyle(
-                  color: NovaColors.primaryText,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              TextSpan(
-                text: ' $unit',
-                style: const TextStyle(
-                  color: NovaColors.secondaryText,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(
-            color: NovaColors.secondaryText,
-            fontSize: 9.5,
-            letterSpacing: 0.6,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _CoordLabel extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _CoordLabel({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
+    final colors = context.colors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: NovaColors.secondaryText,
-            fontSize: 9.5,
-            letterSpacing: 0.6,
-          ),
-        ),
+        Text(label, style: context.text.labelMuted),
         const SizedBox(height: 2),
-        Text(
-          value,
-          style: const TextStyle(
-            color: NovaColors.primaryText,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              value ?? Unavailable.dash,
+              style: context.text.h1.copyWith(
+                color: value == null
+                    ? colors.textSecondary
+                    : colors.textPrimary,
+              ),
+            ),
+            if (unit != null && value != null) ...[
+              const SizedBox(width: AppSpacing.xs),
+              Text(unit!, style: context.text.caption),
+            ],
+          ],
         ),
       ],
     );
   }
 }
 
-/// Draws the stylized dark map: a road grid, a breadcrumb route trail, and
-/// a rider marker rotated toward the current heading.
+/// A dark street grid with the helmet as a dot at the centre.
 class _MapPainter extends CustomPainter {
-  final double heading;
+  _MapPainter({
+    required this.showMarker,
+    required this.grid,
+    required this.avenue,
+    required this.ground,
+    required this.marker,
+    required this.markerRing,
+  });
 
-  _MapPainter({required this.heading});
+  final bool showMarker;
+  final Color grid;
+  final Color avenue;
+  final Color ground;
+  final Color marker;
+  final Color markerRing;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    canvas.drawRect(rect, Paint()..color = const Color(0xFF0D1220));
+    canvas.drawRect(Offset.zero & size, Paint()..color = ground);
 
-    _drawRoadGrid(canvas, size);
-    _drawRouteTrail(canvas, size);
-    _drawRiderMarker(canvas, size);
-  }
-
-  void _drawRoadGrid(Canvas canvas, Size size) {
-    final minorPaint = Paint()
-      ..color = NovaColors.cardBorder.withValues(alpha: 0.5)
+    final minor = Paint()
+      ..color = grid
       ..strokeWidth = 1;
-    final majorPaint = Paint()
-      ..color = NovaColors.cardBorder
-      ..strokeWidth = 2.5;
-
-    // Minor grid streets.
     for (double x = 0; x < size.width; x += 46) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), minorPaint);
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), minor);
     }
     for (double y = 0; y < size.height; y += 46) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), minorPaint);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), minor);
     }
 
-    // A couple of "major avenues" for visual interest, one of them diagonal
-    // (a nod to EDSA-style arterial roads).
-    canvas.drawLine(Offset(0, size.height * 0.38), Offset(size.width, size.height * 0.38), majorPaint);
-    canvas.drawLine(Offset(size.width * 0.62, 0), Offset(size.width * 0.62, size.height), majorPaint);
+    final major = Paint()
+      ..color = avenue
+      ..strokeWidth = 3;
     canvas.drawLine(
-      Offset(0, size.height * 0.85),
-      Offset(size.width, size.height * 0.15),
-      majorPaint,
+      Offset(0, size.height * 0.38),
+      Offset(size.width, size.height * 0.38),
+      major,
     );
-  }
-
-  void _drawRouteTrail(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final path = Path()
-      ..moveTo(center.dx - 120, center.dy + 160)
-      ..quadraticBezierTo(center.dx - 90, center.dy + 60, center.dx - 30, center.dy + 40)
-      ..quadraticBezierTo(center.dx + 10, center.dy + 20, center.dx, center.dy);
-
-    final trailPaint = Paint()
-      ..color = NovaColors.cyan.withValues(alpha: 0.7)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round;
-    canvas.drawPath(path, trailPaint);
-
-    // Trip start marker.
-    canvas.drawCircle(Offset(center.dx - 120, center.dy + 160), 5, Paint()..color = NovaColors.secondaryText);
-  }
-
-  void _drawRiderMarker(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-
-    // Static accuracy ring.
-    canvas.drawCircle(center, 34, Paint()..color = NovaColors.cyan.withValues(alpha: 0.12));
-    canvas.drawCircle(center, 22, Paint()..color = NovaColors.cyan.withValues(alpha: 0.15));
-
-    // Heading arrow, rotated toward `heading` degrees (0 = North/up).
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(heading * math.pi / 180);
-
-    final arrowPaint = Paint()..color = NovaColors.cyan;
-    final arrowPath = Path()
-      ..moveTo(0, -14)
-      ..lineTo(9, 10)
-      ..lineTo(0, 4)
-      ..lineTo(-9, 10)
-      ..close();
-    canvas.drawShadow(arrowPath, Colors.black, 4, false);
-    canvas.drawPath(arrowPath, arrowPaint);
-    canvas.drawPath(
-      arrowPath,
-      Paint()
-        ..color = NovaColors.background
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
+    canvas.drawLine(
+      Offset(size.width * 0.62, 0),
+      Offset(size.width * 0.62, size.height),
+      major,
     );
-    canvas.restore();
+
+    if (!showMarker) return;
+    final centre = Offset(size.width / 2, size.height * 0.4);
+    canvas.drawCircle(
+      centre,
+      28,
+      Paint()..color = marker.withValues(alpha: 0.18),
+    );
+    canvas.drawCircle(centre, 11, Paint()..color = markerRing);
+    canvas.drawCircle(centre, 8, Paint()..color = marker);
   }
 
   @override
-  bool shouldRepaint(covariant _MapPainter oldDelegate) => oldDelegate.heading != heading;
+  bool shouldRepaint(covariant _MapPainter old) =>
+      old.showMarker != showMarker ||
+      old.marker != marker ||
+      old.grid != grid ||
+      old.ground != ground;
 }

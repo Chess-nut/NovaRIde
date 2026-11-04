@@ -11,4 +11,6 @@
 /// bundle id — so a key locked to one platform cannot serve another.
 ///
 /// Empty when not supplied. Nothing in the repository holds a key.
-const String googleMapsApiKeyWeb = String.fromEnvironment('GOOGLE_MAPS_API_KEY_WEB');
+const String googleMapsApiKeyWeb = String.fromEnvironment(
+  'GOOGLE_MAPS_API_KEY_WEB',
+);

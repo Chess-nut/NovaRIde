@@ -2,11 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:novaride/app/di.dart';
 import 'package:novaride/core/errors/failure.dart';
+import 'package:novaride/core/theme/app_colors.dart';
+import 'package:novaride/core/theme/app_spacing.dart';
+import 'package:novaride/core/theme/app_typography.dart';
 import 'package:novaride/core/utils/initials.dart';
 import 'package:novaride/core/utils/validators.dart';
 import 'package:novaride/features/auth/domain/entities/user_profile.dart';
 import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
-import 'package:novaride/shared/theme.dart';
+import 'package:novaride/core/widgets/nova_buttons.dart';
+import 'package:novaride/core/widgets/nova_inline_error.dart';
+import 'package:novaride/core/widgets/nova_lists.dart';
+import 'package:novaride/core/widgets/nova_text_field.dart';
 
 /// "Personal Information" — view and edit the account record.
 ///
@@ -70,7 +76,9 @@ class _PersonalInformationPageState
     });
 
     try {
-      await ref.read(authRepositoryProvider).updateProfile(
+      await ref
+          .read(authRepositoryProvider)
+          .updateProfile(
             fullName: _fullNameController.text,
             phoneNumber: _phoneController.text,
             address: _addressController.text,
@@ -89,78 +97,108 @@ class _PersonalInformationPageState
       });
     }
   }
+
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final profile = ref.watch(authStateProvider).profile;
     _fillOnce(profile);
+    final initials = initialsFrom(profile?.displayName);
 
     return Scaffold(
-      backgroundColor: NovaColors.background,
+      backgroundColor: colors.surface,
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
+            const NovaScreenHeader(
+              title: 'Personal information',
+              subtitle: 'How NovaRide and your contacts reach you',
+            ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                padding: const EdgeInsets.fromLTRB(
+                  kRiderGutter,
+                  AppSpacing.lg,
+                  kRiderGutter,
+                  AppSpacing.xl,
+                ),
                 child: Form(
                   key: _formKey,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SizedBox(height: 4),
-                      _buildAvatar(profile),
-                      const SizedBox(height: 28),
-                      _buildLabel('FULL NAME'),
-                      const SizedBox(height: 8),
-                      _buildTextField(
-                        controller: _fullNameController,
-                        icon: Icons.badge_outlined,
-                        validator: Validators.fullName,
+                      // No camera badge: there is no photo upload yet, and
+                      // a badge that does nothing when tapped is a promise.
+                      Center(
+                        child: CircleAvatar(
+                          radius: 36,
+                          backgroundColor: colors.border,
+                          child: initials.isEmpty
+                              ? Icon(
+                                  Icons.person_outline,
+                                  size: 32,
+                                  color: colors.textPrimary,
+                                )
+                              : Text(
+                                  initials,
+                                  style: context.text.h1.copyWith(
+                                    color: colors.textPrimary,
+                                  ),
+                                ),
+                        ),
                       ),
-                      const SizedBox(height: 18),
-                      _buildLabel('USERNAME'),
-                      const SizedBox(height: 8),
-                      _buildReadOnlyField(
+                      const SizedBox(height: AppSpacing.xxl),
+                      // The three editable fields stay in this order —
+                      // name, phone, address — which is how the form's
+                      // tests find them.
+                      NovaTextField(
+                        label: 'Full name',
+                        controller: _fullNameController,
+                        prefixIcon: Icons.badge_outlined,
+                        validator: Validators.fullName,
+                        autofillHints: const [AutofillHints.name],
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      _ReadOnlyField(
+                        label: 'Username',
                         value: profile?.username ?? '',
-                        icon: Icons.person_outline,
+                        icon: Icons.alternate_email,
                         note: 'Usernames cannot be changed.',
                       ),
-                      const SizedBox(height: 18),
-                      _buildLabel('EMAIL'),
-                      const SizedBox(height: 8),
-                      _buildReadOnlyField(
+                      const SizedBox(height: AppSpacing.xl),
+                      _ReadOnlyField(
+                        label: 'Email',
                         value: profile?.email ?? '',
                         icon: Icons.email_outlined,
                         note: 'Changing your email is not supported yet.',
                       ),
-                      const SizedBox(height: 18),
-                      _buildLabel('PHONE NUMBER'),
-                      const SizedBox(height: 8),
-                      _buildTextField(
+                      const SizedBox(height: AppSpacing.xl),
+                      NovaTextField(
+                        label: 'Phone number',
                         controller: _phoneController,
-                        icon: Icons.phone_outlined,
+                        prefixIcon: Icons.phone_outlined,
                         keyboardType: TextInputType.phone,
                         validator: Validators.phoneNumber,
+                        autofillHints: const [AutofillHints.telephoneNumber],
                       ),
-                      const SizedBox(height: 18),
-                      _buildLabel('ADDRESS'),
-                      const SizedBox(height: 8),
-                      _buildTextField(
+                      const SizedBox(height: AppSpacing.xl),
+                      NovaTextField(
+                        label: 'Address',
                         controller: _addressController,
-                        icon: Icons.location_on_outlined,
-                        validator: (_) => null,
+                        prefixIcon: Icons.location_on_outlined,
+                        textInputAction: TextInputAction.done,
+                        autofillHints: const [AutofillHints.fullStreetAddress],
+                        onSubmitted: (_) {
+                          if (!_isSaving) _handleSave();
+                        },
                       ),
-                      const SizedBox(height: 22),
-                      if (_saveError != null) ...[
-                        Text(
-                          _saveError!,
-                          style: const TextStyle(
-                              color: NovaColors.red, fontSize: 12),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      _buildSaveButton(),
+                      const SizedBox(height: AppSpacing.xxl),
+                      NovaInlineError(message: _saveError),
+                      NovaPrimaryButton(
+                        label: 'Save changes',
+                        busy: _isSaving,
+                        onPressed: _handleSave,
+                      ),
                     ],
                   ),
                 ),
@@ -171,201 +209,65 @@ class _PersonalInformationPageState
       ),
     );
   }
+}
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 20, 4),
-      child: Row(
+/// A value the rules will not let this screen change.
+///
+/// Shown rather than hidden: somebody wanting to know their own username
+/// should not have to remember it. Sunken, with a lock and a line saying
+/// why, so it reads as deliberate rather than broken — and it is not a
+/// text field, so nobody types into it and loses the edit on save.
+class _ReadOnlyField extends StatelessWidget {
+  const _ReadOnlyField({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.note,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      label: '$label, $value, read only. $note',
+      excludeSemantics: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: 36,
-              height: 36,
-              alignment: Alignment.center,
-              child: const Icon(Icons.arrow_back, color: NovaColors.primaryText, size: 22),
+          Text(label, style: context.text.labelMuted),
+          const SizedBox(height: AppSpacing.xs),
+          Container(
+            constraints: const BoxConstraints(minHeight: AppSizes.fieldHeight),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            decoration: BoxDecoration(
+              color: colors.surfaceSunken,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: colors.border),
             ),
-          ),
-          const SizedBox(width: 4),
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Personal Information',
-                style: TextStyle(
-                  color: NovaColors.primaryText,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              SizedBox(height: 2),
-              Text(
-                'Manage your personal details',
-                style: TextStyle(color: NovaColors.secondaryText, fontSize: 12),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAvatar(UserProfile? profile) {
-    return Center(
-      child: Stack(
-        children: [
-          CircleAvatar(
-            radius: 40,
-            backgroundColor: NovaColors.pink,
-            child: initialsFrom(profile?.displayName).isEmpty
-                ? const Icon(Icons.person_outline,
-                    color: Colors.white, size: 34)
-                : Text(
-                    initialsFrom(profile?.displayName),
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 26),
+            child: Row(
+              children: [
+                Icon(icon, size: 20, color: colors.textSecondary),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    value,
+                    style: context.text.body.copyWith(
+                      color: colors.textSecondary,
+                    ),
                   ),
-          ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: NovaColors.cyan,
-                shape: BoxShape.circle,
-                border: Border.all(color: NovaColors.background, width: 2),
-              ),
-              child: const Icon(Icons.camera_alt, color: Colors.black, size: 14),
+                ),
+                Icon(Icons.lock_outline, size: 18, color: colors.textSecondary),
+              ],
             ),
           ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(note, style: context.text.caption),
         ],
-      ),
-    );
-  }
-
-  Widget _buildLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        color: NovaColors.secondaryText,
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1,
-      ),
-    );
-  }
-
-  /// A value the rules will not let this screen change.
-  ///
-  /// Shown rather than hidden: somebody wanting to know their own
-  /// username should not have to remember it. Dimmed, with a lock and a
-  /// line saying why, so it reads as deliberate rather than broken —
-  /// and so nobody types into it and loses the edit on save.
-  Widget _buildReadOnlyField({
-    required String value,
-    required IconData icon,
-    required String note,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-          decoration: BoxDecoration(
-            color: NovaColors.background,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: NovaColors.cardBorder),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: NovaColors.secondaryText, size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  value,
-                  style: const TextStyle(
-                      color: NovaColors.secondaryText, fontSize: 15),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const Icon(Icons.lock_outline,
-                  color: NovaColors.secondaryText, size: 16),
-            ],
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          note,
-          style: const TextStyle(color: NovaColors.secondaryText, fontSize: 11),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required IconData icon,
-    required String? Function(String?) validator,
-    TextInputType? keyboardType,
-  }) {
-    OutlineInputBorder border(Color color) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: color),
-        );
-
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      style: const TextStyle(color: NovaColors.primaryText, fontSize: 15),
-      validator: validator,
-      decoration: InputDecoration(
-        prefixIcon: Icon(icon, color: NovaColors.secondaryText, size: 20),
-        filled: true,
-        fillColor: NovaColors.card,
-        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-        border: border(NovaColors.cardBorder),
-        enabledBorder: border(NovaColors.cardBorder),
-        focusedBorder: border(NovaColors.cyan),
-        errorBorder: border(NovaColors.red),
-        focusedErrorBorder: border(NovaColors.red),
-        errorStyle: const TextStyle(color: NovaColors.red, fontSize: 11),
-      ),
-    );
-  }
-
-  Widget _buildSaveButton() {
-    return SizedBox(
-      height: 52,
-      child: ElevatedButton(
-        onPressed: _isSaving ? null : _handleSave,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: NovaColors.cyan,
-          disabledBackgroundColor: NovaColors.cyan.withValues(alpha: 0.5),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          elevation: 0,
-        ),
-        child: _isSaving
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.4,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
-                ),
-              )
-            : const Text(
-                'SAVE CHANGES',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1,
-                ),
-              ),
       ),
     );
   }

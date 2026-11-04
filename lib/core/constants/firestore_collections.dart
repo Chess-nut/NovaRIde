@@ -54,6 +54,13 @@ abstract final class FirestoreCollections {
   /// mobile app has no reason to touch it, and the rules refuse it.
   static const admins = 'admins';
 
-  /// `emergencyContacts/{id}` — reserved in the schema, unused, unopened.
+  /// `riderProfiles/{uid}/emergencyContacts/{id}` — a rider's phone-only
+  /// contacts. A subcollection: the top-level path stays closed.
   static const emergencyContacts = 'emergencyContacts';
+
+  /// `guardianInvites/{code}` — a rider's short-lived invite code.
+  static const guardianInvites = 'guardianInvites';
+
+  /// `guardianLinks/{guardianUid}` — which rider a guardian follows.
+  static const guardianLinks = 'guardianLinks';
 }

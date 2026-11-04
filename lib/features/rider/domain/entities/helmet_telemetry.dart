@@ -149,7 +149,8 @@ class HelmetTelemetry {
   }
 
   // A value of the wrong type is treated as absent, never coerced.
-  static double? _double(Object? value) => value is num ? value.toDouble() : null;
+  static double? _double(Object? value) =>
+      value is num ? value.toDouble() : null;
   static bool? _bool(Object? value) => value is bool ? value : null;
   static String? _string(Object? value) => value is String ? value : null;
 

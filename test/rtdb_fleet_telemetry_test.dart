@@ -16,43 +16,42 @@ final _nowMs = _now.millisecondsSinceEpoch;
 
 /// deviceStatus/tracker-001 as the firmware writes it today.
 Map<String, dynamic> _status() => {
-      'deviceId': 'tracker-001',
-      'online': true,
-      'accelerometerReady': true,
-      'accelMagnitudeG': 1.012,
-      'mq3Raw': 734,
-      'mq3Voltage': 0.592,
-      'alcoholRelativeIndex': 734.0,
-      'alcoholAlert': true,
-      'sw420Active': false,
-      'tiltDegrees': 3.1,
-      'orientation': 'upright',
-      'cellularDataReady': true,
-      'lastSeen': _nowMs - 20000,
-    };
+  'deviceId': 'tracker-001',
+  'online': true,
+  'accelerometerReady': true,
+  'accelMagnitudeG': 1.012,
+  'mq3Raw': 734,
+  'mq3Voltage': 0.592,
+  'alcoholRelativeIndex': 734.0,
+  'alcoholAlert': true,
+  'sw420Active': false,
+  'tiltDegrees': 3.1,
+  'orientation': 'upright',
+  'cellularDataReady': true,
+  'lastSeen': _nowMs - 20000,
+};
 
 /// devices/tracker-001/latest.
 Map<String, dynamic> _fix({int ageMs = 60000}) => {
-      'lat': 14.6091,
-      'lng': 121.0223,
-      'speedKmph': 23.4,
-      'satellites': 7,
-      'gpsAgeMs': 900,
-      'serverTime': _nowMs - ageMs,
-    };
+  'lat': 14.6091,
+  'lng': 121.0223,
+  'speedKmph': 23.4,
+  'satellites': 7,
+  'gpsAgeMs': 900,
+  'serverTime': _nowMs - ageMs,
+};
 
 HelmetTelemetry _map({
   String? riderId,
   Map<String, dynamic>? status,
   Map<String, dynamic>? fix,
-}) =>
-    FirestoreFleetRepository.telemetryFromRtdb(
-      deviceId: 'tracker-001',
-      riderId: riderId,
-      status: status ?? _status(),
-      fix: fix ?? _fix(),
-      now: _now,
-    );
+}) => FirestoreFleetRepository.telemetryFromRtdb(
+  deviceId: 'tracker-001',
+  riderId: riderId,
+  status: status ?? _status(),
+  fix: fix ?? _fix(),
+  now: _now,
+);
 
 void main() {
   test('uses the explicit asia-southeast1 database URL', () {
@@ -74,8 +73,7 @@ void main() {
       expect(t.lat, closeTo(14.6091, 1e-9));
       expect(t.lng, closeTo(121.0223, 1e-9));
       expect(t.gpsFix, isTrue);
-      expect(t.lastUpdate,
-          DateTime.fromMillisecondsSinceEpoch(_nowMs - 20000));
+      expect(t.lastUpdate, DateTime.fromMillisecondsSinceEpoch(_nowMs - 20000));
     });
 
     test('battery is not sent by this firmware, so it is null — not 0', () {
@@ -101,7 +99,9 @@ void main() {
     });
 
     test('a stale fix keeps its position but drops speed', () {
-      final t = _map(fix: _fix(ageMs: const Duration(minutes: 20).inMilliseconds));
+      final t = _map(
+        fix: _fix(ageMs: const Duration(minutes: 20).inMilliseconds),
+      );
       expect(t.lat, isNotNull);
       expect(t.gpsFix, isFalse);
       expect(t.speedKmh, isNull);
@@ -114,11 +114,13 @@ void main() {
     });
 
     test('accelerometer down: the 0.000 it sends is not a reading', () {
-      final t = _map(status: {
-        ..._status(),
-        'accelerometerReady': false,
-        'accelMagnitudeG': 0.0,
-      });
+      final t = _map(
+        status: {
+          ..._status(),
+          'accelerometerReady': false,
+          'accelMagnitudeG': 0.0,
+        },
+      );
       expect(t.accelMagnitudeG, isNull);
     });
 
@@ -135,31 +137,34 @@ void main() {
     });
   });
 
-  testWidgets('the table shows dashes for missing readings, never 0',
-      (tester) async {
+  testWidgets('the table shows dashes for missing readings, never 0', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1600, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
     final rider = MockData.riders.first;
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: FleetTable(
-          riders: [rider],
-          telemetry: [
-            HelmetTelemetry(
-              riderId: rider.id,
-              speedKmh: null,
-              batteryPct: null,
-              gpsFix: false,
-              lat: null,
-              lng: null,
-              lastUpdate: null,
-            ),
-          ],
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FleetTable(
+            riders: [rider],
+            telemetry: [
+              HelmetTelemetry(
+                riderId: rider.id,
+                speedKmh: null,
+                batteryPct: null,
+                gpsFix: false,
+                lat: null,
+                lng: null,
+                lastUpdate: null,
+              ),
+            ],
+          ),
         ),
       ),
-    ));
+    );
 
     expect(find.text('0.0 km/h'), findsNothing);
     expect(find.text('0%'), findsNothing);
@@ -167,40 +172,49 @@ void main() {
     expect(find.text('Not measured'), findsOneWidget);
   });
 
-  testWidgets('a rider with no telemetry at all shows dashes, not 0',
-      (tester) async {
+  testWidgets('a rider with no telemetry at all shows dashes, not 0', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1600, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: FleetTable(riders: [MockData.riders.first], telemetry: const []),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FleetTable(
+            riders: [MockData.riders.first],
+            telemetry: const [],
+          ),
+        ),
       ),
-    ));
+    );
 
     expect(find.text('0.0 km/h'), findsNothing);
     expect(find.text('0%'), findsNothing);
   });
 
-  testWidgets('an unassigned helmet is a row of its own, selectable by id',
-      (tester) async {
+  testWidgets('an unassigned helmet is a row of its own, selectable by id', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1600, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
     String? selected;
     final t = _map();
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: FleetTable(
-          riders: const [],
-          telemetry: [t],
-          unassigned: [t],
-          onSelect: (id) => selected = id,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FleetTable(
+            riders: const [],
+            telemetry: [t],
+            unassigned: [t],
+            onSelect: (id) => selected = id,
+          ),
         ),
       ),
-    ));
+    );
 
     expect(find.text('Unassigned device'), findsOneWidget);
     expect(find.text('tracker-001'), findsOneWidget);

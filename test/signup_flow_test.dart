@@ -38,7 +38,10 @@ void main() {
     return repository;
   }
 
-  Future<void> fillValid(WidgetTester tester, {String username = 'riderone'}) async {
+  Future<void> fillValid(
+    WidgetTester tester, {
+    String username = 'riderone',
+  }) async {
     final fields = find.byType(TextFormField);
     await tester.enterText(fields.at(0), 'Rider One');
     await tester.enterText(fields.at(1), username);
@@ -69,10 +72,7 @@ void main() {
     await fillValid(tester);
     await submit(tester);
 
-    expect(
-      find.textContaining('accept the terms'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('accept the terms'), findsOneWidget);
     expect(repository.calls.where((c) => c.startsWith('signUp')), isEmpty);
   });
 
@@ -106,8 +106,9 @@ void main() {
     expect(find.byType(SignupPage), findsOneWidget);
   });
 
-  testWidgets('clears the taken-username error once the text changes',
-      (tester) async {
+  testWidgets('clears the taken-username error once the text changes', (
+    tester,
+  ) async {
     await openSignup(tester, taken: const {'riderone': 'someone@example.test'});
     await fillValid(tester);
     await tickConsent(tester);
@@ -132,14 +133,17 @@ void main() {
     await submit(tester);
 
     expect(
-      find.text('No connection to NovaRide. Check your internet and try again.'),
+      find.text(
+        'No connection to NovaRide. Check your internet and try again.',
+      ),
       findsOneWidget,
     );
     expect(find.byType(SignupPage), findsOneWidget);
   });
 
-  testWidgets('enforces the password rule before calling the repository',
-      (tester) async {
+  testWidgets('enforces the password rule before calling the repository', (
+    tester,
+  ) async {
     final repository = await openSignup(tester);
     final fields = find.byType(TextFormField);
     await tester.enterText(fields.at(0), 'Rider One');

@@ -39,13 +39,10 @@ const helmetStaleAfter = Duration(minutes: 3);
 /// rules refusing the read, which retrying cannot fix. Riverpod's default
 /// would hide one behind "Connecting…" for ~40 s; the screen shows it at
 /// once instead, with a Retry button.
-final helmetTelemetryProvider = StreamProvider<HelmetTelemetry?>(
-  (ref) {
-    final deviceId = ref.watch(helmetDeviceIdProvider);
-    return ref.watch(helmetTelemetryRepositoryProvider).watch(deviceId);
-  },
-  retry: (_, _) => null,
-);
+final helmetTelemetryProvider = StreamProvider<HelmetTelemetry?>((ref) {
+  final deviceId = ref.watch(helmetDeviceIdProvider);
+  return ref.watch(helmetTelemetryRepositoryProvider).watch(deviceId);
+}, retry: (_, _) => null);
 
 /// Ticks so freshness is re-judged when the helmet stops writing — a
 /// silent helmet produces no event to trigger a rebuild on its own.

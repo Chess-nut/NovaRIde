@@ -20,11 +20,12 @@ const helmetDatabaseUrl =
 /// without anything having to refresh.
 class RtdbHelmetTelemetryRepository implements HelmetTelemetryRepository {
   RtdbHelmetTelemetryRepository({FirebaseDatabase? database})
-      : _database = database ??
-            FirebaseDatabase.instanceFor(
-              app: Firebase.app(),
-              databaseURL: helmetDatabaseUrl,
-            );
+    : _database =
+          database ??
+          FirebaseDatabase.instanceFor(
+            app: Firebase.app(),
+            databaseURL: helmetDatabaseUrl,
+          );
 
   final FirebaseDatabase _database;
 
@@ -43,7 +44,8 @@ class RtdbHelmetTelemetryRepository implements HelmetTelemetryRepository {
         })
         // The interface's error contract: a Failure with a sentence on
         // it, never a raw FirebaseException reaching a widget.
-        .handleError((Object error, StackTrace stack) =>
-            throw failureFrom(error, stack));
+        .handleError(
+          (Object error, StackTrace stack) => throw failureFrom(error, stack),
+        );
   }
 }

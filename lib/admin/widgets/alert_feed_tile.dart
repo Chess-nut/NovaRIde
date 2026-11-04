@@ -22,18 +22,18 @@ class AlertFeedTile extends StatelessWidget {
   });
 
   static IconData iconFor(AlertType type) => switch (type) {
-        AlertType.crash => Icons.car_crash,
-        AlertType.alcoholWarning => Icons.local_bar,
-        AlertType.lowBattery => Icons.battery_alert,
-        AlertType.sos => Icons.sos,
-      };
+    AlertType.crash => Icons.car_crash,
+    AlertType.alcoholWarning => Icons.local_bar,
+    AlertType.lowBattery => Icons.battery_alert,
+    AlertType.sos => Icons.sos,
+  };
 
   static Color colorFor(AlertType type) => switch (type) {
-        AlertType.crash => NovaColors.red,
-        AlertType.alcoholWarning => NovaColors.amber,
-        AlertType.lowBattery => NovaColors.cyan,
-        AlertType.sos => NovaColors.red,
-      };
+    AlertType.crash => NovaColors.red,
+    AlertType.alcoholWarning => NovaColors.amber,
+    AlertType.lowBattery => NovaColors.cyan,
+    AlertType.sos => NovaColors.red,
+  };
 
   /// "3m ago" / "2h ago" — good enough for a mock feed.
   static String relativeTime(DateTime timestamp) {
@@ -61,8 +61,8 @@ class AlertFeedTile extends StatelessWidget {
           color: selected
               ? NovaColors.cyan
               : critical
-                  ? NovaColors.red.withValues(alpha: 0.45)
-                  : NovaColors.cardBorder,
+              ? NovaColors.red.withValues(alpha: 0.45)
+              : NovaColors.cardBorder,
           width: selected ? 1.5 : 1,
         ),
       ),

@@ -49,8 +49,9 @@ class MockFleetRepository implements FleetRepository {
   late List<AlertEvent> _alerts;
 
   final _ridersCtrl = StreamController<List<Rider>>.broadcast(sync: true);
-  final _telemetryCtrl =
-      StreamController<List<HelmetTelemetry>>.broadcast(sync: true);
+  final _telemetryCtrl = StreamController<List<HelmetTelemetry>>.broadcast(
+    sync: true,
+  );
   final _alertsCtrl = StreamController<List<AlertEvent>>.broadcast(sync: true);
 
   Timer? _jitterTimer;
@@ -191,8 +192,7 @@ class MockFleetRepository implements FleetRepository {
         lng: (lng + _signed(_lngJitter))
             .clamp(kFleetLngMin, kFleetLngMax)
             .toDouble(),
-        speedKmh:
-            (speed + _signed(_speedJitter)).clamp(8.0, 78.0).toDouble(),
+        speedKmh: (speed + _signed(_speedJitter)).clamp(8.0, 78.0).toDouble(),
         lastUpdate: now,
       );
     }
@@ -254,13 +254,15 @@ class MockFleetRepository implements FleetRepository {
   /// Anyone but an offline helmet can raise an alert; riding riders are the
   /// likeliest so the map usually has a dot to turn red.
   Rider? _alertCandidate() {
-    final riding =
-        _riders.where((r) => r.status == RiderStatus.riding).toList();
+    final riding = _riders
+        .where((r) => r.status == RiderStatus.riding)
+        .toList();
     if (riding.isNotEmpty && _rng.nextDouble() < 0.7) {
       return riding[_rng.nextInt(riding.length)];
     }
-    final available =
-        _riders.where((r) => r.status != RiderStatus.offline).toList();
+    final available = _riders
+        .where((r) => r.status != RiderStatus.offline)
+        .toList();
     if (available.isEmpty) return null;
     return available[_rng.nextInt(available.length)];
   }
@@ -287,8 +289,9 @@ class MockFleetRepository implements FleetRepository {
   /// anything, emergencies persist rather than self-clearing. Clearing them
   /// is the operator's job as of the response workflow.
   void _standDownOldestEmergency() {
-    final emergencies =
-        _riders.where((r) => r.status == RiderStatus.emergency).toList();
+    final emergencies = _riders
+        .where((r) => r.status == RiderStatus.emergency)
+        .toList();
     if (emergencies.length < 3) return;
 
     for (final rider in emergencies) {

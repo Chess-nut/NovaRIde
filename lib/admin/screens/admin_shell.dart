@@ -166,31 +166,31 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
   /// dispatchers and viewers — and because nav items and pages are built as
   /// one list, every index stays in agreement.
   List<_ConsoleTab> get _tabs => [
-        const _ConsoleTab(
-          AdminNavItem(Icons.dashboard_outlined, 'Dashboard'),
-          DashboardPage(),
-        ),
-        const _ConsoleTab(
-          AdminNavItem(Icons.map_outlined, 'Rider Monitoring'),
-          RiderMonitoringPage(),
-        ),
-        if (widget.user.role.canSeeUserManagement)
-          const _ConsoleTab(
-            AdminNavItem(Icons.people_outline, 'User Management'),
-            UserManagementPage(),
-          ),
-        _ConsoleTab(
-          const AdminNavItem(Icons.notifications_none, 'Alerts'),
-          AdminAlertsPage(
-            prefillQuery: _alertsPrefill,
-            prefillToken: _alertsPrefillToken,
-          ),
-        ),
-        const _ConsoleTab(
-          AdminNavItem(Icons.insights_outlined, 'Reports'),
-          ReportsPage(),
-        ),
-      ];
+    const _ConsoleTab(
+      AdminNavItem(Icons.dashboard_outlined, 'Dashboard'),
+      DashboardPage(),
+    ),
+    const _ConsoleTab(
+      AdminNavItem(Icons.map_outlined, 'Rider Monitoring'),
+      RiderMonitoringPage(),
+    ),
+    if (widget.user.role.canSeeUserManagement)
+      const _ConsoleTab(
+        AdminNavItem(Icons.people_outline, 'User Management'),
+        UserManagementPage(),
+      ),
+    _ConsoleTab(
+      const AdminNavItem(Icons.notifications_none, 'Alerts'),
+      AdminAlertsPage(
+        prefillQuery: _alertsPrefill,
+        prefillToken: _alertsPrefillToken,
+      ),
+    ),
+    const _ConsoleTab(
+      AdminNavItem(Icons.insights_outlined, 'Reports'),
+      ReportsPage(),
+    ),
+  ];
 
   void _openAlertsForRider(String query) {
     final index = _tabs.indexWhere((t) => t.navItem.label == 'Alerts');
@@ -394,7 +394,10 @@ class _SourceChip extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 8 : 10,
+          vertical: 6,
+        ),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(20),

@@ -85,14 +85,17 @@ class RiderAlert {
 
   /// Still being worked: anything but resolved or cancelled.
   bool get isLive =>
-      status != RiderAlertStatus.resolved && status != RiderAlertStatus.cancelled;
+      status != RiderAlertStatus.resolved &&
+      status != RiderAlertStatus.cancelled;
 
   /// When the rules stop accepting a cancel: [kCrashCountdown] after the
   /// server timestamp. Null for anything that is not a pending crash.
   DateTime? get countdownEndsAt =>
-      (type == 'crash' && status == RiderAlertStatus.pending && timestamp != null)
-          ? timestamp!.add(kCrashCountdown)
-          : null;
+      (type == 'crash' &&
+          status == RiderAlertStatus.pending &&
+          timestamp != null)
+      ? timestamp!.add(kCrashCountdown)
+      : null;
 
   factory RiderAlert.fromMap(String id, Map<String, dynamic> map) {
     return RiderAlert(

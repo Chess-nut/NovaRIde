@@ -43,7 +43,8 @@ class RoleSelectionPage extends StatelessWidget {
             icon: Icons.sports_motorsports_outlined,
             tint: colors.safe,
             title: 'Motorcycle Rider',
-            detail: 'You wear the helmet. NovaRide watches your ride and '
+            detail:
+                'You wear the helmet. NovaRide watches your ride and '
                 'raises the alarm if something happens.',
             onTap: () => context.push(
               '${AppRoutes.loginPath}?role=${UserRole.rider.wireName}',
@@ -54,7 +55,8 @@ class RoleSelectionPage extends StatelessWidget {
             icon: Icons.favorite_outline,
             tint: colors.riding,
             title: 'Family / Emergency Contact',
-            detail: 'You follow a rider from home and are the first to know '
+            detail:
+                'You follow a rider from home and are the first to know '
                 'if they need help.',
             onTap: () => context.push(
               '${AppRoutes.loginPath}?role=${UserRole.guardian.wireName}',
@@ -108,24 +110,22 @@ class _RoleCard extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: AppTypography.title
-                          .copyWith(color: colors.textPrimary),
+                      style: AppTypography.title.copyWith(
+                        color: colors.textPrimary,
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       detail,
-                      style: AppTypography.caption
-                          .copyWith(color: colors.textMuted),
+                      style: AppTypography.caption.copyWith(
+                        color: colors.textMuted,
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
-              Icon(
-                Icons.arrow_forward,
-                color: colors.textMuted,
-                size: 18,
-              ),
+              Icon(Icons.arrow_forward, color: colors.textMuted, size: 18),
             ],
           ),
         ),

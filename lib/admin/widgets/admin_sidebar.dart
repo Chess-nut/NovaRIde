@@ -79,7 +79,11 @@ class AdminSidebar extends StatelessWidget {
               color: NovaColors.cyan.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(9),
             ),
-            child: const Icon(Icons.shield_outlined, color: NovaColors.cyan, size: 19),
+            child: const Icon(
+              Icons.shield_outlined,
+              color: NovaColors.cyan,
+              size: 19,
+            ),
           ),
           if (!collapsed) ...[
             const SizedBox(width: 10),
@@ -120,7 +124,9 @@ class AdminSidebar extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       child: Material(
-        color: selected ? NovaColors.cyan.withValues(alpha: 0.12) : Colors.transparent,
+        color: selected
+            ? NovaColors.cyan.withValues(alpha: 0.12)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(9),
         child: InkWell(
           onTap: () => onSelect(index),
@@ -131,8 +137,9 @@ class AdminSidebar extends StatelessWidget {
               height: 42,
               padding: EdgeInsets.symmetric(horizontal: collapsed ? 0 : 12),
               child: Row(
-                mainAxisAlignment:
-                    collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
+                mainAxisAlignment: collapsed
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.start,
                 children: [
                   Icon(item.icon, color: color, size: 19),
                   if (!collapsed) ...[
@@ -144,7 +151,9 @@ class AdminSidebar extends StatelessWidget {
                         style: TextStyle(
                           color: selected ? NovaColors.primaryText : color,
                           fontSize: 13.5,
-                          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                         ),
                       ),
                     ),
@@ -182,8 +191,9 @@ class AdminSidebar extends StatelessWidget {
               height: 42,
               padding: EdgeInsets.symmetric(horizontal: collapsed ? 0 : 12),
               child: Row(
-                mainAxisAlignment:
-                    collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
+                mainAxisAlignment: collapsed
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.start,
                 children: [
                   const Icon(Icons.logout, color: NovaColors.pink, size: 18),
                   if (!collapsed) ...[

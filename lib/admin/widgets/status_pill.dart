@@ -20,20 +20,20 @@ class StatusPill extends StatelessWidget {
   }
 
   static Color colorForRider(RiderStatus status) => switch (status) {
-        RiderStatus.riding => NovaColors.green,
-        RiderStatus.idle => NovaColors.cyan,
-        RiderStatus.offline => NovaColors.secondaryText,
-        RiderStatus.emergency => NovaColors.red,
-      };
+    RiderStatus.riding => NovaColors.green,
+    RiderStatus.idle => NovaColors.cyan,
+    RiderStatus.offline => NovaColors.secondaryText,
+    RiderStatus.emergency => NovaColors.red,
+  };
 
   static Color colorForAlert(AlertStatus status) => switch (status) {
-        AlertStatus.pending => NovaColors.amber,
-        AlertStatus.open => NovaColors.red,
-        AlertStatus.acknowledged => NovaColors.cyan,
-        AlertStatus.dispatched => NovaColors.pink,
-        AlertStatus.resolved => NovaColors.green,
-        AlertStatus.cancelled => NovaColors.secondaryText,
-      };
+    AlertStatus.pending => NovaColors.amber,
+    AlertStatus.open => NovaColors.red,
+    AlertStatus.acknowledged => NovaColors.cyan,
+    AlertStatus.dispatched => NovaColors.pink,
+    AlertStatus.resolved => NovaColors.green,
+    AlertStatus.cancelled => NovaColors.secondaryText,
+  };
 
   @override
   Widget build(BuildContext context) {

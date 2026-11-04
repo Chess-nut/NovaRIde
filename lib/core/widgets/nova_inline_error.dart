@@ -55,14 +55,18 @@ class NovaInlineError extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.error_outline,
-                          size: 18, color: colors.critical),
+                      Icon(
+                        Icons.error_outline,
+                        size: 18,
+                        color: colors.critical,
+                      ),
                       const SizedBox(width: AppSpacing.md),
                       Expanded(
                         child: Text(
                           text,
-                          style: AppTypography.label
-                              .copyWith(color: colors.textPrimary),
+                          style: AppTypography.label.copyWith(
+                            color: colors.textPrimary,
+                          ),
                         ),
                       ),
                     ],

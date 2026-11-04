@@ -76,12 +76,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       // so a wrong guess here costs nothing.
       final profile = identifier.contains('@')
           ? await repository.signInWithEmail(
-              email: identifier, password: _password.text)
+              email: identifier,
+              password: _password.text,
+            )
           : await repository.signInWithUsername(
-              username: identifier, password: _password.text);
+              username: identifier,
+              password: _password.text,
+            );
 
-      AppLogger.i('Signed in as ${profile.username} '
-          '(${profile.role.wireName}).');
+      AppLogger.i(
+        'Signed in as ${profile.username} '
+        '(${profile.role.wireName}).',
+      );
       // No navigation here. The repository's auth stream updates
       // authStateProvider and the router's gate moves to the role's home
       // — or to verify-email if the address is not confirmed yet.
@@ -119,14 +125,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 isRider
                     ? 'Sign in to start a ride with NovaRide watching.'
                     : 'Sign in to keep an eye on your rider.',
-                style:
-                    AppTypography.body.copyWith(color: colors.textSecondary),
+                style: AppTypography.body.copyWith(color: colors.textSecondary),
               ),
               const SizedBox(height: AppSpacing.xl),
               NovaRoleToggle(
                 value: _role,
-                onChanged:
-                    _busy ? null : (role) => setState(() => _role = role),
+                onChanged: _busy
+                    ? null
+                    : (role) => setState(() => _role = role),
               ),
               const SizedBox(height: AppSpacing.xxl),
               NovaTextField(
@@ -176,8 +182,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 onPressed: _busy
                     ? null
                     : () => context.push(
-                          '${AppRoutes.signupPath}?role=${_role.wireName}',
-                        ),
+                        '${AppRoutes.signupPath}?role=${_role.wireName}',
+                      ),
               ),
             ],
           ),

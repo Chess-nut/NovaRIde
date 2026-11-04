@@ -41,8 +41,8 @@ class FirestoreFleetRepository implements FleetRepository {
   FirestoreFleetRepository({
     FirebaseFirestore? firestore,
     FirebaseDatabase? database,
-  })  : _db = firestore ?? FirebaseFirestore.instance,
-        _rtdb = database {
+  }) : _db = firestore ?? FirebaseFirestore.instance,
+       _rtdb = database {
     _start();
   }
 
@@ -121,7 +121,9 @@ class FirestoreFleetRepository implements FleetRepository {
 
   @override
   Stream<List<HelmetTelemetry>> watchTelemetry() => _replaying(
-      () => _telemetryLoaded ? _telemetry : null, _telemetryCtrl.stream);
+    () => _telemetryLoaded ? _telemetry : null,
+    _telemetryCtrl.stream,
+  );
 
   @override
   Stream<List<AlertEvent>> watchAlerts() =>
@@ -146,10 +148,12 @@ class FirestoreFleetRepository implements FleetRepository {
   void _start() {
     _firstSnapshotTimer = Timer(_firstSnapshotTimeout, () {
       if (_connection.state == FleetConnectionState.connecting) {
-        _setConnection(const FleetConnection(
-          FleetConnectionState.disconnected,
-          'No response from Firestore — check the network and the rules.',
-        ));
+        _setConnection(
+          const FleetConnection(
+            FleetConnectionState.disconnected,
+            'No response from Firestore — check the network and the rules.',
+          ),
+        );
       }
     });
     _listenRiders();
@@ -167,10 +171,7 @@ class FirestoreFleetRepository implements FleetRepository {
       'riders',
       _db.collection('riders').snapshots(includeMetadataChanges: true),
       (QuerySnapshot<Map<String, dynamic>> snap) {
-        _riders = [
-          for (final doc in snap.docs)
-            ?_parse(doc, _riderFrom),
-        ];
+        _riders = [for (final doc in snap.docs) ?_parse(doc, _riderFrom)];
         _ridersLoaded = true;
         _ridersCtrl.add(_riders);
         // Riders are the join key for devices and the name source for
@@ -204,10 +205,7 @@ class FirestoreFleetRepository implements FleetRepository {
           .limit(alertLimit)
           .snapshots(includeMetadataChanges: true),
       (QuerySnapshot<Map<String, dynamic>> snap) {
-        _bareAlerts = [
-          for (final doc in snap.docs)
-            ?_parse(doc, _alertFrom),
-        ];
+        _bareAlerts = [for (final doc in snap.docs) ?_parse(doc, _alertFrom)];
         _alertsLoaded = true;
         _publishAlerts();
         _reportMetadata(snap.metadata);
@@ -249,27 +247,21 @@ class FirestoreFleetRepository implements FleetRepository {
   /// RTDB listeners do not drive the connection pill: it reports Firestore,
   /// which riders and alerts depend on. A refusal here is logged and retried.
   void _listenRtdbStatus() {
-    _subscribe(
-      'deviceStatus',
-      _rtdb!.ref('deviceStatus').onValue,
-      (DatabaseEvent event) {
-        _rtdbStatus = _rtdbChildren(event.snapshot.value);
-        _publishTelemetry();
-      },
-      affectsConnection: false,
-    );
+    _subscribe('deviceStatus', _rtdb!.ref('deviceStatus').onValue, (
+      DatabaseEvent event,
+    ) {
+      _rtdbStatus = _rtdbChildren(event.snapshot.value);
+      _publishTelemetry();
+    }, affectsConnection: false);
   }
 
   void _listenRtdbPositions() {
-    _subscribe(
-      'rtdbDevices',
-      _rtdb!.ref('devices').onValue,
-      (DatabaseEvent event) {
-        _rtdbLatest = _rtdbChildren(event.snapshot.value, child: 'latest');
-        _publishTelemetry();
-      },
-      affectsConnection: false,
-    );
+    _subscribe('rtdbDevices', _rtdb!.ref('devices').onValue, (
+      DatabaseEvent event,
+    ) {
+      _rtdbLatest = _rtdbChildren(event.snapshot.value, child: 'latest');
+      _publishTelemetry();
+    }, affectsConnection: false);
   }
 
   /// `{id: {...}}` from an RTDB node, optionally one level down at [child].
@@ -345,10 +337,12 @@ class FirestoreFleetRepository implements FleetRepository {
   void _reportMetadata(SnapshotMetadata metadata) {
     _firstSnapshotTimer?.cancel();
     if (metadata.isFromCache) {
-      _setConnection(const FleetConnection(
-        FleetConnectionState.disconnected,
-        'Showing cached data — Firestore is unreachable.',
-      ));
+      _setConnection(
+        const FleetConnection(
+          FleetConnectionState.disconnected,
+          'Showing cached data — Firestore is unreachable.',
+        ),
+      );
     } else {
       _setConnection(FleetConnection.connected);
     }
@@ -368,7 +362,7 @@ class FirestoreFleetRepository implements FleetRepository {
     if (error is FirebaseException && error.plugin == 'firebase_database') {
       return error.code == 'permission-denied'
           ? 'Realtime Database denied access — RTDB helmet telemetry will '
-              'not show.'
+                'not show.'
           : 'Realtime Database error: ${error.code}';
     }
     if (error is FirebaseException) {
@@ -395,8 +389,10 @@ class FirestoreFleetRepository implements FleetRepository {
     final assignedByDevice = <String, String?>{};
     for (final doc in docs.docs) {
       final key = doc.id.toUpperCase();
-      assignedByDevice[key] = _str(
-          doc.data(), ['assigned_rider_id', 'assignedRiderId']);
+      assignedByDevice[key] = _str(doc.data(), [
+        'assigned_rider_id',
+        'assignedRiderId',
+      ]);
       final t = _parse(doc, _telemetryFrom);
       if (t != null) byDevice[key] = t;
     }
@@ -483,12 +479,12 @@ class FirestoreFleetRepository implements FleetRepository {
       fullName: fullName,
       helmetId: _str(d, ['helmetId', 'helmet_id', 'deviceId']) ?? '',
       phone: _str(d, ['phone', 'phoneNumber', 'phone_number']) ?? '',
-      status: _enum(RiderStatus.values, _str(d, ['status'])) ??
-          RiderStatus.idle,
+      status:
+          _enum(RiderStatus.values, _str(d, ['status'])) ?? RiderStatus.idle,
       isActive: _bool(d, ['isActive', 'is_active']) ?? true,
       registeredAt:
           _date(d, ['registeredAt', 'registered_at', 'createdAt']) ??
-              DateTime.now(),
+          DateTime.now(),
       authUid: _str(d, ['authUid']),
     );
   }
@@ -514,14 +510,20 @@ class FirestoreFleetRepository implements FleetRepository {
       speedKmh: _num(d, ['speed_kmh', 'speedKmh', 'speed']),
       // No default: absent is "not measured", not "not detected".
       alcoholDetected: _bool(d, ['alcohol_detected', 'alcoholDetected']),
-      batteryPct: _num(d, ['battery_pct', 'batteryPct', 'battery'])
-          ?.round()
-          .clamp(0, 100),
+      batteryPct: _num(d, [
+        'battery_pct',
+        'batteryPct',
+        'battery',
+      ])?.round().clamp(0, 100),
       gpsFix: _bool(d, ['gps_fix', 'gpsFix']) ?? _isFix(lat, lng),
       lat: lat,
       lng: lng,
-      lastUpdate:
-          _date(d, ['last_update', 'lastUpdate', 'last_seen', 'lastSeen']),
+      lastUpdate: _date(d, [
+        'last_update',
+        'lastUpdate',
+        'last_seen',
+        'lastSeen',
+      ]),
     );
   }
 
@@ -569,7 +571,8 @@ class FirestoreFleetRepository implements FleetRepository {
     final lng = _num(fix, ['lng']);
     final gpsAgeMs = _num(fix, ['gpsAgeMs']);
     final fixAt = _date(fix, ['serverTime']);
-    final current = _isFix(lat, lng) &&
+    final current =
+        _isFix(lat, lng) &&
         (gpsAgeMs == null || gpsAgeMs <= 30000) &&
         (fixAt == null || now.difference(fixAt) <= rtdbFixStaleAfter);
 
@@ -601,12 +604,13 @@ class FirestoreFleetRepository implements FleetRepository {
       type: type,
       lat: point.$1,
       lng: point.$2,
-      address: _str(d, ['address']) ??
+      address:
+          _str(d, ['address']) ??
           nearestFleetDistrict(point.$1, point.$2).address,
       timestamp:
           _date(d, ['timestamp', 'created_at', 'createdAt']) ?? DateTime.now(),
-      status: _enum(AlertStatus.values, _str(d, ['status'])) ??
-          AlertStatus.open,
+      status:
+          _enum(AlertStatus.values, _str(d, ['status'])) ?? AlertStatus.open,
     );
   }
 
@@ -762,51 +766,51 @@ class FirestoreFleetRepository implements FleetRepository {
   /// at once and withdraws them if this throws.
   @override
   Future<Rider> addRider(Rider rider) => _guard(() async {
-        final outcome = await _db.runTransaction<_Outcome<Rider>>((tx) async {
-          final riders = _db.collection('riders');
+    final outcome = await _db.runTransaction<_Outcome<Rider>>((tx) async {
+      final riders = _db.collection('riders');
 
-          // Reads first — a Firestore transaction refuses a read after a
-          // write. The id walk and the pairing check are both reads.
-          var id = rider.id;
-          var claimed = false;
-          for (var attempt = 0; attempt < idClaimAttempts; attempt++) {
-            final taken = (await tx.get(riders.doc(id))).exists;
-            if (!taken) {
-              claimed = true;
-              break;
-            }
-            final next = _nextRiderId(id);
-            if (next == null) break;
-            id = next;
-          }
-          if (!claimed) {
-            return _refuse(
-              'Could not find a free rider id near ${rider.id} — the roster '
-              'is changing quickly. Try again.',
-            );
-          }
+      // Reads first — a Firestore transaction refuses a read after a
+      // write. The id walk and the pairing check are both reads.
+      var id = rider.id;
+      var claimed = false;
+      for (var attempt = 0; attempt < idClaimAttempts; attempt++) {
+        final taken = (await tx.get(riders.doc(id))).exists;
+        if (!taken) {
+          claimed = true;
+          break;
+        }
+        final next = _nextRiderId(id);
+        if (next == null) break;
+        id = next;
+      }
+      if (!claimed) {
+        return _refuse(
+          'Could not find a free rider id near ${rider.id} — the roster '
+          'is changing quickly. Try again.',
+        );
+      }
 
-          final pairing = await _readPairing(tx, rider.helmetId);
-          if (pairing.holder != null && pairing.holder != id) {
-            return _refuse(
-              'Helmet ${rider.helmetId} was assigned to ${pairing.holder} by '
-              'another operator. Choose a different helmet.',
-            );
-          }
+      final pairing = await _readPairing(tx, rider.helmetId);
+      if (pairing.holder != null && pairing.holder != id) {
+        return _refuse(
+          'Helmet ${rider.helmetId} was assigned to ${pairing.holder} by '
+          'another operator. Choose a different helmet.',
+        );
+      }
 
-          tx.set(riders.doc(id), {
-            'fullName': rider.fullName,
-            'helmetId': rider.helmetId,
-            'phone': rider.phone,
-            'status': rider.status.name,
-            'isActive': rider.isActive,
-            'registeredAt': Timestamp.fromDate(rider.registeredAt),
-          });
-          _writePairing(tx, rider.helmetId, id);
-          return _saved(rider.copyWith(id: id));
-        });
-        return _settle(outcome);
+      tx.set(riders.doc(id), {
+        'fullName': rider.fullName,
+        'helmetId': rider.helmetId,
+        'phone': rider.phone,
+        'status': rider.status.name,
+        'isActive': rider.isActive,
+        'registeredAt': Timestamp.fromDate(rider.registeredAt),
       });
+      _writePairing(tx, rider.helmetId, id);
+      return _saved(rider.copyWith(id: id));
+    });
+    return _settle(outcome);
+  });
 
   /// Edits the rider's own fields by path and moves the helmet pairing if the
   /// serial changed: the new device gains `assigned_rider_id`, the old one
@@ -814,72 +818,72 @@ class FirestoreFleetRepository implements FleetRepository {
   /// already paired to somebody else is refused at the store.
   @override
   Future<void> updateRider(Rider rider) => _guard(() async {
-        final outcome = await _db.runTransaction<_Outcome<bool>>((tx) async {
-          final ref = _db.collection('riders').doc(rider.id);
-          final current = await tx.get(ref);
-          if (!current.exists) {
-            return _refuse(
-              '${rider.id} is no longer on the roster — another operator may '
-              'have removed it. Refresh and try again.',
-            );
-          }
-          final previousHelmet =
-              _str(current.data() ?? const {}, ['helmetId', 'helmet_id']) ??
-                  '';
+    final outcome = await _db.runTransaction<_Outcome<bool>>((tx) async {
+      final ref = _db.collection('riders').doc(rider.id);
+      final current = await tx.get(ref);
+      if (!current.exists) {
+        return _refuse(
+          '${rider.id} is no longer on the roster — another operator may '
+          'have removed it. Refresh and try again.',
+        );
+      }
+      final previousHelmet =
+          _str(current.data() ?? const {}, ['helmetId', 'helmet_id']) ?? '';
 
-          final pairing = await _readPairing(tx, rider.helmetId);
-          if (pairing.holder != null && pairing.holder != rider.id) {
-            return _refuse(
-              'Helmet ${rider.helmetId} is assigned to ${pairing.holder}. '
-              'Choose a different helmet.',
-            );
-          }
-          final releasing = previousHelmet.isNotEmpty &&
-                  previousHelmet.toUpperCase() != rider.helmetId.toUpperCase()
-              ? await _readPairing(tx, previousHelmet)
-              : null;
+      final pairing = await _readPairing(tx, rider.helmetId);
+      if (pairing.holder != null && pairing.holder != rider.id) {
+        return _refuse(
+          'Helmet ${rider.helmetId} is assigned to ${pairing.holder}. '
+          'Choose a different helmet.',
+        );
+      }
+      final releasing =
+          previousHelmet.isNotEmpty &&
+              previousHelmet.toUpperCase() != rider.helmetId.toUpperCase()
+          ? await _readPairing(tx, previousHelmet)
+          : null;
 
-          tx.update(ref, {
-            'fullName': rider.fullName,
-            'helmetId': rider.helmetId,
-            'phone': rider.phone,
-            'status': rider.status.name,
-            'isActive': rider.isActive,
-          });
-          if (pairing.holder != rider.id) {
-            _writePairing(tx, rider.helmetId, rider.id);
-          }
-          // Only unpair a device this rider actually held; a device the
-          // helmet service has since re-pointed elsewhere is left alone.
-          if (releasing != null && releasing.holder == rider.id) {
-            tx.update(releasing.ref, {
-              'assigned_rider_id': FieldValue.delete(),
-              'paired_at': FieldValue.delete(),
-            });
-          }
-          return _saved(true);
-        });
-        _settle(outcome);
+      tx.update(ref, {
+        'fullName': rider.fullName,
+        'helmetId': rider.helmetId,
+        'phone': rider.phone,
+        'status': rider.status.name,
+        'isActive': rider.isActive,
       });
+      if (pairing.holder != rider.id) {
+        _writePairing(tx, rider.helmetId, rider.id);
+      }
+      // Only unpair a device this rider actually held; a device the
+      // helmet service has since re-pointed elsewhere is left alone.
+      if (releasing != null && releasing.holder == rider.id) {
+        tx.update(releasing.ref, {
+          'assigned_rider_id': FieldValue.delete(),
+          'paired_at': FieldValue.delete(),
+        });
+      }
+      return _saved(true);
+    });
+    _settle(outcome);
+  });
 
   @override
   Future<void> setRiderActive(String riderId, bool active) => _guard(() async {
-        final outcome = await _db.runTransaction<_Outcome<bool>>((tx) async {
-          final ref = _db.collection('riders').doc(riderId);
-          if (!(await tx.get(ref)).exists) {
-            return _refuse(
-              '$riderId is no longer on the roster — another operator may '
-              'have removed it. Refresh and try again.',
-            );
-          }
-          tx.update(ref, {
-            'isActive': active,
-            'status': (active ? RiderStatus.idle : RiderStatus.offline).name,
-          });
-          return _saved(true);
-        });
-        _settle(outcome);
+    final outcome = await _db.runTransaction<_Outcome<bool>>((tx) async {
+      final ref = _db.collection('riders').doc(riderId);
+      if (!(await tx.get(ref)).exists) {
+        return _refuse(
+          '$riderId is no longer on the roster — another operator may '
+          'have removed it. Refresh and try again.',
+        );
+      }
+      tx.update(ref, {
+        'isActive': active,
+        'status': (active ? RiderStatus.idle : RiderStatus.offline).name,
       });
+      return _saved(true);
+    });
+    _settle(outcome);
+  });
 
   /// A transaction handler's verdict. Refusals travel back as a value, not
   /// an exception: every refusal above is decided before the first write, so
@@ -900,12 +904,14 @@ class FirestoreFleetRepository implements FleetRepository {
 
   /// The device document and who it is paired to, read under [tx].
   Future<({DocumentReference<Map<String, dynamic>> ref, String? holder})>
-      _readPairing(Transaction tx, String helmetId) async {
+  _readPairing(Transaction tx, String helmetId) async {
     final ref = _db.collection('devices').doc(helmetId);
     final snapshot = await tx.get(ref);
     final holder = snapshot.exists
-        ? _str(snapshot.data() ?? const {},
-            ['assigned_rider_id', 'assignedRiderId'])
+        ? _str(snapshot.data() ?? const {}, [
+            'assigned_rider_id',
+            'assignedRiderId',
+          ])
         : null;
     return (ref: ref, holder: holder);
   }
@@ -915,14 +921,10 @@ class FirestoreFleetRepository implements FleetRepository {
   /// or may not exist yet, when a rider is registered before their helmet
   /// first reports in.
   void _writePairing(Transaction tx, String helmetId, String riderId) {
-    tx.set(
-      _db.collection('devices').doc(helmetId),
-      {
-        'assigned_rider_id': riderId,
-        'paired_at': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    tx.set(_db.collection('devices').doc(helmetId), {
+      'assigned_rider_id': riderId,
+      'paired_at': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   /// `R-011` → `R-012`; null for an id outside the sequential scheme, which
@@ -942,8 +944,10 @@ class FirestoreFleetRepository implements FleetRepository {
     } on FleetWriteException {
       rethrow;
     } on FirebaseException catch (error) {
-      debugPrint('FirestoreFleetRepository: write refused — '
-          '${error.plugin}/${error.code}: ${error.message}');
+      debugPrint(
+        'FirestoreFleetRepository: write refused — '
+        '${error.plugin}/${error.code}: ${error.message}',
+      );
       throw FleetWriteException(messageForWriteCode(error.code));
     } catch (error, stack) {
       debugPrint('FirestoreFleetRepository: write threw $error\n$stack');
@@ -955,59 +959,58 @@ class FirestoreFleetRepository implements FleetRepository {
   }
 
   @override
-  Future<String> linkAppAccount(String riderId, String username) =>
-      _guard(() async {
-        final key = username.trim().replaceFirst(RegExp(r'^@'), '').toLowerCase();
-        // usernames/ is the one index anyone may `get`: it is how login
-        // turns a username into an email, and here how a username becomes
-        // the uid to link.
-        final claim = await _db.collection('usernames').doc(key).get();
-        final uid = _str(claim.data() ?? const {}, ['uid']);
-        if (uid == null) {
+  Future<String> linkAppAccount(String riderId, String username) => _guard(
+    () async {
+      final key = username.trim().replaceFirst(RegExp(r'^@'), '').toLowerCase();
+      // usernames/ is the one index anyone may `get`: it is how login
+      // turns a username into an email, and here how a username becomes
+      // the uid to link.
+      final claim = await _db.collection('usernames').doc(key).get();
+      final uid = _str(claim.data() ?? const {}, ['uid']);
+      if (uid == null) {
+        throw FleetWriteException(
+          'No app account is called @$key. Check the spelling with the rider.',
+        );
+      }
+      for (final r in _riders) {
+        if (r.id != riderId && r.authUid == uid) {
           throw FleetWriteException(
-            'No app account is called @$key. Check the spelling with the rider.',
+            '@$key is already linked to ${r.id}. Unlink it there first.',
           );
         }
-        for (final r in _riders) {
-          if (r.id != riderId && r.authUid == uid) {
-            throw FleetWriteException(
-              '@$key is already linked to ${r.id}. Unlink it there first.',
-            );
-          }
+      }
+      try {
+        await _db.collection('riders').doc(riderId).update({
+          'authUid': uid,
+          'authLinkedAt': FieldValue.serverTimestamp(),
+        });
+      } on FirebaseException catch (error) {
+        // The rules refuse an account whose role is not rider: a guardian
+        // linked here would read this rider's alerts.
+        if (error.code == 'permission-denied') {
+          throw FleetWriteException(
+            '@$key was not linked: only a rider\'s own account can be '
+            'linked, and only by a Super Admin.',
+          );
         }
-        try {
-          await _db.collection('riders').doc(riderId).update({
-            'authUid': uid,
-            'authLinkedAt': FieldValue.serverTimestamp(),
-          });
-        } on FirebaseException catch (error) {
-          // The rules refuse an account whose role is not rider: a guardian
-          // linked here would read this rider's alerts.
-          if (error.code == 'permission-denied') {
-            throw FleetWriteException(
-              '@$key was not linked: only a rider\'s own account can be '
-              'linked, and only by a Super Admin.',
-            );
-          }
-          rethrow;
-        }
-        return _str(claim.data()!, ['email']) ?? '@$key';
-      });
+        rethrow;
+      }
+      return _str(claim.data()!, ['email']) ?? '@$key';
+    },
+  );
 
   @override
   Future<void> unlinkAppAccount(String riderId) => _guard(
-        () => _db.collection('riders').doc(riderId).update({
-          'authUid': FieldValue.delete(),
-          'authLinkedAt': FieldValue.delete(),
-        }),
-      );
+    () => _db.collection('riders').doc(riderId).update({
+      'authUid': FieldValue.delete(),
+      'authLinkedAt': FieldValue.delete(),
+    }),
+  );
 
   @override
   Future<void> setRiderStatus(String riderId, RiderStatus status) => _guard(
-        () => _db.collection('riders').doc(riderId).update({
-          'status': status.name,
-        }),
-      );
+    () => _db.collection('riders').doc(riderId).update({'status': status.name}),
+  );
 
   /// Status change and audit entry go in one batch so neither can land
   /// without the other. `at` is the server clock: response-time metrics are
@@ -1015,24 +1018,23 @@ class FirestoreFleetRepository implements FleetRepository {
   /// source for them. The `<status>At` stamp on the alert itself lets the
   /// Reports tab query response times without reading every history entry.
   @override
-  Future<void> transitionAlert(String alertId, AlertAction action) => _guard(
-        () {
-          final alertRef = _db.collection('alerts').doc(alertId);
-          final batch = _db.batch();
-          batch.update(alertRef, {
-            'status': action.toStatus.name,
-            '${action.toStatus.name}At': FieldValue.serverTimestamp(),
-          });
-          batch.set(alertRef.collection('history').doc(), {
-            'toStatus': action.toStatus.name,
-            'actorName': action.actorName,
-            'note': action.note,
-            'responder': action.responder?.name,
-            'at': FieldValue.serverTimestamp(),
-          });
-          return batch.commit();
-        },
-      );
+  Future<void> transitionAlert(String alertId, AlertAction action) =>
+      _guard(() {
+        final alertRef = _db.collection('alerts').doc(alertId);
+        final batch = _db.batch();
+        batch.update(alertRef, {
+          'status': action.toStatus.name,
+          '${action.toStatus.name}At': FieldValue.serverTimestamp(),
+        });
+        batch.set(alertRef.collection('history').doc(), {
+          'toStatus': action.toStatus.name,
+          'actorName': action.actorName,
+          'note': action.note,
+          'responder': action.responder?.name,
+          'at': FieldValue.serverTimestamp(),
+        });
+        return batch.commit();
+      });
 
   @override
   void dispose() {
@@ -1076,7 +1078,8 @@ String messageForWriteCode(String code) {
       'Firestore is over its quota for today. The change was not saved.',
     'unauthenticated' =>
       'Your session has expired. Sign in again, then retry the change.',
-    _ => 'The change was not saved. Try again, and tell a Super Admin if it '
-        'keeps happening.',
+    _ =>
+      'The change was not saved. Try again, and tell a Super Admin if it '
+          'keeps happening.',
   };
 }

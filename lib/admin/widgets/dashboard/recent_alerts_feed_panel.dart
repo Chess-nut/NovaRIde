@@ -11,11 +11,11 @@ class RecentAlertsFeedPanel extends StatelessWidget {
   const RecentAlertsFeedPanel({super.key, required this.alerts});
 
   static Color colorFor(AlertType type) => switch (type) {
-        AlertType.crash => NovaColors.red,
-        AlertType.sos => NovaColors.red,
-        AlertType.alcoholWarning => NovaColors.amber,
-        AlertType.lowBattery => NovaColors.cyan,
-      };
+    AlertType.crash => NovaColors.red,
+    AlertType.sos => NovaColors.red,
+    AlertType.alcoholWarning => NovaColors.amber,
+    AlertType.lowBattery => NovaColors.cyan,
+  };
 
   /// "7/30/2026, 2:28 PM" — hand-rolled; intl would be a dependency for one line.
   static String formatStamp(DateTime t) {
@@ -34,10 +34,7 @@ class RecentAlertsFeedPanel extends StatelessWidget {
           ? const Center(
               child: Text(
                 'No alerts on the board',
-                style: TextStyle(
-                  color: NovaColors.secondaryText,
-                  fontSize: 11,
-                ),
+                style: TextStyle(color: NovaColors.secondaryText, fontSize: 11),
               ),
             )
           : ListView.separated(
@@ -123,7 +120,10 @@ class _FeedEntry extends StatelessWidget {
       curve: Curves.easeOutCubic,
       builder: (context, t, child) => Opacity(
         opacity: t,
-        child: Transform.translate(offset: Offset(0, -14 * (1 - t)), child: child),
+        child: Transform.translate(
+          offset: Offset(0, -14 * (1 - t)),
+          child: child,
+        ),
       ),
       child: row,
     );

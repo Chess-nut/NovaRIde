@@ -11,9 +11,11 @@ import 'package:novaride/features/rider/domain/entities/rider_alert.dart';
 import 'package:novaride/features/rider/domain/repositories/rider_alert_repository.dart';
 
 class FakeRiderAlertRepository implements RiderAlertRepository {
-  FakeRiderAlertRepository({LinkedRider? rider, List<RiderAlert> alerts = const []})
-      : _rider = rider,
-        _alerts = alerts;
+  FakeRiderAlertRepository({
+    LinkedRider? rider,
+    List<RiderAlert> alerts = const [],
+  }) : _rider = rider,
+       _alerts = alerts;
 
   LinkedRider? _rider;
   List<RiderAlert> _alerts;
@@ -53,7 +55,10 @@ class FakeRiderAlertRepository implements RiderAlertRepository {
   }
 
   @override
-  Future<void> standDown({required String riderId, required String alertId}) async {
+  Future<void> standDown({
+    required String riderId,
+    required String alertId,
+  }) async {
     calls.add('standDown $riderId $alertId');
   }
 }

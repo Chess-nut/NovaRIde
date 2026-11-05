@@ -6,6 +6,7 @@ import 'package:novaride/core/theme/app_colors.dart';
 import 'package:novaride/core/theme/app_spacing.dart';
 import 'package:novaride/core/theme/app_typography.dart';
 import 'package:novaride/core/utils/initials.dart';
+import 'package:novaride/core/widgets/nova_lists.dart';
 import 'package:novaride/core/widgets/nova_surfaces.dart';
 import 'package:novaride/core/widgets/unavailable.dart';
 import 'package:novaride/features/auth/presentation/providers/auth_state.dart';
@@ -107,6 +108,7 @@ class _HelmetView {
     this.telemetry,
     this.live = false,
     this.errorMessage,
+    this.now,
   });
 
   factory _HelmetView.from(AsyncValue<HelmetTelemetry?> async, DateTime now) {
@@ -124,6 +126,7 @@ class _HelmetView {
       return _HelmetView(
         _HelmetPhase.reporting,
         telemetry: telemetry,
+        now: now,
         live:
             telemetry.online == true &&
             telemetry.isFresh(now, helmetStaleAfter),
@@ -139,6 +142,31 @@ class _HelmetView {
   /// `online` or `lastSeen` is not live: there is no telling.
   final bool live;
   final String? errorMessage;
+
+  /// The clock this view was read at. Null outside [_HelmetPhase.reporting].
+  final DateTime? now;
+
+  /// The helmet's speed, only while it is live and its fix is current.
+  double? get currentSpeedKmph {
+    final at = now;
+    return live && at != null ? telemetry?.currentSpeedKmph(at) : null;
+  }
+
+  /// The location tile: the fix, and how far to trust it. "Live" only
+  /// for a position taken in the last couple of minutes; an older one is
+  /// a last known position, said as such.
+  (String, NovaTone) locationStatus() {
+    final t = telemetry;
+    final at = now;
+    final hasPosition = t?.positionAt != null;
+    if (!hasPosition) return statusFor(false);
+    if (live && at != null && t!.hasCurrentFix(at)) {
+      return ('Live', NovaTone.safe);
+    }
+    return phase == _HelmetPhase.reporting
+        ? ('Last known', NovaTone.offline)
+        : statusFor(true);
+  }
 
   /// Live, and the helmet's own threshold says the rider has been
   /// drinking. The one state that takes over the status card.
@@ -404,9 +432,19 @@ class _SensorGrid extends StatelessWidget {
     final impact = t?.impactG;
     final (impactText, impactTone) = helmet.statusFor(impact != null);
 
-    final fix = t?.hasUsableFix;
+    final fixAt = t?.positionAt;
     final satellites = t?.satellites;
-    final (fixText, fixTone) = helmet.statusFor(fix != null);
+    final now = helmet.now;
+    final (fixText, fixTone) = helmet.locationStatus();
+    // "Fix" with its satellites while current; otherwise how old the last
+    // real position is, so a week-old dot is never read as where you are.
+    final current = now != null && t != null && t.hasCurrentFix(now);
+    final fixValue = fixAt == null ? null : (current ? 'Fix' : 'Last fix');
+    final fixUnit = fixAt == null
+        ? null
+        : current
+        ? (satellites == null ? null : '$satellites satellites')
+        : (now == null ? null : novaTimeAgo(fixAt, now));
 
     return Column(
       children: [
@@ -464,8 +502,8 @@ class _SensorGrid extends StatelessWidget {
                 child: _SensorTile(
                   icon: Icons.location_on_outlined,
                   label: 'Location',
-                  value: fix == null ? null : (fix ? 'Fix' : 'No fix'),
-                  unit: satellites == null ? null : '$satellites satellites',
+                  value: fixValue,
+                  unit: fixUnit,
                   status: fixText,
                   tone: fixTone,
                   onTap: () => Navigator.of(
@@ -582,10 +620,12 @@ class _SpeedCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final speed = helmet.live ? helmet.telemetry?.speedKmph : null;
-    final note = helmet.live
-        ? 'Distance and duration arrive once rides are recorded.'
-        : 'Speed shows only while the helmet is live.';
+    final speed = helmet.currentSpeedKmph;
+    final note = !helmet.live
+        ? 'Speed shows only while the helmet is live.'
+        : speed == null
+        ? 'Waiting for a GPS fix. The helmet needs a clear view of the sky.'
+        : 'From the helmet\'s GPS.';
 
     return NovaCard(
       child: Row(

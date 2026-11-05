@@ -233,7 +233,10 @@ class _LocationCard extends ConsumerWidget {
     final t = ref.watch(helmetTelemetryProvider).value;
     final lat = t?.lat;
     final lng = t?.lng;
-    final fix = t?.hasUsableFix;
+    final now = ref.watch(helmetClockProvider).value ?? DateTime.now();
+    // "Current" only for a fix from the last couple of minutes. A real
+    // position from a week ago is still a usable fix — it is not current.
+    final fix = t?.hasUsableFix == null ? null : t!.hasCurrentFix(now);
 
     if (lat == null || lng == null) {
       return NovaEmptyState(
@@ -244,7 +247,7 @@ class _LocationCard extends ConsumerWidget {
       );
     }
 
-    final takenAt = fixTakenAt(t?.lastSeen, t?.gpsAgeMs);
+    final takenAt = t?.positionAt;
     return NovaCard(
       onTap: onOpenMap,
       semanticLabel: 'Your location. Open map.',
@@ -264,7 +267,7 @@ class _LocationCard extends ConsumerWidget {
             },
           ),
           if (takenAt != null)
-            NovaValueRow(label: 'Fix taken', value: novaTimeAgo(takenAt)),
+            NovaValueRow(label: 'Fix taken', value: novaTimeAgo(takenAt, now)),
         ],
       ),
     );

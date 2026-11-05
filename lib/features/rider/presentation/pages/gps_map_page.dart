@@ -94,7 +94,7 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final t = telemetry;
-    final taken = fixTakenAt(t?.lastSeen, t?.gpsAgeMs);
+    final taken = t?.positionAt;
     final label = t?.lat == null
         ? 'No GPS fix yet'
         : taken == null
@@ -168,7 +168,7 @@ class _DetailsSheet extends StatelessWidget {
     final lat = t?.lat;
     final lng = t?.lng;
     // An old speed shown as current is worse than none.
-    final speed = live ? t?.speedKmph : null;
+    final speed = live ? t?.currentSpeedKmph(now) : null;
     final satellites = t?.satellites;
 
     return Container(
@@ -207,7 +207,9 @@ class _DetailsSheet extends StatelessWidget {
               Expanded(
                 child: _Stat(
                   label: 'Fix',
-                  value: switch (t?.hasUsableFix) {
+                  value: switch (t?.hasUsableFix == null
+                      ? null
+                      : t!.hasCurrentFix(now)) {
                     true => 'Current',
                     false => 'Old',
                     null => null,

@@ -527,7 +527,7 @@ class _LocationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final t = helmet.telemetry;
-    final taken = fixTakenAt(t?.lastSeen, t?.gpsAgeMs) ?? t?.lastSeen;
+    final taken = t?.positionAt;
     final has = helmet.hasPosition;
 
     final String title;

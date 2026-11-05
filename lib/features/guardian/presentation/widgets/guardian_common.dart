@@ -38,7 +38,7 @@ enum GuardianHelmetPhase {
 /// Same reading as the rider's Home.
 class GuardianHelmetView {
   const GuardianHelmetView(this.phase,
-      {this.telemetry, this.live = false, this.errorMessage});
+      {this.telemetry, this.live = false, this.errorMessage, this.now});
 
   factory GuardianHelmetView.from(
       AsyncValue<HelmetTelemetry?> async, DateTime now) {
@@ -52,6 +52,7 @@ class GuardianHelmetView {
       return GuardianHelmetView(
         GuardianHelmetPhase.reporting,
         telemetry: t,
+        now: now,
         live: t.online == true && t.isFresh(now, helmetStaleAfter),
       );
     }
@@ -65,10 +66,15 @@ class GuardianHelmetView {
   final bool live;
   final String? errorMessage;
 
+  /// The clock this view was read at. Null outside reporting.
+  final DateTime? now;
+
   /// Current speed, only while live and only with a usable fix. Null
   /// otherwise: an old speed is not the rider's speed.
-  double? get speedKmph =>
-      live && telemetry?.hasUsableFix == true ? telemetry?.speedKmph : null;
+  double? get speedKmph {
+    final at = now;
+    return live && at != null ? telemetry?.currentSpeedKmph(at) : null;
+  }
 
   /// "Cellular", "Wi‑Fi", or null.
   String? get connection {

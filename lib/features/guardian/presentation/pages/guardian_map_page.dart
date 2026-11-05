@@ -48,7 +48,7 @@ class GuardianMapPage extends ConsumerWidget {
 
     final t = helmet.telemetry;
     final has = helmet.hasPosition;
-    final taken = fixTakenAt(t?.lastSeen, t?.gpsAgeMs) ?? t?.lastSeen;
+    final taken = t?.positionAt;
     final name = account?.firstName ?? 'Your rider';
     final link0 = mapLinkFor(t);
     final speed = helmet.speedKmph;

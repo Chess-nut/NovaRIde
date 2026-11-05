@@ -42,6 +42,7 @@ class HelmetTelemetry {
     this.satellites,
     this.gpsAgeMs,
     this.mapsUrl,
+    this.fixAt,
   });
 
   final String? deviceId;
@@ -89,6 +90,19 @@ class HelmetTelemetry {
   final int? gpsAgeMs;
   final String? mapsUrl;
 
+  /// When the position in [lat]/[lng] was taken, by the server's clock.
+  ///
+  /// Set by the repository, which picks the newest real position out of
+  /// several helmet nodes (each stamped with its own `serverTime`). Null on
+  /// a value built straight from one node — see [positionAt] for the
+  /// fallback.
+  final DateTime? fixAt;
+
+  /// How recent a position must be for its speed to count as "current".
+  /// The helmet's status heartbeat carries the fix every 30 s; two missed
+  /// beats is no longer now.
+  static const currentFixWithin = Duration(minutes: 2);
+
   /// [accelMagnitudeG], unless the helmet says its accelerometer is not
   /// ready. This node's firmware writes the magnitude unconditionally, so
   /// with the sensor down it sends 0.000 — a number nothing measured.
@@ -101,9 +115,37 @@ class HelmetTelemetry {
   /// own `GPS_FIX_TIMEOUT_MS`.
   bool? get hasUsableFix {
     if (lat == null || lng == null) return null;
+    // A GPS module that has never locked reports zero satellites; what it
+    // says its position is then means nothing.
+    if (satellites == 0) return false;
     final age = gpsAgeMs;
     return age == null || age <= 30000;
   }
+
+  /// When the position was taken: [fixAt] when the repository knew it,
+  /// else `lastSeen - gpsAgeMs` (the age is "how old when written"), else
+  /// [lastSeen]. Null without a position.
+  DateTime? get positionAt {
+    if (lat == null || lng == null) return null;
+    if (fixAt != null) return fixAt;
+    final seen = lastSeen;
+    final age = gpsAgeMs;
+    if (seen == null) return null;
+    return age == null ? seen : seen.subtract(Duration(milliseconds: age));
+  }
+
+  /// A usable position taken within [currentFixWithin] of [now].
+  bool hasCurrentFix(DateTime now) {
+    final at = positionAt;
+    return hasUsableFix == true &&
+        at != null &&
+        now.difference(at) <= currentFixWithin;
+  }
+
+  /// The speed the helmet reported with a current fix, else null. An old
+  /// speed shown as "current speed" is worse than none.
+  double? currentSpeedKmph(DateTime now) =>
+      hasCurrentFix(now) ? speedKmph : null;
 
   /// Whether the helmet wrote within [window] of [now].
   ///

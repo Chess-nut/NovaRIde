@@ -51,8 +51,13 @@ dependencies:
   # Guardian app: "Call" opens the phone's dialer (tel:) and "Open in
   # Google Maps" opens a map link. Nothing else in the app launches URLs.
   url_launcher: ^6.3.1
+  # Rider and guardian maps: OpenStreetMap tiles, no API key or billing
+  # (lib/core/widgets/nova_live_map.dart).
   flutter_map: ^8.3.2
   latlong2: ^0.10.1
+  # Profile photo upload to Cloudinary (lib/rider/data/avatar_upload_service.dart).
+  http: ^1.2.2
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:

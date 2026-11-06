@@ -9,6 +9,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/coordinates.dart';
 import '../../../../core/widgets/nova_grid_map.dart';
+import '../../../../core/widgets/nova_live_map.dart';
 import '../../../../core/widgets/nova_lists.dart';
 import '../../../../core/widgets/nova_surfaces.dart';
 import '../../../rider/domain/entities/rider_alert.dart';
@@ -551,17 +552,34 @@ class _LocationCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          NovaGridMap(
+          SizedBox(
             height: 140,
-            showMarker: has,
-            markerColor: emergency
-                ? colors.critical
-                : helmet.live
-                    ? colors.riding
-                    : colors.offline,
-            semanticLabel: has
-                ? '$firstName\'s position on a map'
-                : 'Map with no position yet',
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: NovaLiveMap(
+                preview: true,
+                zoom: 15,
+                lat: t?.lat,
+                lng: t?.lng,
+                pinColor: emergency
+                    ? colors.critical
+                    : helmet.live
+                        ? colors.riding
+                        : colors.warning,
+                semanticLabel: '$firstName\'s position on a map',
+                fallback: NovaGridMap(
+                  showMarker: has,
+                  markerColor: emergency
+                      ? colors.critical
+                      : helmet.live
+                          ? colors.riding
+                          : colors.offline,
+                  semanticLabel: has
+                      ? '$firstName\'s position on a map'
+                      : 'Map with no position yet',
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
           Row(

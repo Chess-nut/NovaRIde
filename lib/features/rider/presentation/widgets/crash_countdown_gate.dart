@@ -103,8 +103,9 @@ class _CrashCountdownGateState extends ConsumerState<CrashCountdownGate> {
     final clock = DateTime.now();
     for (final a in alerts) {
       final ends = a.countdownEndsAt;
-      if (ends == null || !ends.isAfter(clock) || _dismissed.contains(a.id))
+      if (ends == null || !ends.isAfter(clock) || _dismissed.contains(a.id)) {
         continue;
+      }
       setState(() {
         _active = a;
         _phase = _Phase.counting;
@@ -174,8 +175,9 @@ class _CrashCountdownGateState extends ConsumerState<CrashCountdownGate> {
     if (rider.status != 'emergency') return;
     final arrived = cancelled.timestamp;
     if (arrived == null ||
-        !arrived.add(_standDownWindow).isAfter(DateTime.now()))
+        !arrived.add(_standDownWindow).isAfter(DateTime.now())) {
       return;
+    }
     final alerts = ref.read(riderAlertsProvider).value ?? const [];
     final otherLive = alerts.any(
       (a) => a.id != cancelled.id && a.isCritical && a.isLive,

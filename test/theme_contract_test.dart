@@ -184,8 +184,9 @@ void main() {
           final hits = RegExp(
             r'(?<![A-Za-z])Colors\.(?!transparent)\w+',
           ).allMatches(source).map((m) => m.group(0)!).toSet();
-          if (hits.isNotEmpty)
+          if (hits.isNotEmpty) {
             offenders.add('${file.path}: ${hits.join(', ')}');
+          }
         }
       }
       expect(

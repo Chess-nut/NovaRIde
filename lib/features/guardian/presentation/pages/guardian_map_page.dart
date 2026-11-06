@@ -7,6 +7,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/coordinates.dart';
 import '../../../../core/widgets/nova_buttons.dart';
 import '../../../../core/widgets/nova_grid_map.dart';
+import '../../../../core/widgets/nova_live_map.dart';
 import '../../../../core/widgets/nova_lists.dart';
 import '../../../../core/widgets/nova_surfaces.dart';
 import '../../../rider/presentation/providers/helmet_telemetry_provider.dart';
@@ -15,8 +16,9 @@ import '../widgets/guardian_common.dart';
 
 /// "Map" — where the rider's helmet is, or was.
 ///
-/// The drawing marks that there is a fix; the sheet gives the numbers and
-/// "Open in Google Maps" shows the real place. Speed only while live.
+/// An OpenStreetMap street map (free, no key) with a pin on the helmet (green riding, amber last known,
+/// red in an emergency); the drawn grid before the first fix. The sheet gives the numbers, and "Open in Google Maps"
+/// hands the place to the Maps app for directions. Speed only while live.
 class GuardianMapPage extends ConsumerWidget {
   const GuardianMapPage({super.key});
 
@@ -64,17 +66,28 @@ class GuardianMapPage extends ConsumerWidget {
       body: Stack(
         children: [
           Positioned.fill(
-            child: NovaGridMap(
-              borderRadius: 0,
-              showMarker: has,
-              markerColor: emergency
+            child: NovaLiveMap(
+              lat: t?.lat,
+              lng: t?.lng,
+              pinColor: emergency
                   ? colors.critical
                   : helmet.live
                       ? colors.riding
-                      : colors.offline,
-              semanticLabel: has
-                  ? 'Map with $name\'s ${helmet.live ? 'current' : 'last known'} position'
-                  : 'Map with no position yet',
+                      : colors.warning,
+              semanticLabel:
+                  'Map with $name\'s ${helmet.live ? 'current' : 'last known'} position',
+              fallback: NovaGridMap(
+                borderRadius: 0,
+                showMarker: has,
+                markerColor: emergency
+                    ? colors.critical
+                    : helmet.live
+                        ? colors.riding
+                        : colors.offline,
+                semanticLabel: has
+                    ? 'Map with $name\'s ${helmet.live ? 'current' : 'last known'} position'
+                    : 'Map with no position yet',
+              ),
             ),
           ),
           SafeArea(

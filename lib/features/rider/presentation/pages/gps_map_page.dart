@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:novaride/core/utils/coordinates.dart';
+import 'package:novaride/core/widgets/nova_live_map.dart';
 import 'package:novaride/core/widgets/nova_lists.dart' show novaTimeAgo;
 import 'package:novaride/core/widgets/unavailable.dart';
 import 'package:novaride/shared/theme.dart';
@@ -25,10 +26,10 @@ import '../providers/helmet_telemetry_provider.dart';
 /// follow toggle. In their place the sheet shows what the GPS does send:
 /// satellites in view, whether the fix is current, and when it was taken.
 ///
-/// **The map is still a drawing, not tiles.** `google_maps_flutter` needs
-/// a billed key wired into native config first; swapping the
-/// [CustomPaint] for a `GoogleMap` centred on [HelmetTelemetry.lat] /
-/// [HelmetTelemetry.lng] is the drop-in upgrade.
+/// **The map is OpenStreetMap** (free, no key, no card): a dark street map
+/// with a pin on the helmet that follows each new fix — cyan while live,
+/// amber for a last known position. Before the first fix it falls back to
+/// the drawn street grid.
 class GpsMapPage extends ConsumerWidget {
   const GpsMapPage({super.key});
 
@@ -39,19 +40,25 @@ class GpsMapPage extends ConsumerWidget {
     final live =
         t != null && t.online == true && t.isFresh(now, helmetStaleAfter);
     final hasPosition = t?.lat != null && t?.lng != null;
-    final speed = live ? t?.currentSpeedKmph(now) : null;
+    final speed = t != null && live ? t.currentSpeedKmph(now) : null;
 
     return Scaffold(
       backgroundColor: NovaColors.background,
       body: Stack(
         children: [
           Positioned.fill(
-            child: Semantics(
-              label: hasPosition
-                  ? 'Map with the helmet\'s last position at the centre'
-                  : 'Map with no position yet',
-              child: CustomPaint(
-                painter: _MapPainter(showMarker: hasPosition, live: live),
+            child: NovaLiveMap(
+              lat: t?.lat,
+              lng: t?.lng,
+              pinColor: live ? NovaColors.cyan : NovaColors.amber,
+              semanticLabel: 'Map with the helmet\'s position at the centre',
+              fallback: Semantics(
+                label: hasPosition
+                    ? 'Map with the helmet\'s last position at the centre'
+                    : 'Map with no position yet',
+                child: CustomPaint(
+                  painter: _MapPainter(showMarker: hasPosition, live: live),
+                ),
               ),
             ),
           ),

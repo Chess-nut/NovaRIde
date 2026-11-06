@@ -9,6 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/admin/widgets/fleet_map_view.dart';
+import 'package:novaride/admin/widgets/status_pill.dart';
+import 'package:novaride/shared/maps/nova_map_style.dart';
 import 'package:novaride/shared/models/models.dart';
 
 final _riders = [
@@ -158,7 +160,9 @@ void main() {
     );
     expect(tapped, 'R-002');
 
-    await tester.tap(find.descendant(of: popup, matching: find.text('View rider')));
+    await tester.tap(
+      find.descendant(of: popup, matching: find.text('View rider')),
+    );
     expect(viewed, 'R-002');
   });
 
@@ -224,6 +228,31 @@ void main() {
     }
   });
 
+  testWidgets(
+    'with helmets known on the first frame, it opens framed on them',
+    (tester) async {
+      // The one-time auto-fit is the map's initial camera fit when the
+      // fleet is already known (a page reopened after it loaded), not a
+      // move from onMapReady: in the browser that move aborted every tile
+      // request and left the basemap blank until the operator moved the
+      // map. Tile loading cannot be observed under `flutter test`, so this
+      // checks the framing; the blank basemap was checked in Edge.
+      final controller = MapController();
+      addTearDown(controller.dispose);
+      await _pump(tester, controller: controller);
+
+      final bounds = controller.camera.visibleBounds;
+      for (final p in const [
+        LatLng(14.6091, 121.0223),
+        LatLng(14.6537, 121.0687),
+        LatLng(14.5547, 121.0244),
+      ]) {
+        expect(bounds.contains(p), isTrue, reason: '$p is off screen');
+      }
+      expect(controller.camera.zoom, greaterThan(kMetroManilaZoom));
+    },
+  );
+
   testWidgets('Recentre with nothing to show goes to Metro Manila', (
     tester,
   ) async {
@@ -282,6 +311,144 @@ void main() {
       telemetry: _telemetry(r1Lat: 14.7180),
     );
     expect(controller.camera.center.latitude, closeTo(14.7180, 1e-6));
+  });
+
+  testWidgets('Follow keeps the operator\'s zoom, as the mobile map does', (
+    tester,
+  ) async {
+    final controller = MapController();
+    addTearDown(controller.dispose);
+    await _pump(tester, selected: 'R-001', controller: controller);
+
+    await tester.tap(find.byKey(const ValueKey('map-layer-Follow selected')));
+    await tester.pump();
+    // The operator zooms in on their own.
+    controller.move(controller.camera.center, 17.5);
+    await tester.pump();
+
+    await _pump(
+      tester,
+      selected: 'R-001',
+      controller: controller,
+      telemetry: _telemetry(r1Lat: 14.7180),
+    );
+    expect(controller.camera.center.latitude, closeTo(14.7180, 1e-6));
+    expect(controller.camera.center.longitude, closeTo(121.0223, 1e-6));
+    expect(controller.camera.zoom, 17.5);
+  });
+
+  testWidgets('a fix older than 7 min is drawn stale; a fresh one is not', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    await _pump(
+      tester,
+      telemetry: [
+        _t(
+          'R-001',
+          'tracker-001',
+          lat: 14.6091,
+          lng: 121.0223,
+          at: now.subtract(const Duration(minutes: 6)),
+        ),
+        _t(
+          'R-002',
+          'tracker-002',
+          lat: 14.6537,
+          lng: 121.0687,
+          at: now.subtract(const Duration(minutes: 8)),
+        ),
+      ],
+    );
+
+    Finder badge(String id) => find.descendant(
+      of: _marker(id),
+      matching: find.byKey(const ValueKey('stale-badge')),
+    );
+    Finder faded(String id) => find.descendant(
+      of: _marker(id),
+      matching: find.byWidgetPredicate((w) => w is Opacity && w.opacity == 0.5),
+    );
+
+    expect(badge('R-002'), findsOneWidget);
+    expect(faded('R-002'), findsOneWidget);
+    expect(badge('R-001'), findsNothing);
+    expect(faded('R-001'), findsNothing);
+  });
+
+  testWidgets('helmet markers are the shared pin, at mobile size or compact', (
+    tester,
+  ) async {
+    await _pump(tester);
+    final pin = find.descendant(
+      of: _marker('R-002'),
+      matching: find.byType(NovaMapPin),
+    );
+    expect(pin, findsOneWidget);
+    expect(tester.getSize(_marker('R-002')), const Size(64, 64));
+    expect(
+      tester.widget<NovaMapPin>(pin).color,
+      StatusPill.colorForRider(RiderStatus.riding),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 600,
+            child: FleetMapView(
+              riders: _riders,
+              telemetry: _telemetry(),
+              compactPins: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.getSize(_marker('R-002')), const Size(48, 48));
+  });
+
+  testWidgets('with a tile layer, the OpenStreetMap credit is bottom-left', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 600,
+            child: FleetMapView(
+              riders: _riders,
+              telemetry: _telemetry(),
+              // A stand-in: no network under test.
+              tileLayerBuilder: (context, onError) =>
+                  const SizedBox.expand(key: ValueKey('fake-tiles')),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('fake-tiles')), findsOneWidget);
+    final credit = find.text(NovaMapStyle.credit);
+    expect(credit, findsOneWidget);
+    final map = tester.getRect(find.byType(FleetMapView));
+    final chip = tester.getRect(credit);
+    expect(chip.left - map.left, lessThan(20));
+    expect(map.bottom - chip.bottom, lessThan(20));
+    // The legend sits to the right of it, not on top of it.
+    final legend = find.ancestor(
+      of: find.text('Stale fix'),
+      matching: find.byType(Wrap),
+    );
+    expect(legend, findsOneWidget);
+    expect(tester.getRect(legend).overlaps(chip), isFalse);
   });
 
   testWidgets('active alerts with a position get a marker and a popup', (
@@ -366,28 +533,33 @@ void main() {
   });
 
   test('Google Maps link: the firmware\'s own, else built from the fix', () {
-    final withUrl = _t('R-001', 'tracker-001', lat: 14.6, lng: 121.0)
-        .copyWith(mapsUrl: 'https://maps.google.com/?q=14.600000,121.000000');
+    final withUrl = _t(
+      'R-001',
+      'tracker-001',
+      lat: 14.6,
+      lng: 121.0,
+    ).copyWith(mapsUrl: 'https://maps.google.com/?q=14.600000,121.000000');
     expect(
-      FleetMapViewState.googleMapsUri(withUrl, const LatLng(14.6, 121.0))
-          .toString(),
+      FleetMapViewState.googleMapsUri(
+        withUrl,
+        const LatLng(14.6, 121.0),
+      ).toString(),
       'https://maps.google.com/?q=14.600000,121.000000',
     );
     final without = _t('R-001', 'tracker-001', lat: 14.6, lng: 121.0);
     expect(
-      FleetMapViewState.googleMapsUri(without, const LatLng(14.6, 121.0))
-          .toString(),
+      FleetMapViewState.googleMapsUri(
+        without,
+        const LatLng(14.6, 121.0),
+      ).toString(),
       'https://maps.google.com/?q=14.6,121.0',
     );
   });
 
-  test('the basemap is CARTO Dark Matter, credited', () {
-    expect(
-      FleetMapView.tileUrl,
-      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    );
-    expect(FleetMapView.tileSubdomains, ['a', 'b', 'c', 'd']);
-    expect(FleetMapView.attribution, '© OpenStreetMap contributors © CARTO');
+  test('the basemap is the mobile map\'s, sent as the admin app', () {
+    expect(FleetMapView.background, NovaMapStyle.background);
+    expect(FleetMapView.background, const Color(0xFF0D1220));
+    expect(FleetMapView.userAgentPackageName, 'ph.edu.tip.novaride.admin');
     expect(kMetroManilaLat, 14.6091);
     expect(kMetroManilaLng, 121.0223);
   });

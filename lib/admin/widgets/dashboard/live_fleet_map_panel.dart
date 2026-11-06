@@ -71,6 +71,9 @@ class LiveFleetMapPanel extends StatelessWidget {
         statusOf: statusOf,
         onViewRider: onViewRider,
         onAlertTap: onAlertTap,
+        // A small panel showing the whole fleet: pins at 0.75× so close
+        // helmets stay apart.
+        compactPins: true,
         note: source == FleetSource.simulation
             ? 'Simulated GPS — not live helmet data · '
                   'synced ${_clock(lastSync)}'

@@ -92,7 +92,7 @@ Concretely this means:
 | State container | `provider` / `riverpod` | `ChangeNotifier` + `InheritedNotifier` |
 | Navigation | `go_router` | `IndexedStack` + an index |
 | Charts | `fl_chart` | `CustomPainter` (`SimpleBarChart`, `WeeklyAlertsChart`) |
-| Maps | `google_maps_flutter` | `flutter_map` + CARTO Dark Matter tiles (`FleetMapView`) — no key, no billing on the Spark plan |
+| Maps | `google_maps_flutter` | `flutter_map` + OpenStreetMap tiles tinted dark (`FleetMapView`, styled by `lib/shared/maps/nova_map_style.dart` to match the mobile map) — no key, no billing on the Spark plan |
 | Date formatting | `intl` | `lib/admin/console_format.dart` |
 | CSV export / file save | `csv` + `share_plus` | String builder + selectable dialog |
 
@@ -493,7 +493,7 @@ to treat the whole module with suspicion.
 | **Helmet telemetry** | Simulation: `MockFleetRepository` jitters lat/lng/speed for every `riding` rider every 3s via `Timer.periodic` and keeps every non-offline helmet's heartbeat fresh; tilt, vibration, MQ-3 raw/threshold and satellites are plausible seed values. **Firestore path: real** — every RTDB node the bench helmet writes (`deviceStatus`, `devices/{id}/safety` · `tracking` · `latest`, last 10 of `trackingLogs` / `gpsLogs`) merged by `rtdb_fleet_merge.dart`, plus Firestore `devices/` when present. | Done for the RTDB firmware. |
 | **Accident detection** | No detection at all. Alerts are *invented* on a random 10–14s timer, with a weighted type roll (18% crash, 16% SOS, 30% alcohol, 36% low battery) and a random rider and district. | On-helmet edge algorithm: MPU6050 magnitude threshold **intersected** with the YL-99 impact switch, so bumps and drops do not fire. The helmet raises the alert; the console only receives it. |
 | **GPS position** | Random walk inside a fixed lat/lng box over Metro Manila, clamped to the window. | NEO-6M coordinates. |
-| **Map** | **Real.** `FleetMapView` is `flutter_map` over CARTO Dark Matter tiles (OpenStreetMap data): pan, wheel/pinch zoom, +/−, Fit all, Recentre, clickable helmet and alert markers with popups, layer toggles, follow mode. The camera fits once on first load and never moves on its own after that. | Done. |
+| **Map** | **Real.** `FleetMapView` is `flutter_map` over OpenStreetMap tiles tinted dark, with the mobile map's pin, credit chip, background and zoom limits (`lib/shared/maps/nova_map_style.dart`): pan, wheel/pinch zoom, +/−, Fit all, Recentre, clickable helmet and alert markers with popups, layer toggles, follow mode (moves to each new fix of the selected rider, keeping the zoom). The camera fits once on first load and never moves on its own after that. | Done. |
 | **Breadcrumb trail** | Simulation: the session's fixes. Firestore path: seeded from the helmet's `trackingLogs` + `gpsLogs`, merged with live fixes, sorted by fix time, capped at 30. | Done. |
 | **Street addresses** | Simulation alerts carry seed street names. A live alert is never given one: it shows its own `address` if it has one, else "Near *district*" within 3 km of a centre, else its coordinates, else the helmet's "Last known position · *age*", else "Location unavailable". | Reverse geocode of the real coordinates. |
 | **Authentication** | Simulation only: `LocalAdminAuth` compares against three demo accounts in `admin_session.dart`, labelled as such. **Firestore: real** — Firebase Auth email/password, role from a custom claim or `admins/{uid}`, unprovisioned accounts denied (§4). | Done on the Firestore path. Remaining: MFA, and rider/firmware identities. |

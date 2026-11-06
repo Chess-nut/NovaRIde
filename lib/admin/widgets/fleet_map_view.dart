@@ -2,11 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import 'package:novaride/admin/console_format.dart';
 import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/admin/widgets/alert_feed_tile.dart';
 import 'package:novaride/admin/widgets/status_pill.dart';
+import 'package:novaride/shared/maps/nova_map_style.dart';
 import 'package:novaride/shared/models/models.dart';
 import 'package:novaride/shared/theme.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -21,18 +22,18 @@ typedef FleetTileLayerBuilder =
 /// alert markers with popups, the selected rider's trail, layer toggles and
 /// a follow mode.
 ///
-/// **Basemap: CARTO Dark Matter raster tiles over OpenStreetMap data.** A
-/// deliberate choice, not a placeholder: they need no API key and no
-/// billing, and they match the console's dark theme. Google Maps for the
-/// web needs a billing-enabled key, and the project is on the Spark plan.
-/// The rider app's own Google Maps setup is separate and untouched. If the
-/// tiles cannot load (offline), the markers still draw on a plain dark
-/// background and a small note says so.
+/// **The mobile app's map look** ([NovaMapStyle]): OpenStreetMap tiles
+/// tinted dark, the same pin ([NovaMapPin]), credit chip ([NovaMapCredit]),
+/// background and zoom limits. No API key and no billing: Google Maps for
+/// the web needs a billing-enabled key, and the project is on the Spark
+/// plan. If the tiles cannot load (offline), the markers still draw on the
+/// plain dark background and a small note says so.
 ///
 /// **The camera never moves on its own when data updates.** It fits every
 /// marker once, on first load; after that only the operator moves it —
-/// unless they switch on "Follow selected", which keeps the selected rider
-/// centred as new fixes arrive.
+/// unless they switch on "Follow selected", which moves to each new fix of
+/// the selected rider and keeps the operator's zoom, as the mobile map
+/// does.
 ///
 /// Shared by the dashboard panel and Rider Monitoring so the two pages draw
 /// the same map. Markers are coloured by the status [statusOf] returns —
@@ -71,13 +72,18 @@ class FleetMapView extends StatefulWidget {
   /// A line of context in the top-left corner (the simulation says so).
   final String? note;
 
-  /// Null uses the CARTO tiles, except under `flutter test`, where no tile
-  /// layer is built at all.
+  /// Null uses the dark OpenStreetMap tiles, except under `flutter test`,
+  /// where no tile layer is built at all.
   final FleetTileLayerBuilder? tileLayerBuilder;
 
   /// Lets a test (or a parent) read and drive the camera. Owned by the
   /// caller when given.
   final MapController? mapController;
+
+  /// Draws pins at [NovaMapPin.compactScale] of the mobile size, so a
+  /// small map with the whole fleet on it does not turn into one blob. The
+  /// dashboard panel uses it; Rider Monitoring keeps full-size pins.
+  final bool compactPins;
 
   const FleetMapView({
     super.key,
@@ -94,13 +100,12 @@ class FleetMapView extends StatefulWidget {
     this.note,
     this.tileLayerBuilder,
     this.mapController,
+    this.compactPins = false,
   });
 
-  /// CARTO Dark Matter. `{r}` asks for @2x tiles on high-density screens.
-  static const tileUrl =
-      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-  static const tileSubdomains = ['a', 'b', 'c', 'd'];
-  static const attribution = '© OpenStreetMap contributors © CARTO';
+  /// OpenStreetMap's tile policy wants each app identified; the mobile app
+  /// sends `ph.edu.tip.novaride`.
+  static const userAgentPackageName = 'ph.edu.tip.novaride.admin';
 
   /// A fix older than this is drawn faded with a "stale" badge: the
   /// firmware uploads every 5 min, so two missed uploads.
@@ -110,8 +115,8 @@ class FleetMapView extends StatefulWidget {
   static const metroManila = LatLng(kMetroManilaLat, kMetroManilaLng);
 
   /// The basemap colour the tiles are drawn over, and all that shows
-  /// without them.
-  static const background = Color(0xFF0B0F1E);
+  /// without them — the mobile map's.
+  static const background = NovaMapStyle.background;
 
   @override
   State<FleetMapView> createState() => FleetMapViewState();
@@ -153,9 +158,12 @@ class _HelmetPin {
 
   bool get unassigned => rider == null;
   bool get emergency => status == RiderStatus.emergency;
-  Color get color => unassigned
-      ? NovaColors.secondaryText
-      : StatusPill.colorForRider(status!);
+
+  /// A helmet nobody is paired with: neutral grey.
+  static const unassignedColor = NovaColors.secondaryText;
+
+  Color get color =>
+      unassigned ? unassignedColor : StatusPill.colorForRider(status!);
 }
 
 /// Public so a page can drive the camera on the operator's behalf ("Locate
@@ -279,6 +287,43 @@ class FleetMapViewState extends State<FleetMapView>
     _maybeAutoFit();
   }
 
+  /// Where the camera opens. When helmets are already known on the first
+  /// frame (a page reopened after the fleet loaded), the camera *starts* on
+  /// them, which counts as the one-time auto-fit. Opening on Metro Manila
+  /// and fitting from [_onMapReady] instead moved the camera inside the
+  /// map's first frame: every tile request was aborted and the basemap
+  /// stayed blank until the operator first moved the map. With no helmets
+  /// yet, it opens on Metro Manila and fits once they arrive.
+  late final ({LatLng center, double zoom, CameraFit? fit}) _initialCamera =
+      () {
+        final points = _fitPoints();
+        if (points.isEmpty) {
+          return (
+            center: FleetMapView.metroManila,
+            zoom: kMetroManilaZoom,
+            fit: null,
+          );
+        }
+        _autoFitted = true;
+        if (points.length == 1) {
+          return (center: points.single, zoom: _singlePointZoom, fit: null);
+        }
+        return (
+          center: FleetMapView.metroManila,
+          zoom: kMetroManilaZoom,
+          fit: _cameraFit(points),
+        );
+      }();
+
+  /// The zoom for a fit with only one point to frame.
+  static const double _singlePointZoom = 15;
+
+  static CameraFit _cameraFit(List<LatLng> points) => CameraFit.coordinates(
+    coordinates: points,
+    padding: const EdgeInsets.all(56),
+    maxZoom: 16,
+  );
+
   /// Once, the first time there is anything to show.
   void _maybeAutoFit() {
     if (_autoFitted || !_mapReady) return;
@@ -288,6 +333,8 @@ class FleetMapViewState extends State<FleetMapView>
     _fit(points);
   }
 
+  /// As on the mobile map: move to the new fix and keep the zoom the
+  /// operator chose. Nothing happens unless the fix actually moved.
   void _maybeFollow() {
     if (!_follow) return;
     final target = _selectedPoint();
@@ -314,16 +361,10 @@ class FleetMapViewState extends State<FleetMapView>
   void _fit(List<LatLng> points) {
     if (!_mapReady) return;
     if (points.length == 1) {
-      _controller.move(points.single, 15);
+      _controller.move(points.single, _singlePointZoom);
       return;
     }
-    _controller.fitCamera(
-      CameraFit.coordinates(
-        coordinates: points,
-        padding: const EdgeInsets.all(56),
-        maxZoom: 16,
-      ),
-    );
+    _controller.fitCamera(_cameraFit(points));
   }
 
   void fitAll() {
@@ -388,12 +429,9 @@ class FleetMapViewState extends State<FleetMapView>
     final builder = widget.tileLayerBuilder;
     if (builder != null) return builder(context, _onTileError);
     if (_underTest) return null;
-    return TileLayer(
-      urlTemplate: FleetMapView.tileUrl,
-      subdomains: FleetMapView.tileSubdomains,
-      retinaMode: MediaQuery.devicePixelRatioOf(context) > 1,
-      userAgentPackageName: 'ph.edu.tip.novaride.admin',
-      maxNativeZoom: 20,
+    return NovaMapStyle.darkTiles(
+      context,
+      userAgentPackageName: FleetMapView.userAgentPackageName,
       errorTileCallback: (tile, error, stack) => _onTileError(),
     );
   }
@@ -420,10 +458,11 @@ class FleetMapViewState extends State<FleetMapView>
           FlutterMap(
             mapController: _controller,
             options: MapOptions(
-              initialCenter: FleetMapView.metroManila,
-              initialZoom: kMetroManilaZoom,
-              minZoom: 3,
-              maxZoom: 19,
+              initialCenter: _initialCamera.center,
+              initialZoom: _initialCamera.zoom,
+              initialCameraFit: _initialCamera.fit,
+              minZoom: NovaMapStyle.minZoom,
+              maxZoom: NovaMapStyle.maxZoom,
               backgroundColor: FleetMapView.background,
               interactionOptions: const InteractionOptions(
                 flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
@@ -444,19 +483,14 @@ class FleetMapViewState extends State<FleetMapView>
                   for (final p in pins) _helmetMarker(p),
                 ],
               ),
+              // Under the popup, so an open card is never hidden by it.
+              if (tiles != null) const NovaMapCredit(),
               _PopupLayer(
                 point: _popupPoint(allPins),
+                // Clear of the pin's halo.
+                gap: NovaMapPin.haloSize(compact: widget.compactPins) / 2 + 4,
                 child: _popupCard(allPins),
               ),
-              if (tiles != null)
-                RichAttributionWidget(
-                  alignment: AttributionAlignment.bottomRight,
-                  showFlutterMapAttribution: false,
-                  popupBackgroundColor: NovaColors.card,
-                  attributions: const [
-                    TextSourceAttribution(FleetMapView.attribution),
-                  ],
-                ),
             ],
           ),
           Positioned(
@@ -478,8 +512,27 @@ class FleetMapViewState extends State<FleetMapView>
             ),
           ),
           Positioned(top: 8, right: 8, child: _buildControls()),
+          // Bottom-right, clear of the credit chip in the bottom-left: on a
+          // narrow map the legend wraps upward instead of covering it.
           if (widget.showLegend)
-            const Positioned(bottom: 8, left: 8, child: _MapLegend()),
+            Positioned(
+              bottom: 6,
+              right: 6,
+              left: 0,
+              // Padding rather than `left:`: on a tiny map it shrinks to
+              // zero instead of asking for a negative width.
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: tiles == null
+                      ? 6
+                      : NovaMapCredit.footprint(context).width,
+                ),
+                child: const Align(
+                  alignment: Alignment.bottomRight,
+                  child: _MapLegend(),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -517,7 +570,8 @@ class FleetMapViewState extends State<FleetMapView>
           point: LatLng(trail[i].lat, trail[i].lng),
           radius: 2.6,
           color: NovaColors.cyan.withValues(
-            alpha: 0.25 + 0.7 * (trail.length == 1 ? 1 : i / (trail.length - 1)),
+            alpha:
+                0.25 + 0.7 * (trail.length == 1 ? 1 : i / (trail.length - 1)),
           ),
         ),
     ],
@@ -526,8 +580,8 @@ class FleetMapViewState extends State<FleetMapView>
   Marker _helmetMarker(_HelmetPin pin) => Marker(
     key: ValueKey('helmet-marker-${pin.id}'),
     point: pin.point,
-    width: 46,
-    height: 46,
+    width: NovaMapPin.markerSize(compact: widget.compactPins),
+    height: NovaMapPin.markerSize(compact: widget.compactPins),
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
@@ -542,6 +596,7 @@ class FleetMapViewState extends State<FleetMapView>
           selected: pin.id == widget.selectedRiderId,
           stale: pin.stale,
           pulse: _pulse,
+          compact: widget.compactPins,
         ),
       ),
     ),
@@ -549,22 +604,18 @@ class FleetMapViewState extends State<FleetMapView>
 
   Marker _alertMarker(AlertEvent alert) {
     final color = _priorityColor(FleetController.priorityOf(alert));
+    final size = NovaMapPin.markerSize(compact: widget.compactPins);
     return Marker(
       key: ValueKey('alert-marker-${alert.id}'),
       point: LatLng(alert.lat!, alert.lng!),
-      width: 34,
-      height: 34,
+      width: size,
+      height: size,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => setState(() => _popup = _AlertPopup(alert.id)),
         child: Tooltip(
           message: '${alert.type.label} · ${alert.riderName}',
-          child: Icon(
-            Icons.warning_rounded,
-            size: 28,
-            color: color,
-            shadows: const [Shadow(color: Colors.black, blurRadius: 4)],
-          ),
+          child: _AlertMarker(color: color, compact: widget.compactPins),
         ),
       ),
     );
@@ -617,14 +668,14 @@ class FleetMapViewState extends State<FleetMapView>
           ? 'Helmet ${pin.id} · no rider paired'
           : '${rider.id} · Helmet ${rider.helmetId}',
       badge: pin.status == null
-          ? const StatusPill(label: 'Unassigned', color: NovaColors.secondaryText)
+          ? const StatusPill(
+              label: 'Unassigned',
+              color: NovaColors.secondaryText,
+            )
           : StatusPill.rider(pin.status!),
       rows: [
         ('Speed', t.speedLabel),
-        (
-          'Last seen',
-          t.heardAt == null ? '—' : formatAgo(t.heardAt!),
-        ),
+        ('Last seen', t.heardAt == null ? '—' : formatAgo(t.heardAt!)),
         ('GPS', '${t.satellitesLabel} sats · fix $fixAge'),
         ('Source', t.positionSourceLabel),
         ('Alcohol', t.alcoholThresholdLabel),
@@ -657,8 +708,11 @@ class FleetMapViewState extends State<FleetMapView>
       subtitle: '${alert.riderName} · ${alert.riderId}',
       badge: StatusPill.alert(alert.status),
       rows: [
-        ('Raised', '${formatAgo(alert.timestamp)} · '
-            '${formatManila(alert.timestamp)}'),
+        (
+          'Raised',
+          '${formatAgo(alert.timestamp)} · '
+              '${formatManila(alert.timestamp)}',
+        ),
         ('Location', alert.address),
         ('Alert', alert.id),
       ],
@@ -759,7 +813,14 @@ class _PopupLayer extends StatelessWidget {
   final LatLng? point;
   final Widget? child;
 
-  const _PopupLayer({required this.point, required this.child});
+  /// Distance from the marker's centre to the card's edge.
+  final double gap;
+
+  const _PopupLayer({
+    required this.point,
+    required this.child,
+    required this.gap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -781,7 +842,7 @@ class _PopupLayer extends StatelessWidget {
       children: [
         Positioned(
           left: left,
-          top: above ? offset.dy - 22 : offset.dy + 22,
+          top: above ? offset.dy - gap : offset.dy + gap,
           child: above
               ? FractionalTranslation(
                   translation: const Offset(0, -1),
@@ -836,12 +897,10 @@ class _PopupCard extends StatelessWidget {
         width: width,
         padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
         decoration: BoxDecoration(
-          color: NovaColors.card.withValues(alpha: 0.97),
+          color: NovaColors.background,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: NovaColors.cardBorder),
-          boxShadow: const [
-            BoxShadow(color: Colors.black54, blurRadius: 12),
-          ],
+          boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 12)],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -866,7 +925,7 @@ class _PopupCard extends StatelessWidget {
                       Text(
                         subtitle,
                         style: const TextStyle(
-                          color: NovaColors.secondaryText,
+                          color: NovaMapStyle.label,
                           fontSize: 11,
                         ),
                       ),
@@ -880,7 +939,7 @@ class _PopupCard extends StatelessWidget {
                     child: Icon(
                       Icons.close,
                       size: 16,
-                      color: NovaColors.secondaryText,
+                      color: NovaMapStyle.label,
                     ),
                   ),
                 ),
@@ -900,7 +959,7 @@ class _PopupCard extends StatelessWidget {
                       child: Text(
                         label,
                         style: const TextStyle(
-                          color: NovaColors.secondaryText,
+                          color: NovaMapStyle.label,
                           fontSize: 11,
                         ),
                       ),
@@ -945,15 +1004,17 @@ class _PopupCard extends StatelessWidget {
   }
 }
 
-/// One helmet: a dot in its status colour with a soft halo, a pulse ring in
-/// an emergency, a locator ring when selected, and faded with a "stale"
-/// badge when its fix is old.
+/// One helmet: the mobile app's pin ([NovaMapPin]) in its status colour,
+/// with the admin's states drawn on top of it — a pulse ring out of the
+/// halo in an emergency, a locator ring when selected, and faded to half
+/// with a "stale" badge when its fix is old.
 class _HelmetMarker extends StatelessWidget {
   final Color color;
   final bool emergency;
   final bool selected;
   final bool stale;
   final Animation<double> pulse;
+  final bool compact;
 
   const _HelmetMarker({
     required this.color,
@@ -961,68 +1022,57 @@ class _HelmetMarker extends StatelessWidget {
     required this.selected,
     required this.stale,
     required this.pulse,
+    required this.compact,
   });
 
   @override
   Widget build(BuildContext context) {
+    final halo = NovaMapPin.haloSize(compact: compact);
+    final scale = NovaMapPin.scaleOf(compact: compact);
     Widget marker = Stack(
       alignment: Alignment.center,
       clipBehavior: Clip.none,
       children: [
-        Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.25),
-            shape: BoxShape.circle,
-          ),
-        ),
+        NovaMapPin(color: color, compact: compact),
         if (emergency)
-          AnimatedBuilder(
-            animation: pulse,
-            builder: (context, _) {
-              // Ring breathes 12 → 32 px and fades out over the loop — the
-              // painted map's pulse, as a widget.
-              final t = pulse.value;
-              final size = 12 + 20 * t;
-              return Container(
-                width: size,
-                height: size,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: color.withValues(alpha: (1 - t) * 0.9),
-                    width: 1.5,
+          _Unclipped(
+            child: AnimatedBuilder(
+              animation: pulse,
+              builder: (context, _) {
+                // Starts at the halo's edge, grows 28 px and fades out.
+                final t = pulse.value;
+                final size = halo + 28 * scale * t;
+                return Container(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: color.withValues(alpha: (1 - t) * 0.9),
+                      width: 2 * scale,
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
-        if (selected) const _LocatorRing(),
-        Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.black54, width: 1),
-          ),
-        ),
+        if (selected) _Unclipped(child: _LocatorRing(haloSize: halo)),
         if (stale)
           Positioned(
-            bottom: -2,
+            bottom: 0,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 3),
+              key: const ValueKey('stale-badge'),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
               decoration: BoxDecoration(
                 color: NovaColors.background,
                 borderRadius: BorderRadius.circular(3),
                 border: Border.all(color: NovaColors.cardBorder),
               ),
-              child: const Text(
+              child: Text(
                 'stale',
                 style: TextStyle(
-                  color: NovaColors.secondaryText,
-                  fontSize: 7.5,
+                  color: NovaMapStyle.label,
+                  fontSize: 9 * scale,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1035,45 +1085,181 @@ class _HelmetMarker extends StatelessWidget {
   }
 }
 
-/// Static ring plus crosshair ticks — reads as "this one" even in a
-/// cluster.
+/// Lets a ring be wider than the marker box: the pulse and the locator
+/// ring reach past the 64 px marker the pin fills.
+class _Unclipped extends StatelessWidget {
+  final Widget child;
+
+  const _Unclipped({required this.child});
+
+  @override
+  Widget build(BuildContext context) => OverflowBox(
+    maxWidth: double.infinity,
+    maxHeight: double.infinity,
+    child: child,
+  );
+}
+
+/// Static ring just outside the halo, plus crosshair ticks — reads as
+/// "this one" even in a cluster.
 class _LocatorRing extends StatelessWidget {
-  const _LocatorRing();
+  final double haloSize;
+
+  const _LocatorRing({required this.haloSize});
 
   @override
   Widget build(BuildContext context) {
+    final side = haloSize + 2 * (_LocatorPainter.gap + _LocatorPainter.tick);
     return SizedBox(
-      width: 32,
-      height: 32,
-      child: CustomPaint(painter: _LocatorPainter()),
+      width: side,
+      height: side,
+      child: CustomPaint(painter: _LocatorPainter(haloSize / 2)),
     );
   }
 }
 
 class _LocatorPainter extends CustomPainter {
+  static const gap = 3.0;
+  static const tick = 5.0;
+
+  final double haloRadius;
+
+  const _LocatorPainter(this.haloRadius);
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
-    final ring = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
+    final r = haloRadius + gap;
+    canvas.drawCircle(
+      center,
+      r,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = NovaColors.cyan,
+    );
+    final paint = Paint()
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
       ..color = NovaColors.cyan;
-    canvas.drawCircle(center, 11, ring);
-    final tick = Paint()
-      ..strokeWidth = 1.4
-      ..color = NovaColors.cyan;
-    for (final d in const [
-      [Offset(0, -15), Offset(0, -12)],
-      [Offset(0, 12), Offset(0, 15)],
-      [Offset(-15, 0), Offset(-12, 0)],
-      [Offset(12, 0), Offset(15, 0)],
+    for (final dir in const [
+      Offset(0, -1),
+      Offset(0, 1),
+      Offset(-1, 0),
+      Offset(1, 0),
     ]) {
-      canvas.drawLine(center + d[0], center + d[1], tick);
+      canvas.drawLine(center + dir * r, center + dir * (r + tick), paint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _LocatorPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _LocatorPainter oldDelegate) =>
+      oldDelegate.haloRadius != haloRadius;
+}
+
+/// An active alert: the warning triangle in its priority colour, given the
+/// pin's look — the same soft halo and the same dark ring — so it reads as
+/// one family with the helmets while its shape still says "alert".
+class _AlertMarker extends StatelessWidget {
+  final Color color;
+  final bool compact;
+
+  const _AlertMarker({required this.color, required this.compact});
+
+  @override
+  Widget build(BuildContext context) {
+    final halo = NovaMapPin.haloSize(compact: compact);
+    final scale = NovaMapPin.scaleOf(compact: compact);
+    return Center(
+      child: Container(
+        width: halo,
+        height: halo,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: NovaMapStyle.haloAlpha),
+          shape: BoxShape.circle,
+        ),
+        alignment: Alignment.center,
+        child: _AlertTriangle(
+          color: color,
+          size: 30 * scale,
+          ringWidth: NovaMapPin.ringWidth(compact: compact),
+        ),
+      ),
+    );
+  }
+}
+
+/// A warning triangle with an exclamation mark, filled in [color] and
+/// outlined in the pin's dark ring. Also the legend's alert mark.
+class _AlertTriangle extends StatelessWidget {
+  final Color color;
+  final double size;
+  final double ringWidth;
+
+  const _AlertTriangle({
+    required this.color,
+    required this.size,
+    required this.ringWidth,
+  });
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: size,
+    height: size,
+    child: CustomPaint(painter: _TrianglePainter(color, ringWidth)),
+  );
+}
+
+class _TrianglePainter extends CustomPainter {
+  final Color color;
+  final double ringWidth;
+
+  const _TrianglePainter(this.color, this.ringWidth);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    // The fill covers the inner half of the stroke, so a stroke twice the
+    // ring width shows exactly [ringWidth] of dark ring — the pin's — and
+    // an inset of one ring width keeps it inside the box.
+    final inset = ringWidth;
+    final path = Path()
+      ..moveTo(w / 2, inset + h * 0.04)
+      ..lineTo(w - inset, h * 0.9 - inset)
+      ..lineTo(inset, h * 0.9 - inset)
+      ..close();
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = ringWidth * 2
+        ..strokeJoin = StrokeJoin.round
+        ..color = NovaMapStyle.ink,
+    );
+    canvas.drawPath(path, Paint()..color = color);
+
+    // The exclamation mark, in the pin's dark ink.
+    final x = w / 2;
+    canvas.drawLine(
+      Offset(x, h * 0.36),
+      Offset(x, h * 0.6),
+      Paint()
+        ..color = NovaMapStyle.ink
+        ..strokeWidth = w * 0.1
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawCircle(
+      Offset(x, h * 0.74),
+      w * 0.055,
+      Paint()..color = NovaMapStyle.ink,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrianglePainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.ringWidth != ringWidth;
 }
 
 class _MapNote extends StatelessWidget {
@@ -1084,7 +1270,7 @@ class _MapNote extends StatelessWidget {
   const _MapNote({
     required this.icon,
     required this.text,
-    this.color = NovaColors.secondaryText,
+    this.color = NovaMapStyle.label,
   });
 
   @override
@@ -1093,8 +1279,8 @@ class _MapNote extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: NovaColors.card.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(4),
+        color: NovaMapStyle.inkTranslucent,
+        borderRadius: BorderRadius.circular(6),
         border: Border.all(color: NovaColors.cardBorder),
       ),
       child: Row(
@@ -1124,9 +1310,9 @@ class _ControlStack extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: NovaColors.card.withValues(alpha: 0.94),
+        color: NovaMapStyle.inkTranslucent,
         border: Border.all(color: NovaColors.cardBorder),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: children),
     );
@@ -1172,9 +1358,9 @@ class _LayerPanel extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 3),
       decoration: BoxDecoration(
-        color: NovaColors.card.withValues(alpha: 0.94),
+        color: NovaMapStyle.inkTranslucent,
         border: Border.all(color: NovaColors.cardBorder),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1192,7 +1378,7 @@ class _LayerPanel extends StatelessWidget {
                     Icon(
                       on ? Icons.check_box : Icons.check_box_outline_blank,
                       size: 13,
-                      color: on ? NovaColors.cyan : NovaColors.secondaryText,
+                      color: on ? NovaColors.cyan : NovaMapStyle.label,
                     ),
                     const SizedBox(width: 5),
                     Text(
@@ -1218,12 +1404,26 @@ class _MapLegend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The pin in miniature: halo, dot, dark ring.
     Widget dot(Color color, {double opacity = 1}) => Opacity(
       opacity: opacity,
       child: Container(
-        width: 7,
-        height: 7,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        width: 13,
+        height: 13,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: NovaMapStyle.haloAlpha),
+          shape: BoxShape.circle,
+        ),
+        child: Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: NovaMapStyle.ink),
+          ),
+        ),
       ),
     );
     Widget entry(Widget mark, String label) => Row(
@@ -1233,7 +1433,7 @@ class _MapLegend extends StatelessWidget {
         const SizedBox(width: 5),
         Text(
           label,
-          style: const TextStyle(color: NovaColors.secondaryText, fontSize: 9),
+          style: const TextStyle(color: NovaMapStyle.label, fontSize: 9),
         ),
       ],
     );
@@ -1241,9 +1441,9 @@ class _MapLegend extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: NovaColors.card.withValues(alpha: 0.88),
+        color: NovaMapStyle.inkTranslucent,
         border: Border.all(color: NovaColors.cardBorder),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Wrap(
         spacing: 12,
@@ -1251,8 +1451,9 @@ class _MapLegend extends StatelessWidget {
         children: [
           for (final status in RiderStatus.values)
             entry(dot(StatusPill.colorForRider(status)), status.label),
+          entry(dot(_HelmetPin.unassignedColor), 'Unassigned'),
           entry(
-            const Icon(Icons.warning_rounded, size: 11, color: NovaColors.red),
+            const _AlertTriangle(color: NovaColors.red, size: 13, ringWidth: 1),
             'Alert',
           ),
           entry(dot(NovaColors.cyan, opacity: 0.45), 'Stale fix'),

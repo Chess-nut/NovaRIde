@@ -43,9 +43,10 @@ or `RTDB OFFLINE`, with the error as its tooltip. **The RTDB security rules
 `RTDB DENIED` itself: a project owner must allow signed-in console operators to
 read those four paths in the Firebase console (Realtime Database → Rules).
 
-**The map** is OpenStreetMap data drawn as CARTO Dark Matter tiles via
-`flutter_map` — no API key, no billing (the project is on the Spark plan; Google
-Maps for the web would need a billing-enabled key). Offline, the markers still
+**The map** is OpenStreetMap's own tiles, tinted dark, via `flutter_map`: the
+same look as the mobile app's map (`lib/shared/maps/nova_map_style.dart`). No
+API key, no billing (the project is on the Spark plan; Google Maps for the web
+would need a billing-enabled key). Offline, the markers still
 draw on a dark background and the map says the tiles are unavailable.
 
 **Helmet events.** The RTDB firmware never writes Firestore `alerts/`; crashes,

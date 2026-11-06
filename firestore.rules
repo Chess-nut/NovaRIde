@@ -187,6 +187,30 @@ service cloud.firestore {
           && alertId == d.deviceId + '_' + string(d.helmetEventAt);
     }
 
+    // A rider pressing SOS in the app, after its 10-second on-phone
+    // countdown. Only their own roster entry, only an open high-severity
+    // SOS, only the helmet that entry names, only the server's clock, and
+    // nothing the console owns (lifecycle stamps). The position is the
+    // helmet's last fix, with when it was taken, or absent.
+    function isRiderSos() {
+      let d = request.resource.data;
+      return d.get('riderId', '') is string && d.get('riderId', '') != ''
+          && isLinkedRiderOf(d.riderId)
+          && d.keys().hasOnly(['riderId', 'riderName', 'deviceId', 'type',
+                               'severity', 'status', 'source', 'timestamp',
+                               'location', 'locationFixAt'])
+          && d.get('type', '') == 'sos'
+          && d.get('severity', '') == 'high'
+          && d.get('status', '') == 'open'
+          && d.get('source', '') == 'rider-app'
+          && d.get('riderName', '') is string
+          && d.get('deviceId', '') == get(/databases/$(database)/documents/riders/$(d.riderId))
+                                         .data.get('helmetId', '')
+          && isServerTime(d.get('timestamp', ''))
+          && (!('location' in d) || d.location is latlng)
+          && (!('locationFixAt' in d) || d.locationFixAt is timestamp);
+    }
+
     // ------------------------------------------- the false-positive countdown
     //
     // A crash the helmet raises arrives `pending`. For COUNTDOWN seconds of
@@ -322,6 +346,7 @@ service cloud.firestore {
                   || isLinkedRiderOf(resource.data.riderId)
                   || isGuardianOfRoster(resource.data.riderId);
       allow create: if (isHelmetService() && isHelmetAlert())
+                    || isRiderSos()
                     || (hasRole(['superAdmin'])
                         && request.resource.data.get('timestamp', null) is timestamp)
                     || (hasRole(['dispatcher']) && isOpenedFromHelmet(alertId));

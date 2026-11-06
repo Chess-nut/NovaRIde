@@ -29,4 +29,20 @@ abstract interface class RiderAlertRepository {
   /// helmet's emergency write landed after it. Accepted for 90 s from the
   /// cancelled alert's arrival, naming that alert.
   Future<void> standDown({required String riderId, required String alertId});
+
+  /// Raises an SOS for [rider], as the rider: `alerts/{new id}` with type
+  /// `sos`, status `open`, and the helmet's position when there is one
+  /// ([lat]/[lng], taken at [fixAt]). The operations console and the
+  /// rider's guardians already listen on `alerts/`, so this write is what
+  /// reaches them. Returns the new alert's id.
+  ///
+  /// Completes when the server has the alert. Offline, Firestore keeps the
+  /// write queued and sends it on reconnect, so the caller decides how long
+  /// to wait before telling the rider it is not confirmed yet.
+  Future<String> sendSos({
+    required LinkedRider rider,
+    double? lat,
+    double? lng,
+    DateTime? fixAt,
+  });
 }

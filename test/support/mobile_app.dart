@@ -7,6 +7,7 @@
 // now, before any Firebase implementation exists.
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:novaride/app/app.dart';
@@ -59,6 +60,7 @@ Future<void> pumpMobileApp(
   HelmetTelemetryRepository? helmetTelemetry,
   GuardianLinkRepository? guardianLinks,
   EmergencyContactRepository? emergencyContacts,
+  List<Override> extraOverrides = const [],
   bool settle = true,
 }) async {
   await tester.pumpWidget(
@@ -87,6 +89,7 @@ Future<void> pumpMobileApp(
             emergencyContacts ?? FakeEmergencyContactRepository()),
         if (auth != null)
           authStateProvider.overrideWith(() => FixedAuthController(auth)),
+        ...extraOverrides,
       ],
       child: const NovaRideApp(),
     ),

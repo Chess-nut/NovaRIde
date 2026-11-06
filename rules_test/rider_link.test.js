@@ -6,8 +6,8 @@
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import {
-  collection, deleteField, doc, getDoc, getDocs, limit, orderBy, query, setDoc,
-  Timestamp, updateDoc, where,
+  collection, deleteField, doc, GeoPoint, getDoc, getDocs, limit, orderBy, query,
+  serverTimestamp, setDoc, Timestamp, updateDoc, where,
 } from 'firebase/firestore';
 import {
   asDispatcher, asGuardian, asHelmetService, asOtherRider, asRider,
@@ -143,5 +143,47 @@ describe('a linked rider reads their own alerts', () => {
 
   it('reading is all it is: no edits', async () => {
     await assertFails(updateDoc(doc(asRider(env), 'alerts', 'A-mine'), { status: 'resolved' }));
+  });
+});
+
+describe('SOS from the rider app', () => {
+  const sos = (extra = {}) => ({
+    riderId: 'R-001', riderName: 'Rider One', deviceId: 'NR-H1-001',
+    type: 'sos', severity: 'high', status: 'open', source: 'rider-app',
+    timestamp: serverTimestamp(), ...extra,
+  });
+
+  it('the linked rider may raise one for themself', async () => {
+    await assertSucceeds(setDoc(doc(asRider(env), 'alerts', 'S-1'), sos()));
+  });
+
+  it('with the helmet position and when it was fixed', async () => {
+    await assertSucceeds(setDoc(doc(asRider(env), 'alerts', 'S-2'), sos({
+      location: new GeoPoint(14.6, 121.05), locationFixAt: Timestamp.now(),
+    })));
+  });
+
+  it('not for another rider', async () => {
+    await assertFails(setDoc(doc(asRider(env), 'alerts', 'S-3'),
+      sos({ riderId: 'R-002', deviceId: 'NR-H1-002' })));
+  });
+
+  it('not naming a helmet that is not theirs', async () => {
+    await assertFails(setDoc(doc(asRider(env), 'alerts', 'S-4'), sos({ deviceId: 'NR-H1-002' })));
+  });
+
+  it('not as anything but an open SOS', async () => {
+    await assertFails(setDoc(doc(asRider(env), 'alerts', 'S-5'), sos({ type: 'crash' })));
+    await assertFails(setDoc(doc(asRider(env), 'alerts', 'S-6'), sos({ status: 'resolved' })));
+  });
+
+  it('not with its own clock or a console stamp', async () => {
+    await assertFails(setDoc(doc(asRider(env), 'alerts', 'S-7'), sos({ timestamp: Timestamp.now() })));
+    await assertFails(setDoc(doc(asRider(env), 'alerts', 'S-8'), sos({ resolvedAt: serverTimestamp() })));
+  });
+
+  it('not from an unlinked rider or a guardian', async () => {
+    await assertFails(setDoc(doc(asOtherRider(env), 'alerts', 'S-9'), sos()));
+    await assertFails(setDoc(doc(asGuardian(env), 'alerts', 'S-10'), sos()));
   });
 });

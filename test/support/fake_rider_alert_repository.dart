@@ -28,6 +28,13 @@ class FakeRiderAlertRepository implements RiderAlertRepository {
   /// What the next cancel throws, as the rules would refuse it.
   Failure? failCancelWith;
 
+  /// What the next SOS throws.
+  Failure? failSosWith;
+
+  /// Held open to keep an SOS "sending" (no connection); complete it to
+  /// let the send finish.
+  Completer<void>? holdSos;
+
   void emitRider(LinkedRider? rider) => _riderCtrl.add(_rider = rider);
   void emitAlerts(List<RiderAlert> alerts) => _alertsCtrl.add(_alerts = alerts);
 
@@ -60,5 +67,20 @@ class FakeRiderAlertRepository implements RiderAlertRepository {
     required String alertId,
   }) async {
     calls.add('standDown $riderId $alertId');
+  }
+
+  @override
+  Future<String> sendSos({
+    required LinkedRider rider,
+    double? lat,
+    double? lng,
+    DateTime? fixAt,
+  }) async {
+    calls.add('sos ${rider.riderId}${lat == null ? '' : ' $lat,$lng'}');
+    final hold = holdSos;
+    if (hold != null) await hold.future;
+    final failure = failSosWith;
+    if (failure != null) throw failure;
+    return 'SOS-1';
   }
 }

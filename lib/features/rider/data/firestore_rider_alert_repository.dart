@@ -98,6 +98,38 @@ class FirestoreRiderAlertRepository implements RiderAlertRepository {
     }
   }
 
+  @override
+  Future<String> sendSos({
+    required LinkedRider rider,
+    double? lat,
+    double? lng,
+    DateTime? fixAt,
+  }) async {
+    final ref = _firestore.collection(FirestoreCollections.alerts).doc();
+    final hasFix = lat != null && lng != null;
+    // Exactly what isRiderSos in firestore.rules admits: these keys and no
+    // others, the helmet id from the rider's own roster entry, and the
+    // server's clock — the console orders its board by `timestamp`.
+    final data = <String, Object>{
+      'riderId': rider.riderId,
+      'riderName': rider.fullName,
+      'deviceId': rider.helmetId,
+      'type': 'sos',
+      'severity': 'high',
+      'status': 'open',
+      'source': 'rider-app',
+      'timestamp': FieldValue.serverTimestamp(),
+      if (hasFix) 'location': GeoPoint(lat, lng),
+      if (hasFix && fixAt != null) 'locationFixAt': Timestamp.fromDate(fixAt),
+    };
+    try {
+      await ref.set(data);
+      return ref.id;
+    } catch (error, stack) {
+      throw failureFrom(error, stack);
+    }
+  }
+
   /// Exactly what isRiderStandDown in firestore.rules admits.
   static Map<String, Object> _standDownFields(String alertId) => {
     'status': 'riding',

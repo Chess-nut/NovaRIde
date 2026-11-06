@@ -11,7 +11,7 @@ import 'package:novaride/shared/theme.dart';
 import '../../domain/entities/helmet_telemetry.dart';
 import '../providers/helmet_telemetry_provider.dart';
 import '../widgets/nova_bottom_nav_bar.dart';
-import 'alerts_page.dart';
+import '../widgets/sos_countdown.dart';
 import 'gps_map_page.dart';
 import 'notification_feed_page.dart';
 
@@ -79,11 +79,7 @@ class HomePage extends ConsumerWidget {
               const SizedBox(height: 24),
               const _SectionTitle('EMERGENCY SOS'),
               const SizedBox(height: 20),
-              _SosButton(
-                onPressed: () => Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (_) => const AlertsPage())),
-              ),
+              _SosButton(onPressed: () => showSosCountdown(context)),
             ],
           ),
         ),
@@ -730,8 +726,9 @@ class _SpeedCard extends StatelessWidget {
 // SOS
 // ---------------------------------------------------------------------------
 
-/// The big glowing SOS button. Opens Alerts, which says what happens in
-/// an emergency.
+/// The big glowing SOS button. Starts a 10-second countdown the rider can
+/// cancel; then alerts NovaRide operations and their guardians (see
+/// `sos_countdown.dart`).
 class _SosButton extends StatelessWidget {
   const _SosButton({required this.onPressed});
 
@@ -755,7 +752,8 @@ class _SosButton extends StatelessWidget {
         ),
         child: Semantics(
           button: true,
-          label: 'SOS. Opens the emergency page.',
+          label: 'SOS. Alerts operations and your guardians after a '
+              '10 second countdown you can cancel.',
           excludeSemantics: true,
           child: Material(
             color: NovaColors.red,

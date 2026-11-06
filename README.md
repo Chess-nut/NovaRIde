@@ -32,6 +32,28 @@ and says which in its top bar:
 A fresh clone is a simulation build with no extra steps; nothing about Firebase
 can break a teammate who has never touched it.
 
+**Helmet telemetry comes from the Realtime Database.** On the Firestore path the
+console also reads the bench helmet's RTDB nodes (`deviceStatus`, `devices/{id}`
+with `safety` / `tracking` / `latest`, and the last 10 entries of
+`trackingLogs/{id}` and `gpsLogs/{id}`) from
+`https://novaride-7a68c-default-rtdb.asia-southeast1.firebasedatabase.app`.
+A second chip beside `FIRESTORE` reports that link — `RTDB LIVE`, `RTDB DENIED`
+or `RTDB OFFLINE`, with the error as its tooltip. **The RTDB security rules
+(`database.rules.json`) are not in this repository**, so the console cannot fix
+`RTDB DENIED` itself: a project owner must allow signed-in console operators to
+read those four paths in the Firebase console (Realtime Database → Rules).
+
+**The map** is OpenStreetMap data drawn as CARTO Dark Matter tiles via
+`flutter_map` — no API key, no billing (the project is on the Spark plan; Google
+Maps for the web would need a billing-enabled key). Offline, the markers still
+draw on a dark background and the map says the tiles are unavailable.
+
+**Helmet events.** The RTDB firmware never writes Firestore `alerts/`; crashes,
+rider checks and alcohol alerts it reports in RTDB appear on the board tagged
+*Unconfirmed — from helmet*, and a Super Admin or dispatcher can **Open as
+alert**. The dispatcher half of that needs the `isOpenedFromHelmet` rule in
+`firestore.rules` deployed (`firebase deploy --only firestore:rules`).
+
 **Operator accounts (Firestore path).** Passwords are held by their owners and
 are not in this repository, and the login page names no account. Tick
 *Remember my email on this browser* to skip retyping the address next time —

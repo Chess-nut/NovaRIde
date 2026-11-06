@@ -92,7 +92,7 @@ Concretely this means:
 | State container | `provider` / `riverpod` | `ChangeNotifier` + `InheritedNotifier` |
 | Navigation | `go_router` | `IndexedStack` + an index |
 | Charts | `fl_chart` | `CustomPainter` (`SimpleBarChart`, `WeeklyAlertsChart`) |
-| Maps | `google_maps_flutter` | `CustomPainter` (`FleetMapView`) |
+| Maps | `google_maps_flutter` | `flutter_map` + CARTO Dark Matter tiles (`FleetMapView`) — no key, no billing on the Spark plan |
 | Date formatting | `intl` | `lib/admin/console_format.dart` |
 | CSV export / file save | `csv` + `share_plus` | String builder + selectable dialog |
 
@@ -142,7 +142,8 @@ lib/admin/data/
 ├── firebase_admin_auth.dart         Firebase Auth + role resolution (§4)
 ├── fleet_bootstrap.dart             picks data source AND auth at startup (see below)
 ├── firestore_seed.dart              one-time seed, gated by --dart-define
-└── fleet_geography.dart             district table + map window
+├── rtdb_fleet_merge.dart            merges the helmet's RTDB nodes; fix history; helmet events
+└── fleet_geography.dart             district table, 3 km district rule, map home
 
 lib/admin/state/
 ├── admin_session.dart               AdminRole, AdminUser, parseAdminRole, AdminSessionScope
@@ -489,12 +490,12 @@ to treat the whole module with suspicion.
 
 | Area | How it is faked today | What the real implementation will be |
 |---|---|---|
-| **Helmet telemetry** | Simulation: `MockFleetRepository` jitters lat/lng/speed for every `riding` rider every 3s via `Timer.periodic`. Battery, alcohol and GPS-fix are fixed seed values that never change. Firestore: whatever is in `devices/`, which today is the seed's static readings. | ESP32 publishes MPU6050 + MQ-3 + NEO-6M readings into `devices/{helmetId}`; the console already subscribes to that collection. |
+| **Helmet telemetry** | Simulation: `MockFleetRepository` jitters lat/lng/speed for every `riding` rider every 3s via `Timer.periodic` and keeps every non-offline helmet's heartbeat fresh; tilt, vibration, MQ-3 raw/threshold and satellites are plausible seed values. **Firestore path: real** — every RTDB node the bench helmet writes (`deviceStatus`, `devices/{id}/safety` · `tracking` · `latest`, last 10 of `trackingLogs` / `gpsLogs`) merged by `rtdb_fleet_merge.dart`, plus Firestore `devices/` when present. | Done for the RTDB firmware. |
 | **Accident detection** | No detection at all. Alerts are *invented* on a random 10–14s timer, with a weighted type roll (18% crash, 16% SOS, 30% alcohol, 36% low battery) and a random rider and district. | On-helmet edge algorithm: MPU6050 magnitude threshold **intersected** with the YL-99 impact switch, so bumps and drops do not fire. The helmet raises the alert; the console only receives it. |
 | **GPS position** | Random walk inside a fixed lat/lng box over Metro Manila, clamped to the window. | NEO-6M coordinates. |
-| **Map** | `FleetMapView` paints a *stylized* basemap — a street grid, four avenues and a river drawn from hardcoded normalized coordinates. It is **not** Metro Manila's real road network. District centroids and the projection are real coordinates, so relative dot movement is geographically meaningful. No pan or zoom; the controls are decorative. | Google Maps Platform tiles with real markers. |
-| **Breadcrumb trail** | Last 20 simulated fixes per rider, capped in memory. | Trip history from stored telemetry. |
-| **Street addresses** | Hardcoded per district in `kFleetDistricts`; an alert borrows its district's address string. | Reverse geocode of the real coordinates. |
+| **Map** | **Real.** `FleetMapView` is `flutter_map` over CARTO Dark Matter tiles (OpenStreetMap data): pan, wheel/pinch zoom, +/−, Fit all, Recentre, clickable helmet and alert markers with popups, layer toggles, follow mode. The camera fits once on first load and never moves on its own after that. | Done. |
+| **Breadcrumb trail** | Simulation: the session's fixes. Firestore path: seeded from the helmet's `trackingLogs` + `gpsLogs`, merged with live fixes, sorted by fix time, capped at 30. | Done. |
+| **Street addresses** | Simulation alerts carry seed street names. A live alert is never given one: it shows its own `address` if it has one, else "Near *district*" within 3 km of a centre, else its coordinates, else the helmet's "Last known position · *age*", else "Location unavailable". | Reverse geocode of the real coordinates. |
 | **Authentication** | Simulation only: `LocalAdminAuth` compares against three demo accounts in `admin_session.dart`, labelled as such. **Firestore: real** — Firebase Auth email/password, role from a custom claim or `admins/{uid}`, unprovisioned accounts denied (§4). | Done on the Firestore path. Remaining: MFA, and rider/firmware identities. |
 | **Responder dispatch** | Choosing a `ResponderType` records an audit entry. **Nobody is contacted.** | Integration with emergency services / the rider's emergency contacts. |
 | **Persistence** | Simulation: none — state is in memory and lost on refresh or logout. Firestore: riders (register, edit, deactivate) and their helmet pairing, alerts and the acknowledge → dispatch → resolve audit trail persist across refresh and between operators, behind Auth-backed rules (FIRESTORE_SCHEMA.md §4). Roster writes are transactions: a refused or offline write is rolled back on screen and reported, never left looking saved. | Done on the Firestore path. |
@@ -520,8 +521,10 @@ to treat the whole module with suspicion.
 - On the simulation there is no persistence, so a refresh resets the demo.
 - Battery, alcohol level and GPS-fix are static per rider; only position and
   speed move.
-- The map cannot pan or zoom, and "Locate on map" highlights rather than
-  re-centres (the window is fixed).
+- Rider status on screen is derived from the helmet (offline after 2 min of
+  silence, riding at ≥ 5 km/h with a current fix, emergency on an active
+  crash/SOS alert or the helmet's own crash state) and is never written back;
+  `riders/{id}.status` still drives the alert workflow's stand-down rule.
 - Export is copy-from-dialog only — no file download, by design, to avoid a
   plugin dependency.
 - Rider deactivation is reversible from the roster but there is no audit
@@ -555,6 +558,11 @@ The controller exposes `debugEmitAlert()` (`@visibleForTesting`) so tests can
 step the simulation deterministically; calling the timer path directly would
 reschedule and orphan the pending timer.
 
-Note that the console never settles — the map pulse animation and two
-simulation timers run continuously — so tests use explicit `pump(Duration)`
-calls rather than `pumpAndSettle()`.
+Note that the simulation never settles — two simulation timers run
+continuously, and the map's emergency pulse runs while an emergency marker is
+on screen — so tests use explicit `pump(Duration)` calls rather than
+`pumpAndSettle()`. The reverse also holds: a board with no emergency is idle,
+and a bare `pump()` draws only an already-scheduled frame, so after pushing a
+stream event a test pumps `Duration.zero` to deliver it first. The map builds
+no tile layer under `flutter test` (network images fail there);
+`test/fleet_map_view_test.dart` covers markers, popups and the camera.

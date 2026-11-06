@@ -121,8 +121,12 @@ void main() {
         reason: 'nothing has arrived yet',
       );
 
+      // pump(Duration.zero), not pump(): the board is idle — no animation
+      // runs on a map without emergencies — and a bare pump() draws only an
+      // already-scheduled frame. The zero elapse delivers the stream event
+      // first, which schedules the frame that shows it.
       repo.connection.add(FleetConnection.connected);
-      await tester.pump();
+      await tester.pump(Duration.zero);
       expect(find.text('LIVE'), findsOneWidget);
 
       repo.connection.add(
@@ -131,7 +135,7 @@ void main() {
           'Showing cached data',
         ),
       );
-      await tester.pump();
+      await tester.pump(Duration.zero);
       expect(find.text('OFFLINE'), findsOneWidget);
 
       await _tearDownTree(tester);

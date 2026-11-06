@@ -67,11 +67,21 @@ void main() {
   });
 
   group('alertsByArea', () {
-    test('every alert lands in exactly one district', () {
+    test('every alert lands in exactly one bucket', () {
       final fleet = _controller();
 
       expect(_sum(fleet.alertsByArea.values), fleet.alerts.length);
-      expect(fleet.alertsByArea.keys.length, kFleetDistricts.length);
+      // Every district, plus "Outside coverage".
+      expect(fleet.alertsByArea.keys.length, kFleetDistricts.length + 1);
+      expect(fleet.alertsByArea.keys, contains(kOutsideCoverage));
+    });
+
+    test('a district only within 3 km of its centre', () {
+      expect(districtWithin(14.5547, 121.0244)?.name, 'Makati');
+      expect(districtWithin(14.6100, 121.0050)?.name, 'Sampaloc'); // ~1 km
+      // Far outside Metro Manila: no district, not the nearest one.
+      expect(districtWithin(14.304159, 121.123368), isNull);
+      expect(districtWithin(0, 0), isNull);
     });
 
     test('stays balanced as the simulation spawns alerts', () {

@@ -170,6 +170,12 @@ void main() {
               reason: 'the empty state is what this test is about',
             );
           }
+          if (tab == 'Dashboard') {
+            // Live data carries no "mock" or "simulated" caption.
+            expect(find.text('0 helmets'), findsOneWidget);
+            expect(find.textContaining('Mock basemap'), findsNothing);
+            expect(find.textContaining('Simulated GPS'), findsNothing);
+          }
         },
       );
 

@@ -21,16 +21,82 @@ import 'package:novaride/shared/models/models.dart';
 /// consistent in the same call that mutated it, which is what the widget
 /// and controller tests rely on — and it costs nothing here, since there is
 /// no I/O to wait on.
-class MockFleetRepository implements FleetRepository {
+///
+/// It is a [HelmetFeed] too, so the simulation exercises the same screens
+/// as the live console: helmets carry the full set of readings the RTDB
+/// firmware sends (tilt, vibration, alcohol against a threshold, satellites
+/// — no battery is ever invented for the live path, but the simulation's
+/// seed has one), and an occasional "Unconfirmed — from helmet" event is
+/// raised for an operator to open as an alert. There is no Realtime
+/// Database, so the RTDB link reports "not configured" and the fix history
+/// is whatever the session has seen.
+class MockFleetRepository implements FleetRepository, HelmetFeed {
   MockFleetRepository({bool simulate = true}) {
     _riders = List.of(MockData.riders);
-    _telemetry = List.of(MockData.telemetry);
+    _telemetry = [for (final t in MockData.telemetry) _enrich(t)];
     _alerts = List.of(MockData.alerts);
     if (simulate) {
       _jitterTimer = Timer.periodic(_jitterInterval, (_) => _stepTelemetry());
       _scheduleNextAlert();
     }
   }
+
+  /// The seed's timestamps are relative to when [MockData] was first read;
+  /// a simulation started later re-bases them on its own start, so a
+  /// helmet seeded "4 s ago" is not already two minutes stale.
+  HelmetTelemetry _enrich(HelmetTelemetry seed) {
+    final shift = DateTime.now().difference(MockData.seededAt);
+    final seen = seed.lastUpdate?.add(shift);
+    final helmetId = _riders
+        .where((r) => r.id == seed.riderId)
+        .map((r) => r.helmetId)
+        .firstOrNull;
+    final raw = 120 + _rng.nextInt(220);
+    return HelmetTelemetry(
+      riderId: seed.riderId,
+      deviceId: helmetId,
+      speedKmh: seed.speedKmh,
+      alcoholDetected: seed.alcoholDetected,
+      alcoholRawIndex: raw.toDouble(),
+      mq3Raw: raw,
+      mq3Voltage: raw / 4095 * 3.3,
+      alcoholThreshold: _alcoholThreshold,
+      accelMagnitudeG: 1 + _signed(0.04),
+      accelerometerReady: true,
+      accelXG: _signed(0.05),
+      accelYG: _signed(0.05),
+      accelZG: 1 + _signed(0.03),
+      batteryPct: seed.batteryPct,
+      gpsFix: seed.gpsFix,
+      lat: seed.lat,
+      lng: seed.lng,
+      lastUpdate: seen,
+      online: true,
+      ip: '192.168.1.${20 + _rng.nextInt(200)}',
+      cellularDataReady: true,
+      gpsNmeaChars: 40000 + _rng.nextInt(20000),
+      gpsValidSentences: 900 + _rng.nextInt(400),
+      sw420Active: (seed.speedKmh ?? 0) > 0,
+      tiltDegrees: 2 + _rng.nextDouble() * 6,
+      orientation: 'Upright',
+      safetyEvent: 'Monitoring',
+      satellites: 6 + _rng.nextInt(5),
+      altitudeM: 18 + _rng.nextDouble() * 30,
+      gpsAgeMs: 400 + _rng.nextInt(1200),
+      fixAt: seen,
+      positionSource: seed.lat == null ? null : PositionSource.simulation,
+    );
+  }
+
+  /// The simulated helmets' configured alcohol threshold, in raw counts.
+  static const double _alcoholThreshold = 900;
+
+  /// Where simulated helmets may drift: a box around the coverage area, so
+  /// a long demo never walks a dot into Manila Bay.
+  static const _latMin = 14.53;
+  static const _latMax = 14.75;
+  static const _lngMin = 120.95;
+  static const _lngMax = 121.12;
 
   static const _jitterInterval = Duration(seconds: 3);
 
@@ -53,6 +119,10 @@ class MockFleetRepository implements FleetRepository {
     sync: true,
   );
   final _alertsCtrl = StreamController<List<AlertEvent>>.broadcast(sync: true);
+  final _helmetEventsCtrl = StreamController<List<HelmetEvent>>.broadcast(
+    sync: true,
+  );
+  final List<HelmetEvent> _helmetEvents = [];
 
   Timer? _jitterTimer;
   Timer? _alertTimer;
@@ -80,6 +150,22 @@ class MockFleetRepository implements FleetRepository {
   Stream<FleetConnection> watchConnection() =>
       _replaying(() => FleetConnection.connected, const Stream.empty());
 
+  /// No Realtime Database behind the simulation.
+  @override
+  Stream<RtdbLink> watchRtdbLink() =>
+      _replaying(() => RtdbLink.notConfigured, const Stream.empty());
+
+  /// No stored history: the controller builds trails from the session.
+  @override
+  Stream<Map<String, List<HelmetFix>>> watchFixHistory() =>
+      _replaying(() => const <String, List<HelmetFix>>{}, const Stream.empty());
+
+  @override
+  Stream<List<HelmetEvent>> watchHelmetEvents() => _replaying(
+    () => List.unmodifiable(_helmetEvents),
+    _helmetEventsCtrl.stream,
+  );
+
   /// Hands a new listener the current value during `listen()`, then forwards
   /// every later emission. Both synchronous, see the class comment.
   Stream<T> _replaying<T>(T Function() current, Stream<T> updates) =>
@@ -100,19 +186,22 @@ class MockFleetRepository implements FleetRepository {
     _riders.add(rider);
 
     final district = kFleetDistricts[_rng.nextInt(kFleetDistricts.length)];
+    final now = DateTime.now();
     _telemetry.add(
-      HelmetTelemetry(
-        riderId: rider.id,
-        speedKmh: rider.status == RiderStatus.riding
-            ? 24 + _rng.nextDouble() * 20
-            : 0,
-        alcoholDetected: null,
-        batteryPct: 80 + _rng.nextInt(20),
-        gpsFix: true,
-        lat: district.lat + _signed(0.006),
-        lng: district.lng + _signed(0.006),
-        lastUpdate: DateTime.now(),
-      ),
+      _enrich(
+        HelmetTelemetry(
+          riderId: rider.id,
+          speedKmh: rider.status == RiderStatus.riding
+              ? 24 + _rng.nextDouble() * 20
+              : 0,
+          alcoholDetected: null,
+          batteryPct: 80 + _rng.nextInt(20),
+          gpsFix: true,
+          lat: district.lat + _signed(0.006),
+          lng: district.lng + _signed(0.006),
+          lastUpdate: now,
+        ),
+      ).copyWith(lastUpdate: now, fixAt: now),
     );
 
     _publishRiders();
@@ -170,34 +259,125 @@ class MockFleetRepository implements FleetRepository {
     _publishAlerts();
   }
 
+  /// Creates the alert under the event's own id, as Firestore would, and
+  /// drops the event: in the simulation, opened means handled.
+  @override
+  Future<String> openHelmetEventAsAlert(
+    HelmetEvent event, {
+    required String actorName,
+  }) async {
+    final riderId = event.riderId;
+    if (riderId == null) {
+      throw FleetWriteException(
+        'Helmet ${event.deviceId} is not paired to a rider, and an alert '
+        'needs one.',
+      );
+    }
+    if (!_alerts.any((a) => a.id == event.id)) {
+      final district = event.hasPosition
+          ? districtWithin(event.lat!, event.lng!)
+          : null;
+      _alerts.insert(
+        0,
+        AlertEvent(
+          id: event.id,
+          riderId: riderId,
+          riderName: event.riderName ?? _riderFor(riderId)?.fullName ?? '',
+          type: event.kind.alertType,
+          lat: event.lat,
+          lng: event.lng,
+          address: district?.address ?? '',
+          deviceId: event.deviceId,
+          timestamp: DateTime.now(),
+          status: AlertStatus.open,
+        ),
+      );
+      if (_alerts.length > maxAlerts) _alerts.removeLast();
+    }
+    _helmetEvents.removeWhere((e) => e.id == event.id);
+    _publishAlerts();
+    _helmetEventsCtrl.add(List.unmodifiable(_helmetEvents));
+    return event.id;
+  }
+
   // ------------------------------------------------------------ simulation
 
-  /// Nudges every riding helmet a little so the map reads as live.
+  /// Nudges every riding helmet a little so the map reads as live, and
+  /// keeps every helmet that is not switched off sending its heartbeat —
+  /// the console calls a helmet silent for two minutes offline.
   void _stepTelemetry() {
     final now = DateTime.now();
 
     for (var i = 0; i < _telemetry.length; i++) {
       final t = _telemetry[i];
       final riderId = t.riderId;
+      if (riderId == null) continue;
+      final status = _riderFor(riderId)?.status;
+      if (status == null || status == RiderStatus.offline) continue;
+
       final (lat, lng, speed) = (t.lat, t.lng, t.speedKmh);
-      if (riderId == null || lat == null || lng == null || speed == null) {
+      if (status != RiderStatus.riding ||
+          lat == null ||
+          lng == null ||
+          speed == null) {
+        // Standing still with a lock: the fix is as fresh as the heartbeat.
+        _telemetry[i] = t.copyWith(
+          lastUpdate: now,
+          fixAt: lat == null ? null : now,
+        );
         continue;
       }
-      if (_riderFor(riderId)?.status != RiderStatus.riding) continue;
 
       _telemetry[i] = t.copyWith(
-        lat: (lat + _signed(_latJitter))
-            .clamp(kFleetLatMin, kFleetLatMax)
-            .toDouble(),
-        lng: (lng + _signed(_lngJitter))
-            .clamp(kFleetLngMin, kFleetLngMax)
-            .toDouble(),
+        lat: (lat + _signed(_latJitter)).clamp(_latMin, _latMax).toDouble(),
+        lng: (lng + _signed(_lngJitter)).clamp(_lngMin, _lngMax).toDouble(),
         speedKmh: (speed + _signed(_speedJitter)).clamp(8.0, 78.0).toDouble(),
+        tiltDegrees: 2 + _rng.nextDouble() * 8,
+        sw420Active: true,
         lastUpdate: now,
+        fixAt: now,
       );
     }
 
     _publishTelemetry();
+  }
+
+  /// One "Unconfirmed — from helmet" event for a helmet that is reporting,
+  /// as the RTDB firmware would raise it: a rider check or an alcohol
+  /// threshold crossing. Exposed for tests, like [debugEmitAlert].
+  @visibleForTesting
+  void debugEmitHelmetEvent() => _emitHelmetEvent();
+
+  void _emitHelmetEvent() {
+    final candidates = [
+      for (final t in _telemetry)
+        if (t.riderId != null &&
+            t.deviceId != null &&
+            _riderFor(t.riderId!)?.status != RiderStatus.offline)
+          t,
+    ];
+    if (candidates.isEmpty) return;
+    final t = candidates[_rng.nextInt(candidates.length)];
+    final now = DateTime.now();
+    final alcohol = _rng.nextBool();
+    _helmetEvents.insert(
+      0,
+      HelmetEvent(
+        id: '${t.deviceId}_${now.millisecondsSinceEpoch}',
+        deviceId: t.deviceId!,
+        kind: alcohol ? HelmetEventKind.alcohol : HelmetEventKind.riderCheck,
+        at: now,
+        detail: alcohol
+            ? 'Alcohol threshold exceeded · raw 934 · threshold 900'
+            : 'Rider check alert: posture unchanged',
+        riderId: t.riderId,
+        riderName: _riderFor(t.riderId!)?.fullName,
+        lat: t.lat,
+        lng: t.lng,
+      ),
+    );
+    if (_helmetEvents.length > 10) _helmetEvents.removeLast();
+    _helmetEventsCtrl.add(List.unmodifiable(_helmetEvents));
   }
 
   /// Alerts arrive on an irregular 10–14s cadence — a fixed beat reads as fake.
@@ -206,8 +386,11 @@ class MockFleetRepository implements FleetRepository {
     _alertTimer = Timer(delay, _spawnAlert);
   }
 
+  /// An alert every beat; about one beat in six also brings a helmet-only
+  /// event for an operator to open.
   void _spawnAlert() {
     _emitAlert();
+    if (_rng.nextDouble() < 0.16) _emitHelmetEvent();
     _scheduleNextAlert();
   }
 
@@ -329,6 +512,7 @@ class MockFleetRepository implements FleetRepository {
     _ridersCtrl.close();
     _telemetryCtrl.close();
     _alertsCtrl.close();
+    _helmetEventsCtrl.close();
   }
 }
 

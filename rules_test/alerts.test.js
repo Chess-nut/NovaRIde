@@ -87,6 +87,73 @@ describe('alerts/ — access', () => {
   });
 });
 
+// "Open as alert" on an event the RTDB firmware reported. The console
+// writes it in a transaction under `{deviceId}_{helmetEventAt}`, reading
+// the id first, so the read of a missing alert must succeed too.
+describe('alerts/ — opened from a helmet event', () => {
+  const at = 1793352323540;
+  const opened = (overrides = {}) => ({
+    riderId: 'R-001', deviceId: 'tracker-001', type: 'crash', severity: 'high',
+    status: 'open', timestamp: serverTimestamp(),
+    location: new GeoPoint(14.304159, 121.123368),
+    source: 'helmet-rtdb', helmetEventAt: at, helmetEventKind: 'emergencyUpload',
+    helmetDetail: 'suspected-crash', openedBy: 'Dispatcher',
+    ...overrides,
+  });
+  const id = `tracker-001_${at}`;
+
+  it('lets a dispatcher read the missing id, then create it', async () => {
+    const db = asDispatcher(env);
+    await assertSucceeds(getDoc(doc(db, 'alerts', id)));
+    await assertSucceeds(setDoc(doc(db, 'alerts', id), opened()));
+  });
+
+  it('lets a Super Admin open one too, and with no position', async () => {
+    const alert = opened();
+    delete alert.location;
+    await assertSucceeds(setDoc(doc(asSuperAdmin(env), 'alerts', id), alert));
+  });
+
+  it('refuses a dispatcher under any other id', async () => {
+    const db = asDispatcher(env);
+    await refused(setDoc(doc(db, 'alerts', 'A-x'), opened()), 'random id');
+    await refused(
+      setDoc(doc(db, 'alerts', `tracker-001_${at + 1}`), opened()),
+      'id off by a millisecond',
+    );
+    await refused(
+      setDoc(doc(db, 'alerts', `tracker-002_${at}`), opened()),
+      'another helmet',
+    );
+  });
+
+  it('holds a dispatcher to the helmet contract', async () => {
+    const db = asDispatcher(env);
+    const cases = {
+      'not marked as from the helmet': opened({ source: 'console' }),
+      'event time as a string': opened({ helmetEventAt: `${at}` }),
+      'operator clock': opened({ timestamp: Timestamp.now() }),
+      'already acknowledged': opened({ acknowledgedAt: serverTimestamp() }),
+      'pending is for the helmet only': opened({ status: 'pending', type: 'sos' }),
+      'no rider': opened({ riderId: '' }),
+      'capitalised severity': opened({ severity: 'High' }),
+    };
+    for (const [label, alert] of Object.entries(cases)) {
+      await refused(setDoc(doc(db, 'alerts', id), alert), label);
+    }
+  });
+
+  it('refuses a viewer, and a dispatcher overwriting an opened alert', async () => {
+    await assertFails(setDoc(doc(asViewer(env), 'alerts', id), opened()));
+    await assertSucceeds(setDoc(doc(asDispatcher(env), 'alerts', id), opened()));
+    // A second console's set on the existing document is an update, and
+    // an update may change only the lifecycle fields.
+    await assertFails(
+      setDoc(doc(asDispatcher(env), 'alerts', id), opened({ openedBy: 'Other' })),
+    );
+  });
+});
+
 describe('alerts/ — what the helmet must send', () => {
   const raise = (alert) => setDoc(doc(asHelmetService(env), 'alerts', 'A-helmet'), alert);
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:novaride/admin/screens/admin_shell.dart';
 import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/admin/widgets/dashboard/alert_priority_bar_panel.dart';
@@ -126,14 +127,28 @@ class DashboardPage extends StatelessWidget {
   Widget _areaPanel(FleetController fleet) =>
       AlertsByAreaBarPanel(countsByArea: fleet.alertsByArea);
 
-  Widget _mapPanel(FleetController fleet) => LiveFleetMapPanel(
-    riders: fleet.riders,
-    telemetry: fleet.telemetry,
-    lastSync: fleet.lastSync,
+  /// Interactive like Rider Monitoring's: "View rider" and "View on Alerts
+  /// page" in its popups switch tabs through the shell.
+  Widget _mapPanel(FleetController fleet) => Builder(
+    builder: (context) {
+      final nav = AdminNavScope.maybeOf(context);
+      return LiveFleetMapPanel(
+        riders: fleet.riders,
+        telemetry: fleet.telemetry,
+        lastSync: fleet.lastSync,
+        alerts: fleet.alerts,
+        statusOf: fleet.effectiveStatusOf,
+        source: fleet.source,
+        onViewRider: nav?.openRider,
+        onAlertTap: nav == null ? null : (a) => nav.openAlert(a.id),
+      );
+    },
   );
 
-  Widget _feedPanel(FleetController fleet) =>
-      RecentAlertsFeedPanel(alerts: fleet.alerts);
+  Widget _feedPanel(FleetController fleet) => RecentAlertsFeedPanel(
+    alerts: fleet.alerts,
+    helmetEvents: fleet.helmetEvents,
+  );
 
   Widget _priorityPanel(FleetController fleet) =>
       AlertPriorityBarPanel(countsByPriority: fleet.alertsByPriority);

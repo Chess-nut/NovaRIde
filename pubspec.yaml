@@ -51,6 +51,8 @@ dependencies:
   # Guardian app: "Call" opens the phone's dialer (tel:) and "Open in
   # Google Maps" opens a map link. Nothing else in the app launches URLs.
   url_launcher: ^6.3.1
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
 
 dev_dependencies:
   flutter_test:

@@ -24,17 +24,32 @@ class AdminNavScope extends InheritedWidget {
   /// "View alerts" row action.
   final void Function(String query) openAlertsForRider;
 
+  /// Opens the Alerts tab with one alert selected — the map's "View on
+  /// Alerts page".
+  final void Function(String alertId) openAlert;
+
+  /// Switches to Rider Monitoring with [riderId] selected — the map's
+  /// "View rider". Selection lives on the controller, so this is the tab
+  /// switch plus `fleet.selectRider`.
+  final void Function(String riderId) openRider;
+
   const AdminNavScope({
     super.key,
     required this.openAlertsForRider,
+    required this.openAlert,
+    required this.openRider,
     required super.child,
   });
 
   static AdminNavScope of(BuildContext context) {
-    final scope = context.dependOnInheritedWidgetOfExactType<AdminNavScope>();
+    final scope = maybeOf(context);
     assert(scope != null, 'AdminNavScope.of() found no AdminShell ancestor.');
     return scope!;
   }
+
+  /// Null outside the shell — a page pumped on its own in a test.
+  static AdminNavScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AdminNavScope>();
 
   @override
   bool updateShouldNotify(AdminNavScope oldWidget) => false;
@@ -160,6 +175,7 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
   /// increments on every request so asking twice for the same rider still
   /// re-applies the filter.
   String? _alertsPrefill;
+  String? _alertsPrefillId;
   int _alertsPrefillToken = 0;
 
   /// Tabs this role can reach. User Management drops out entirely for
@@ -183,6 +199,7 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
       const AdminNavItem(Icons.notifications_none, 'Alerts'),
       AdminAlertsPage(
         prefillQuery: _alertsPrefill,
+        prefillAlertId: _alertsPrefillId,
         prefillToken: _alertsPrefillToken,
       ),
     ),
@@ -198,9 +215,30 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
 
     setState(() {
       _alertsPrefill = query;
+      _alertsPrefillId = null;
       _alertsPrefillToken++;
       _selectedIndex = index;
     });
+  }
+
+  void _openAlert(String alertId) {
+    final index = _tabs.indexWhere((t) => t.navItem.label == 'Alerts');
+    if (index == -1) return;
+    setState(() {
+      _alertsPrefill = null;
+      _alertsPrefillId = alertId;
+      _alertsPrefillToken++;
+      _selectedIndex = index;
+    });
+  }
+
+  void _openRider(String riderId) {
+    final index = _tabs.indexWhere(
+      (t) => t.navItem.label == 'Rider Monitoring',
+    );
+    if (index == -1) return;
+    FleetScope.of(context).selectRider(riderId);
+    setState(() => _selectedIndex = index);
   }
 
   @override
@@ -214,6 +252,8 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
 
     return AdminNavScope(
       openAlertsForRider: _openAlertsForRider,
+      openAlert: _openAlert,
+      openRider: _openRider,
       child: Scaffold(
         backgroundColor: NovaColors.background,
         body: Row(
@@ -272,6 +312,7 @@ class _AdminShellFrameState extends State<_AdminShellFrame> {
           const _SourceChip(),
           const SizedBox(width: 10),
           const _ConnectionPill(),
+          const _RtdbChip(),
           const SizedBox(width: 16),
           _buildAdminChip(),
         ],
@@ -420,6 +461,67 @@ class _SourceChip extends StatelessWidget {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Realtime Database link health: `RTDB LIVE`, `RTDB DENIED` or
+/// `RTDB OFFLINE`, beside the Firestore pill. The helmet on the bench writes
+/// to RTDB, so this is the chip that says whether the map and the readings
+/// are moving; the error is its tooltip. Hidden when there is no RTDB at
+/// all (the simulation).
+class _RtdbChip extends StatelessWidget {
+  const _RtdbChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final link = FleetScope.of(context).rtdbLink;
+    if (link.state == RtdbLinkState.notConfigured) {
+      return const SizedBox.shrink();
+    }
+    final color = switch (link.state) {
+      RtdbLinkState.live => NovaColors.green,
+      RtdbLinkState.connecting => NovaColors.amber,
+      RtdbLinkState.denied => NovaColors.red,
+      RtdbLinkState.offline => NovaColors.red,
+      RtdbLinkState.notConfigured => NovaColors.secondaryText,
+    };
+    final compact = MediaQuery.sizeOf(context).width < 1000;
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 10),
+      child: Tooltip(
+        message: link.message ?? 'Connecting to Realtime Database…',
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 8 : 12,
+            vertical: 6,
+          ),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.sensors, color: color, size: 12),
+              if (!compact) ...[
+                const SizedBox(width: 6),
+                Text(
+                  link.state.label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

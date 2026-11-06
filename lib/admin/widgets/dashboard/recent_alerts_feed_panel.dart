@@ -1,14 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:novaride/admin/widgets/dashboard/dash_panel.dart';
+import 'package:novaride/admin/widgets/helmet_event_tile.dart';
 import 'package:novaride/shared/models/models.dart';
 import 'package:novaride/shared/theme.dart';
 
 /// Newest-first alert ticker. The type is the headline — an operator scanning
 /// this column should register "CRASH DETECTED" before anything else.
+///
+/// Helmet-reported events that no alert covers yet are interleaved by time
+/// and tagged "Unconfirmed — from helmet"; they are opened as alerts from
+/// the Alerts page, not here.
 class RecentAlertsFeedPanel extends StatelessWidget {
   final List<AlertEvent> alerts;
+  final List<HelmetEvent> helmetEvents;
 
-  const RecentAlertsFeedPanel({super.key, required this.alerts});
+  const RecentAlertsFeedPanel({
+    super.key,
+    required this.alerts,
+    this.helmetEvents = const [],
+  });
 
   static Color colorFor(AlertType type) => switch (type) {
     AlertType.crash => NovaColors.red,
@@ -27,10 +37,17 @@ class RecentAlertsFeedPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // One timeline: alerts by their timestamp, helmet events by the time
+    // the helmet wrote them.
+    final entries = <(DateTime, Object)>[
+      for (final a in alerts) (a.timestamp, a),
+      for (final e in helmetEvents) (e.at, e),
+    ]..sort((a, b) => b.$1.compareTo(a.$1));
+
     return DashPanel(
       title: 'Recent alert',
       contentPadding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
-      child: alerts.isEmpty
+      child: entries.isEmpty
           ? const Center(
               child: Text(
                 'No alerts on the board',
@@ -39,16 +56,24 @@ class RecentAlertsFeedPanel extends StatelessWidget {
             )
           : ListView.separated(
               padding: const EdgeInsets.only(top: 4),
-              itemCount: alerts.length,
+              itemCount: entries.length,
               separatorBuilder: (_, _) =>
                   const Divider(height: 1, color: NovaColors.cardBorder),
-              itemBuilder: (context, index) => _FeedEntry(
-                // Keyed by id so only a genuinely new alert plays the entry
-                // animation — the rest just shuffle down.
-                key: ValueKey(alerts[index].id),
-                alert: alerts[index],
-                animateIn: index == 0,
-              ),
+              itemBuilder: (context, index) => switch (entries[index].$2) {
+                final AlertEvent alert => _FeedEntry(
+                  // Keyed by id so only a genuinely new alert plays the
+                  // entry animation — the rest just shuffle down.
+                  key: ValueKey(alert.id),
+                  alert: alert,
+                  animateIn: index == 0,
+                ),
+                final HelmetEvent event => HelmetEventTile(
+                  key: ValueKey('event-${event.id}'),
+                  event: event,
+                  compact: true,
+                ),
+                _ => const SizedBox.shrink(),
+              },
             ),
     );
   }

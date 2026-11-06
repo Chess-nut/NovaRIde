@@ -44,6 +44,38 @@ String formatDate(DateTime date) {
   return '${date.day} ${months[date.month - 1]} ${date.year}';
 }
 
+/// "12 s ago" / "4 min ago" / "3 h ago" / "2 d ago". A time slightly in the
+/// future — the helmet's server clock ahead of this machine's — is "just
+/// now", not a negative age.
+String formatAgo(DateTime t, {DateTime? now}) {
+  final diff = (now ?? DateTime.now()).difference(t);
+  if (diff.inSeconds < 5) return 'just now';
+  if (diff.inSeconds < 60) return '${diff.inSeconds} s ago';
+  if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+  if (diff.inHours < 48) return '${diff.inHours} h ago';
+  return '${diff.inDays} d ago';
+}
+
+/// The absolute time in Asia/Manila, for tooltips: "6 Nov 2026, 2:28:04 PM
+/// PHT". Manila is UTC+8 with no daylight saving, so a fixed offset is the
+/// whole time-zone rule — no tz database needed, whatever zone the
+/// operator's machine is set to.
+String formatManila(DateTime t) {
+  final manila = t.toUtc().add(const Duration(hours: 8));
+  final wallClock = DateTime(
+    manila.year,
+    manila.month,
+    manila.day,
+    manila.hour,
+    manila.minute,
+    manila.second,
+  );
+  return '${formatDate(wallClock)}, ${formatClock(wallClock)} PHT';
+}
+
+/// [formatAgo] or a dash.
+String formatAgoOrDash(DateTime? t) => t == null ? '—' : formatAgo(t);
+
 /// ISO-8601 without the sub-second noise — used by the CSV export.
 String formatIso(DateTime? t) =>
     t == null ? '' : t.toIso8601String().split('.').first;

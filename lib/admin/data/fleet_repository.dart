@@ -31,6 +31,75 @@ class FleetConnection {
   bool get isConnected => state == FleetConnectionState.connected;
 }
 
+/// Health of the Realtime Database link, reported separately from
+/// Firestore's: the helmet on the bench writes to RTDB, and a refused or
+/// unreachable RTDB means the map and the readings stop updating while
+/// riders and alerts (Firestore) look perfectly healthy.
+enum RtdbLinkState {
+  /// Simulation, or a console built without a database.
+  notConfigured,
+  connecting,
+  live,
+
+  /// A listener was refused (`permission-denied`). The RTDB security rules
+  /// are not in this repository (`database.rules.json` is not committed),
+  /// so the console cannot fix this itself — a project owner must allow
+  /// signed-in console operators to read `deviceStatus`, `devices`,
+  /// `trackingLogs` and `gpsLogs`.
+  denied,
+  offline,
+}
+
+class RtdbLink {
+  final RtdbLinkState state;
+
+  /// The error, verbatim enough to act on, for the chip's tooltip.
+  final String? message;
+
+  const RtdbLink(this.state, [this.message]);
+
+  static const notConfigured = RtdbLink(RtdbLinkState.notConfigured);
+  static const connecting = RtdbLink(RtdbLinkState.connecting);
+  static const live = RtdbLink(RtdbLinkState.live);
+}
+
+extension RtdbLinkLabel on RtdbLinkState {
+  String get label => switch (this) {
+    RtdbLinkState.notConfigured => 'RTDB —',
+    RtdbLinkState.connecting => 'RTDB …',
+    RtdbLinkState.live => 'RTDB LIVE',
+    RtdbLinkState.denied => 'RTDB DENIED',
+    RtdbLinkState.offline => 'RTDB OFFLINE',
+  };
+}
+
+/// What a repository that reads the helmets themselves can add on top of
+/// [FleetRepository]: fix history, events the helmet reported that no
+/// Firestore alert covers, and its own link health.
+///
+/// Optional, so that a store with no helmet feed — and every test double
+/// of [FleetRepository] — needs none of it. `FleetController` checks for it
+/// with `is` and treats its absence as "no history, no helmet events, no
+/// RTDB". Both shipped repositories implement it.
+abstract interface class HelmetFeed {
+  Stream<RtdbLink> watchRtdbLink();
+
+  /// Real fixes per device id (as the helmet writes its id), oldest first.
+  Stream<Map<String, List<HelmetFix>>> watchFixHistory();
+
+  /// Helmet-reported events, newest first.
+  Stream<List<HelmetEvent>> watchHelmetEvents();
+
+  /// Creates the Firestore alert for [event] under the event's own id, in
+  /// a transaction, and resolves to that id. Opening an event that another
+  /// console already opened is not an error: it resolves to the same id.
+  /// Throws [FleetWriteException] with an operator-readable message.
+  Future<String> openHelmetEventAsAlert(
+    HelmetEvent event, {
+    required String actorName,
+  });
+}
+
 /// A write the store refused or could not complete, carrying a message
 /// written for the operator at the keyboard.
 ///

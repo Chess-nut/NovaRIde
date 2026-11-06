@@ -7,6 +7,9 @@ class MockData {
   const MockData._();
 
   /// Timestamps are built relative to app start so "3m ago" stays sensible.
+  /// Public so the simulation can re-base them when it starts later.
+  static DateTime get seededAt => _now;
+
   static final DateTime _now = DateTime.now();
 
   static final List<Rider> riders = [

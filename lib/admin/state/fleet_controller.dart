@@ -4,21 +4,35 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:novaride/admin/data/fleet_geography.dart';
 import 'package:novaride/admin/data/fleet_repository.dart';
+import 'package:novaride/admin/data/rtdb_fleet_merge.dart'
+    show kFixCurrentFor, lastFixAtOrBefore;
 import 'package:novaride/shared/models/models.dart';
 
 export 'package:novaride/admin/data/fleet_geography.dart';
 export 'package:novaride/admin/data/fleet_repository.dart'
-    show FleetSource, FleetSourceLabel, FleetConnection, FleetConnectionState;
+    show
+        FleetSource,
+        FleetSourceLabel,
+        FleetConnection,
+        FleetConnectionState,
+        RtdbLink,
+        RtdbLinkState,
+        RtdbLinkLabel;
 
 /// One historical GPS fix in a rider's breadcrumb trail.
 ///
-/// Deliberately not a full [HelmetTelemetry] — the trail only needs geometry,
-/// and keeping twenty full telemetry records per rider would be wasteful.
+/// Deliberately not a full [HelmetTelemetry] — the trail only needs geometry
+/// and time, and keeping thirty full telemetry records per rider would be
+/// wasteful.
 class TrailPoint {
   final double lat;
   final double lng;
 
-  const TrailPoint(this.lat, this.lng);
+  /// When the fix was taken (server clock). Null only for a point whose
+  /// source sent no time, which then sorts first.
+  final DateTime? at;
+
+  const TrailPoint(this.lat, this.lng, [this.at]);
 }
 
 /// Dispatch priority buckets for the "alert priority" chart.
@@ -68,19 +82,71 @@ class FleetController extends ChangeNotifier {
       onError: (Object e) => debugPrint('FleetController alerts: $e'),
     );
     _connectionSub = _repository.watchConnection().listen(_onConnection);
+
+    final feed = _feed;
+    if (feed != null) {
+      _rtdbLinkSub = feed.watchRtdbLink().listen((link) {
+        _rtdbLink = link;
+        notifyListeners();
+      });
+      _fixHistorySub = feed.watchFixHistory().listen(
+        (history) {
+          _fixHistory = {
+            for (final e in history.entries) e.key.toUpperCase(): e.value,
+          };
+          _applyCountdown();
+          notifyListeners();
+        },
+        onError: (Object e) => debugPrint('FleetController history: $e'),
+      );
+      _helmetEventsSub = feed.watchHelmetEvents().listen(
+        (events) {
+          _sourceHelmetEvents = events;
+          notifyListeners();
+        },
+        onError: (Object e) => debugPrint('FleetController events: $e'),
+      );
+    }
   }
 
-  /// Breadcrumb depth per rider. Twenty fixes at the simulation's 3s cadence
-  /// is about a minute of history — long enough to read as a path, short
-  /// enough that the map does not turn into spaghetti.
-  static const _maxTrailPoints = 20;
+  /// Breadcrumb depth per rider: the ten `trackingLogs` and ten `gpsLogs`
+  /// entries the repository seeds from, plus fixes seen live. Twenty at the
+  /// simulation's 3 s cadence is about a minute; on the 5-minute firmware
+  /// it is most of a shift.
+  static const _maxTrailPoints = 30;
+
+  /// A helmet silent for this long is offline, whatever the roster says.
+  /// The heartbeat is every 30 s and the safety node every 10 s, so two
+  /// minutes is several missed writes, not one late one.
+  static const helmetOfflineAfter = Duration(minutes: 2);
+
+  /// Slower than this with a current fix is idle, not riding: GPS speed
+  /// wanders by a few km/h while standing still.
+  static const ridingMinSpeedKmh = 5.0;
+
+  /// A Firestore alert this close in time to a helmet event, for the same
+  /// helmet or rider and of the same type, already covers it.
+  static const _sameIncidentWindow = Duration(minutes: 5);
 
   final FleetRepository _repository;
+
+  /// The repository's helmet feed, when it has one (both shipped ones do).
+  HelmetFeed? get _feed =>
+      _repository is HelmetFeed ? _repository as HelmetFeed : null;
 
   StreamSubscription<List<Rider>>? _ridersSub;
   StreamSubscription<List<HelmetTelemetry>>? _telemetrySub;
   StreamSubscription<List<AlertEvent>>? _alertsSub;
   StreamSubscription<FleetConnection>? _connectionSub;
+  StreamSubscription<RtdbLink>? _rtdbLinkSub;
+  StreamSubscription<Map<String, List<HelmetFix>>>? _fixHistorySub;
+  StreamSubscription<List<HelmetEvent>>? _helmetEventsSub;
+
+  RtdbLink _rtdbLink = RtdbLink.notConfigured;
+
+  /// Fix history by upper-cased device id.
+  Map<String, List<HelmetFix>> _fixHistory = const {};
+  List<HelmetEvent> _sourceHelmetEvents = const [];
 
   /// How long a roster write may go unanswered before it is treated as
   /// failed and rolled back. Firestore transactions fail within seconds when
@@ -121,6 +187,9 @@ class FleetController extends ChangeNotifier {
 
   FleetConnection get connection => _connection;
 
+  /// Realtime Database link health, for the top bar's second chip.
+  RtdbLink get rtdbLink => _rtdbLink;
+
   /// True once every stream has delivered at least once. The simulation is
   /// loaded before the constructor returns; a cloud source takes a moment.
   bool get isLoaded => _ridersLoaded && _telemetryLoaded && _alertsLoaded;
@@ -144,9 +213,175 @@ class FleetController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Recent GPS fixes for one rider, oldest first.
-  UnmodifiableListView<TrailPoint> trailFor(String riderId) =>
-      UnmodifiableListView(_trails[riderId] ?? const <TrailPoint>[]);
+  /// Recent GPS fixes for one rider, oldest first: the helmet's stored
+  /// history (`trackingLogs` + `gpsLogs` and the position nodes) merged
+  /// with the fixes this session has seen, sorted by fix time, with
+  /// repeats of the same spot dropped, capped at [_maxTrailPoints].
+  UnmodifiableListView<TrailPoint> trailFor(String riderId) {
+    final points = <TrailPoint>[
+      for (final f in _historyFor(riderId)) TrailPoint(f.lat, f.lng, f.at),
+      ...?_trails[riderId],
+    ];
+    final epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+    points.sort((a, b) => (a.at ?? epoch).compareTo(b.at ?? epoch));
+    final out = <TrailPoint>[];
+    for (final p in points) {
+      if (out.isNotEmpty && out.last.lat == p.lat && out.last.lng == p.lng) {
+        continue;
+      }
+      out.add(p);
+    }
+    return UnmodifiableListView(
+      out.length > _maxTrailPoints
+          ? out.sublist(out.length - _maxTrailPoints)
+          : out,
+    );
+  }
+
+  /// The stored fix history of [riderId]'s helmet, oldest first.
+  List<HelmetFix> _historyFor(String riderId) {
+    final deviceId =
+        telemetryFor(riderId)?.deviceId ?? riderFor(riderId)?.helmetId;
+    if (deviceId == null || deviceId.isEmpty) return const [];
+    return _fixHistory[deviceId.toUpperCase()] ?? const [];
+  }
+
+  /// Every real fix known for a device: its stored history plus the
+  /// position on its current reading.
+  List<HelmetFix> _fixesForDevice(String deviceId) {
+    final key = deviceId.toUpperCase();
+    final fixes = [...?_fixHistory[key]];
+    for (final t in _telemetry) {
+      if ((t.deviceId ?? '').toUpperCase() != key) continue;
+      final (lat, lng, at) = (t.lat, t.lng, t.fixAt);
+      if (lat != null && lng != null && at != null) {
+        fixes.add(
+          HelmetFix(
+            lat: lat,
+            lng: lng,
+            at: at,
+            source: t.positionSource ?? PositionSource.simulation,
+            speedKmph: t.speedKmh,
+          ),
+        );
+      }
+    }
+    return fixes;
+  }
+
+  // ----------------------------------------------------- effective status
+
+  /// What the console shows for a rider, worked out from the helmet rather
+  /// than read from `riders/{id}.status` — which the console writes itself
+  /// and which said "Idle" for a helmet that went quiet hours ago. Never
+  /// written back to Firestore: the stored status stays the source for the
+  /// alert workflow's stand-down rule ([_settlesRider]).
+  ///
+  /// In order:
+  /// * a deactivated rider is **offline**;
+  /// * an active crash or SOS alert, or the helmet's own `safetyEvent`
+  ///   reading "Crash alert…", is **emergency** — even from a helmet that
+  ///   has since gone quiet, which is exactly when it matters;
+  /// * no helmet paired, no reading, nothing heard for
+  ///   [helmetOfflineAfter], or `online == false` is **offline**;
+  /// * a current fix at [ridingMinSpeedKmh] or more is **riding**;
+  /// * anything else is **idle**.
+  RiderStatus effectiveStatusOf(Rider rider, {DateTime? now}) {
+    if (!rider.isActive) return RiderStatus.offline;
+    final hasActiveCritical = _alerts.any(
+      (a) => a.riderId == rider.id && a.type.isCritical && a.status.isActive,
+    );
+    final t = telemetryFor(rider.id);
+    if (hasActiveCritical || (t?.reportsCrash ?? false)) {
+      return RiderStatus.emergency;
+    }
+    if (rider.helmetId.trim().isEmpty || t == null) return RiderStatus.offline;
+    final at = now ?? DateTime.now();
+    final heard = t.heardAt;
+    if (heard == null ||
+        at.difference(heard) > helmetOfflineAfter ||
+        t.online == false) {
+      return RiderStatus.offline;
+    }
+    if (hasCurrentFix(t, now: at) &&
+        (t.speedKmh ?? 0) >= ridingMinSpeedKmh) {
+      return RiderStatus.riding;
+    }
+    return RiderStatus.idle;
+  }
+
+  /// [effectiveStatusOf] by rider id; offline for an id not on the roster.
+  RiderStatus effectiveStatusFor(String riderId) {
+    final rider = riderFor(riderId);
+    return rider == null ? RiderStatus.offline : effectiveStatusOf(rider);
+  }
+
+  /// A usable fix taken within [kFixCurrentFor] of [now].
+  static bool hasCurrentFix(HelmetTelemetry t, {DateTime? now}) {
+    if (!t.gpsFix || t.lat == null || t.lng == null) return false;
+    final at = t.fixAt;
+    return at == null ||
+        (now ?? DateTime.now()).difference(at) <= kFixCurrentFor;
+  }
+
+  // ------------------------------------------------------- helmet events
+
+  /// Events the helmet reported in Realtime Database that no Firestore
+  /// alert covers, newest first — shown as "Unconfirmed — from helmet". An
+  /// event disappears once opened (an alert with its id exists) or once a
+  /// Firestore alert of the same type for the same helmet or rider lands
+  /// within five minutes of it (the `USE_FIRESTORE 1` firmware raises its
+  /// own).
+  List<HelmetEvent> get helmetEvents => [
+    for (final e in _sourceHelmetEvents)
+      if (!_coveredByAlert(e)) _withRosterName(e),
+  ];
+
+  HelmetEvent _withRosterName(HelmetEvent e) {
+    if (e.riderName != null || e.riderId == null) return e;
+    return e.withRider(e.riderId, riderFor(e.riderId!)?.fullName);
+  }
+
+  bool _coveredByAlert(HelmetEvent e) {
+    for (final a in _sourceAlerts) {
+      if (a.id == e.id) return true;
+      final sameHelmet =
+          (a.deviceId != null &&
+              a.deviceId!.toUpperCase() == e.deviceId.toUpperCase()) ||
+          (e.riderId != null && a.riderId == e.riderId);
+      if (sameHelmet &&
+          a.type == e.kind.alertType &&
+          a.timestamp.difference(e.at).abs() <= _sameIncidentWindow) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether this console can open helmet events as alerts at all.
+  bool get canOpenHelmetEvents => _feed != null;
+
+  /// Creates the Firestore alert for [event] (see
+  /// [HelmetFeed.openHelmetEventAsAlert]) and resolves to its id. Throws
+  /// [StateError] for an event that cannot be opened — no paired rider, or
+  /// a source with no helmet feed — and [FleetWriteException] when the
+  /// store refuses.
+  Future<String> openHelmetEventAsAlert(
+    HelmetEvent event, {
+    required String actor,
+  }) {
+    final feed = _feed;
+    if (feed == null) {
+      throw StateError('This data source cannot open helmet events.');
+    }
+    if (event.riderId == null) {
+      throw StateError(
+        'Helmet ${event.deviceId} is not paired to a rider, and an alert '
+        'needs one. Pair it in User Management first.',
+      );
+    }
+    return feed.openHelmetEventAsAlert(event, actorName: actor);
+  }
 
   HelmetTelemetry? telemetryFor(String riderId) {
     for (final t in _telemetry) {
@@ -189,6 +424,8 @@ class FleetController extends ChangeNotifier {
     // this snapshot may predate their commit.
     _pending.removeWhere((_, write) => write.confirmed);
     _composeRiders();
+    // Alert locations look up the rider's helmet; a new pairing changes it.
+    if (_alertsLoaded) _applyCountdown();
     notifyListeners();
   }
 
@@ -228,13 +465,16 @@ class FleetController extends ChangeNotifier {
   /// server timestamp. Once that passes the rules refuse a cancel, so the
   /// board shows it as open, as the contract says. The source sends nothing
   /// when a clock runs out, hence the timer for the next expiry.
+  ///
+  /// It is also where each alert's "where" is settled ([_locate]), so a
+  /// fix history or roster that arrives after the alert still places it.
   void _applyCountdown() {
     _countdownTimer?.cancel();
     _countdownTimer = null;
     final now = DateTime.now();
     DateTime? nextExpiry;
     _alerts = [
-      for (final a in _sourceAlerts)
+      for (final a in _sourceAlerts.map(_locate))
         if (a.status != AlertStatus.pending)
           a
         else if (a.timestamp.add(kCrashCountdown).isAfter(now))
@@ -260,9 +500,59 @@ class FleetController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Appends a fix to the rider's breadcrumb when it differs from the last
-  /// one, dropping the oldest once the cap is reached so a long session
-  /// cannot grow the trail unbounded.
+  /// Settles where an alert is, without ever making a place up:
+  ///
+  /// * its own position, described by the alert's `address` if it has one,
+  ///   else "Near `district`" inside a district (within
+  ///   [kDistrictRadiusKm] of its centre) or the coordinates outside;
+  /// * no position: the helmet's newest real fix at or before the alert,
+  ///   labelled "Last known position · `age before the alert`" and kept
+  ///   separate from the alert's own (null) coordinates;
+  /// * neither: "Location unavailable".
+  AlertEvent _locate(AlertEvent alert) {
+    final (lat, lng) = (alert.lat, alert.lng);
+    if (lat != null && lng != null) {
+      if (alert.address.isNotEmpty) return alert;
+      return alert.copyWith(address: describePosition(lat, lng));
+    }
+    final deviceId = alert.deviceId ?? riderFor(alert.riderId)?.helmetId;
+    final fix = deviceId == null || deviceId.isEmpty
+        ? null
+        : lastFixAtOrBefore(_fixesForDevice(deviceId), alert.timestamp);
+    if (fix != null) {
+      return alert.copyWith(
+        lastKnownFix: fix,
+        address: alert.address.isNotEmpty
+            ? alert.address
+            : 'Last known position · '
+                  '${_ageBefore(alert.timestamp.difference(fix.at))}',
+      );
+    }
+    return alert.address.isNotEmpty
+        ? alert
+        : alert.copyWith(address: 'Location unavailable');
+  }
+
+  /// "Near Sampaloc" inside a district, the coordinates outside one.
+  static String describePosition(double lat, double lng) {
+    final district = districtWithin(lat, lng);
+    return district != null
+        ? 'Near ${district.name}'
+        : '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)} · '
+              '$kOutsideCoverage';
+  }
+
+  static String _ageBefore(Duration d) {
+    if (d.inSeconds < 60) return '${d.inSeconds} s before the alert';
+    if (d.inMinutes < 60) return '${d.inMinutes} min before the alert';
+    if (d.inHours < 48) return '${d.inHours} h before the alert';
+    return '${d.inDays} d before the alert';
+  }
+
+  /// Appends a live fix to the rider's session breadcrumb when it differs
+  /// from the last one, dropping the oldest once the cap is reached so a
+  /// long session cannot grow it unbounded. [trailFor] merges this with
+  /// the stored history.
   void _recordTrailPoint(HelmetTelemetry telemetry) {
     final (riderId, lat, lng) = (
       telemetry.riderId,
@@ -277,7 +567,7 @@ class FleetController extends ChangeNotifier {
       final last = trail.last;
       if (last.lat == lat && last.lng == lng) return;
     }
-    trail.add(TrailPoint(lat, lng));
+    trail.add(TrailPoint(lat, lng, telemetry.fixAt ?? telemetry.heardAt));
     if (trail.length > _maxTrailPoints) {
       trail.removeRange(0, trail.length - _maxTrailPoints);
     }
@@ -285,24 +575,39 @@ class FleetController extends ChangeNotifier {
 
   // ---------------------------------------------------------------- derived
 
-  /// Rider headcount per status, every bucket present so the donut and its
-  /// legend keep a stable order even at zero.
+  /// Rider headcount per effective status ([effectiveStatusOf]), every
+  /// bucket present so the donut and its legend keep a stable order even
+  /// at zero.
   Map<RiderStatus, int> get statusCounts {
     final counts = {for (final s in RiderStatus.values) s: 0};
+    final now = DateTime.now();
     for (final r in _riders) {
-      counts[r.status] = counts[r.status]! + 1;
+      final s = effectiveStatusOf(r, now: now);
+      counts[s] = counts[s]! + 1;
     }
     return counts;
   }
 
-  /// Alerts bucketed by the district whose centre they sit closest to.
+  /// Alerts by district, plus [kOutsideCoverage] for every alert more than
+  /// [kDistrictRadiusKm] from any district centre or with no position of
+  /// its own. A last-known helmet fix is where the helmet was, not where
+  /// the alert happened, so it does not place an alert in a district.
   Map<String, int> get alertsByArea {
-    final counts = {for (final d in kFleetDistricts) d.name: 0};
+    final counts = {
+      for (final d in kFleetDistricts) d.name: 0,
+      kOutsideCoverage: 0,
+    };
     for (final a in _alerts) {
-      final district = nearestDistrict(a.lat, a.lng);
-      counts[district.name] = counts[district.name]! + 1;
+      final key = districtOf(a)?.name ?? kOutsideCoverage;
+      counts[key] = counts[key]! + 1;
     }
     return counts;
+  }
+
+  /// The district an alert's own position is in, or null.
+  static FleetDistrict? districtOf(AlertEvent alert) {
+    final (lat, lng) = (alert.lat, alert.lng);
+    return lat == null || lng == null ? null : districtWithin(lat, lng);
   }
 
   Map<AlertPriority, int> get alertsByPriority {
@@ -626,6 +931,9 @@ class FleetController extends ChangeNotifier {
     _telemetrySub?.cancel();
     _alertsSub?.cancel();
     _connectionSub?.cancel();
+    _rtdbLinkSub?.cancel();
+    _fixHistorySub?.cancel();
+    _helmetEventsSub?.cancel();
     _repository.dispose();
     super.dispose();
   }

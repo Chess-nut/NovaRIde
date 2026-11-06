@@ -1,5 +1,5 @@
-// The console reads helmets on the Realtime Database firmware
-// (deviceStatus/{id} + devices/{id}/latest, camelCase) into the same
+// The console reads helmets on the Realtime Database firmware (camelCase
+// nodes, merged by lib/admin/data/rtdb_fleet_merge.dart) into the same
 // HelmetTelemetry the fleet table renders. Two things must hold: a reading
 // the helmet did not send is a dash, never 0; and a helmet with no rider
 // assigned is shown as an unassigned row, not hidden.
@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:novaride/admin/data/firestore_fleet_repository.dart';
+import 'package:novaride/admin/data/rtdb_fleet_merge.dart';
 import 'package:novaride/admin/mock/mock_data.dart';
 import 'package:novaride/admin/widgets/fleet_table.dart';
 import 'package:novaride/shared/models/models.dart';
@@ -45,13 +46,13 @@ HelmetTelemetry _map({
   String? riderId,
   Map<String, dynamic>? status,
   Map<String, dynamic>? fix,
-}) => FirestoreFleetRepository.telemetryFromRtdb(
+}) => mergeFleetNodes(
   deviceId: 'tracker-001',
   riderId: riderId,
   status: status ?? _status(),
-  fix: fix ?? _fix(),
+  device: {'latest': fix ?? _fix()},
   now: _now,
-);
+)!;
 
 void main() {
   test('uses the explicit asia-southeast1 database URL', () {
@@ -68,12 +69,26 @@ void main() {
       expect(t.riderId, isNull);
       expect(t.accelMagnitudeG, closeTo(1.012, 1e-9));
       expect(t.alcoholRawIndex, 734);
+      expect(t.mq3Raw, 734);
+      expect(t.mq3Voltage, closeTo(0.592, 1e-9));
       expect(t.alcoholDetected, isTrue, reason: "the firmware's own verdict");
+      expect(t.sw420Active, isFalse);
+      expect(t.tiltDegrees, closeTo(3.1, 1e-9));
+      expect(t.orientation, 'upright');
+      expect(t.cellularDataReady, isTrue);
+      expect(t.online, isTrue);
       expect(t.speedKmh, closeTo(23.4, 1e-9));
       expect(t.lat, closeTo(14.6091, 1e-9));
       expect(t.lng, closeTo(121.0223, 1e-9));
+      expect(t.satellites, 7);
+      expect(t.positionSource, PositionSource.latest);
       expect(t.gpsFix, isTrue);
-      expect(t.lastUpdate, DateTime.fromMillisecondsSinceEpoch(_nowMs - 20000));
+      expect(
+        t.lastUpdate!.isAtSameMomentAs(
+          DateTime.fromMillisecondsSinceEpoch(_nowMs - 20000),
+        ),
+        isTrue,
+      );
     });
 
     test('battery is not sent by this firmware, so it is null — not 0', () {
@@ -82,14 +97,20 @@ void main() {
     });
 
     test('the alcohol index is labelled raw, never as a concentration', () {
-      final label = _map().alcoholRawLabel;
-      expect(label, contains('raw'));
-      expect(label, isNot(contains('mg')));
-      expect(label, isNot(contains('%')));
+      for (final label in [_map().alcoholRawLabel, _map().alcoholThresholdLabel]) {
+        expect(label, contains('aw'));
+        expect(label, isNot(contains('mg')));
+        expect(label, isNot(contains('%')));
+        expect(label, isNot(contains('BAC')));
+      }
     });
 
     test('no fix node: no position, no speed, no fix', () {
-      final t = _map(fix: const {});
+      final t = mergeFleetNodes(
+        deviceId: 'tracker-001',
+        status: _status(),
+        now: _now,
+      )!;
       expect(t.lat, isNull);
       expect(t.lng, isNull);
       expect(t.speedKmh, isNull);
@@ -107,8 +128,9 @@ void main() {
       expect(t.speedKmh, isNull);
     });
 
-    test('a 0,0 position before the first fix is not a fix', () {
+    test('a 0,0 position before the first fix is not a position at all', () {
       final t = _map(fix: {..._fix(), 'lat': 0, 'lng': 0});
+      expect(t.lat, isNull, reason: 'never a marker in the Atlantic');
       expect(t.gpsFix, isFalse);
       expect(t.speedKmh, isNull);
     });
@@ -125,11 +147,19 @@ void main() {
     });
 
     test('missing sensors stay missing', () {
-      final t = _map(status: const {}, fix: const {});
+      final t = mergeFleetNodes(
+        deviceId: 'tracker-001',
+        status: const <String, dynamic>{},
+        now: _now,
+      )!;
       expect(t.alcoholDetected, isNull);
       expect(t.alcoholRawIndex, isNull);
       expect(t.lastUpdate, isNull);
       expect(t.alcoholLabel, 'Not measured');
+      expect(t.alcoholThresholdLabel, '—');
+      expect(t.vibrationLabel, '—');
+      expect(t.tiltLabel, '—');
+      expect(t.safetyEventLabel, '—');
     });
 
     test('a rider found by the join is carried through', () {

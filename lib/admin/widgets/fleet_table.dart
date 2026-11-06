@@ -20,6 +20,10 @@ class FleetTable extends StatelessWidget {
   /// Shared with the map through the controller — clicking a row and clicking
   /// a dot are the same action.
   final String? selectedRiderId;
+
+  /// The status each row shows. Rider Monitoring passes the controller's
+  /// effective status (from the helmet); without it, the stored one.
+  final RiderStatus Function(Rider rider)? statusOf;
   final ValueChanged<String>? onSelect;
 
   const FleetTable({
@@ -29,6 +33,7 @@ class FleetTable extends StatelessWidget {
     this.unassigned = const [],
     this.selectedRiderId,
     this.onSelect,
+    this.statusOf,
   });
 
   static const _columns = <_Col>[
@@ -86,7 +91,8 @@ class FleetTable extends StatelessWidget {
 
   Widget _buildRow(Rider rider) {
     final t = _telemetryFor(rider.id);
-    final isEmergency = rider.status == RiderStatus.emergency;
+    final status = statusOf?.call(rider) ?? rider.status;
+    final isEmergency = status == RiderStatus.emergency;
     final selected = rider.id == selectedRiderId;
 
     // Selection outranks the emergency tint so the operator never loses track
@@ -139,7 +145,7 @@ class FleetTable extends StatelessWidget {
             flex: _columns[6].flex,
             child: Align(
               alignment: Alignment.centerLeft,
-              child: StatusPill.rider(rider.status),
+              child: StatusPill.rider(status),
             ),
           ),
         ],

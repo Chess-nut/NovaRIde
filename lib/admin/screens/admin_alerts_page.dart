@@ -6,6 +6,7 @@ import 'package:novaride/admin/state/fleet_scope.dart';
 import 'package:novaride/admin/state/fleet_controller.dart';
 import 'package:novaride/admin/widgets/alert_feed_tile.dart';
 import 'package:novaride/admin/widgets/filter_controls.dart';
+import 'package:novaride/admin/widgets/helmet_event_tile.dart';
 import 'package:novaride/admin/widgets/kpi_card.dart';
 import 'package:novaride/admin/widgets/status_pill.dart';
 import 'package:novaride/shared/models/models.dart';
@@ -32,11 +33,21 @@ class AdminAlertsPage extends StatefulWidget {
   /// Search text pushed in by a cross-tab jump (the roster's "View alerts").
   final String? prefillQuery;
 
+  /// Alert to open straight away, pushed in by the map's "View on Alerts
+  /// page". Clears the filters so the alert is in the list beside its
+  /// detail panel.
+  final String? prefillAlertId;
+
   /// Bumped by the shell on every jump so requesting the same rider twice
   /// still re-applies the filter.
   final int prefillToken;
 
-  const AdminAlertsPage({super.key, this.prefillQuery, this.prefillToken = 0});
+  const AdminAlertsPage({
+    super.key,
+    this.prefillQuery,
+    this.prefillAlertId,
+    this.prefillToken = 0,
+  });
 
   @override
   State<AdminAlertsPage> createState() => _AdminAlertsPageState();
@@ -64,6 +75,9 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   _AlertSort _sort = _AlertSort.newest;
   String? _selectedId;
 
+  /// Helmet-reported events that pass the filters, refreshed every build.
+  List<HelmetEvent> _visibleEvents = const [];
+
   @override
   void initState() {
     super.initState();
@@ -80,6 +94,15 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
   /// lands on every alert for that rider rather than an accidental
   /// intersection with filters they left set earlier.
   void _applyPrefill() {
+    final alertId = widget.prefillAlertId;
+    if (alertId != null && alertId.isNotEmpty) {
+      _searchController.clear();
+      _query = '';
+      _statusFilter.clear();
+      _typeFilter.clear();
+      _selectedId = alertId;
+      return;
+    }
     final query = widget.prefillQuery;
     if (query == null || query.isEmpty) return;
 
@@ -104,6 +127,7 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
       listenable: fleet,
       builder: (context, _) {
         final visible = _applyFilters(fleet);
+        _visibleEvents = _filterHelmetEvents(fleet);
 
         // The selection survives the simulation ageing an alert off the
         // board, so resolve the id every build instead of holding the object.
@@ -465,17 +489,26 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
       ],
     );
 
+    // Helmet-reported events lead the queue: they are the ones nobody has
+    // looked at yet. They are not alerts and are not counted as such.
+    final events = _visibleEvents;
+    final rows = <Widget Function()>[
+      if (events.isNotEmpty) () => _eventsHeader(events.length),
+      for (final e in events) () => _eventTileFor(e),
+      for (final alert in visible) () => _tileFor(alert),
+    ];
+
     final Widget body;
-    if (visible.isEmpty) {
+    if (visible.isEmpty && events.isEmpty) {
       body = const _EmptyState();
     } else if (scrollable) {
       body = ListView.builder(
         padding: const EdgeInsets.only(top: 4),
-        itemCount: visible.length,
-        itemBuilder: (context, i) => _tileFor(visible[i]),
+        itemCount: rows.length,
+        itemBuilder: (context, i) => rows[i](),
       );
     } else {
-      body = Column(children: [for (final alert in visible) _tileFor(alert)]);
+      body = Column(children: [for (final row in rows) row()]);
     }
 
     return Container(
@@ -504,6 +537,72 @@ class _AdminAlertsPageState extends State<AdminAlertsPage> {
     onTap: () =>
         setState(() => _selectedId = _selectedId == alert.id ? null : alert.id),
   );
+
+  Widget _eventsHeader(int count) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(
+      '${kUnconfirmedFromHelmet.toUpperCase()} · $count',
+      style: const TextStyle(
+        color: NovaColors.amber,
+        fontSize: 10,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.9,
+      ),
+    ),
+  );
+
+  /// Super Admins and dispatchers may open an event; a viewer, or an event
+  /// from a helmet nobody is paired to, gets the reason instead.
+  Widget _eventTileFor(HelmetEvent event) {
+    final fleet = FleetScope.of(context);
+    final role = AdminSessionScope.of(context).role;
+    final String? reason;
+    if (!role.canActOnAlerts) {
+      reason = 'Read-only — ${role.label} cannot open alerts.';
+    } else if (event.riderId == null) {
+      reason = 'No rider is paired to ${event.deviceId}, so it cannot be '
+          'opened as an alert.';
+    } else if (!fleet.canOpenHelmetEvents) {
+      reason = 'This data source cannot open helmet events.';
+    } else {
+      reason = null;
+    }
+    return HelmetEventTile(
+      key: ValueKey('event-${event.id}'),
+      event: event,
+      onOpen: reason == null ? () => _openHelmetEvent(fleet, event) : null,
+      disabledReason: reason,
+    );
+  }
+
+  Future<void> _openHelmetEvent(FleetController fleet, HelmetEvent event) {
+    return _run(() async {
+      final id = await fleet.openHelmetEventAsAlert(
+        event,
+        actor: AdminSessionScope.of(context).name,
+      );
+      if (mounted) setState(() => _selectedId = id);
+    });
+  }
+
+  /// Events match the same search and type chips as alerts. They have no
+  /// workflow status, so any status chip leaves them out.
+  List<HelmetEvent> _filterHelmetEvents(FleetController fleet) {
+    if (_statusFilter.isNotEmpty) return const [];
+    return [
+      for (final e in fleet.helmetEvents)
+        if ((_typeFilter.isEmpty || _typeFilter.contains(e.kind.alertType)) &&
+            (_query.isEmpty ||
+                [
+                  e.riderName ?? '',
+                  e.riderId ?? '',
+                  e.deviceId,
+                  e.id,
+                  e.detail,
+                ].join(' ').toLowerCase().contains(_query)))
+          e,
+    ];
+  }
 
   // ----------------------------------------------------------- filter + sort
 
@@ -647,7 +746,8 @@ class _AlertDetailPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final rider = fleet.riderFor(alert.riderId);
     final telemetry = fleet.telemetryFor(alert.riderId);
-    final district = FleetController.nearestDistrict(alert.lat, alert.lng);
+    final district = FleetController.districtOf(alert);
+    final lastKnown = alert.lastKnownFix;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -670,7 +770,7 @@ class _AlertDetailPanel extends StatelessWidget {
           if (rider != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: StatusPill.rider(rider.status),
+              child: StatusPill.rider(fleet.effectiveStatusOf(rider)),
             ),
           const SizedBox(height: 14),
           _section('TELEMETRY SNAPSHOT'),
@@ -704,12 +804,27 @@ class _AlertDetailPanel extends StatelessWidget {
           ],
           const SizedBox(height: 14),
           _section('LOCATION'),
-          _row('Address', alert.address),
-          _row('District', district.name),
+          _row('Location', alert.address),
+          _row(
+            'District',
+            district?.name ?? (alert.hasPosition ? kOutsideCoverage : '—'),
+          ),
           _row(
             'Coordinates',
-            '${alert.lat.toStringAsFixed(5)}, ${alert.lng.toStringAsFixed(5)}',
+            alert.hasPosition
+                ? '${alert.lat!.toStringAsFixed(5)}, '
+                      '${alert.lng!.toStringAsFixed(5)}'
+                : 'Not reported with the alert',
+            valueColor: alert.hasPosition ? null : NovaColors.secondaryText,
           ),
+          if (!alert.hasPosition && lastKnown != null)
+            _row(
+              'Last known',
+              '${lastKnown.lat.toStringAsFixed(5)}, '
+                  '${lastKnown.lng.toStringAsFixed(5)} · '
+                  '${lastKnown.source.label} · ${formatManila(lastKnown.at)}',
+              valueColor: NovaColors.amber,
+            ),
           const SizedBox(height: 14),
           _section('RESPONSE TIMELINE'),
           _AlertTimeline(alert: alert),

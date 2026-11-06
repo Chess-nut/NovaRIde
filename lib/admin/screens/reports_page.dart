@@ -300,7 +300,9 @@ class _ReportsPageState extends State<ReportsPage> {
   Widget _buildDistrictPanel(List<AlertEvent> alerts) {
     final counts = <String, int>{};
     for (final alert in alerts) {
-      final name = FleetController.nearestDistrict(alert.lat, alert.lng).name;
+      // Within 3 km of a district centre, else "Outside coverage" — an
+      // alert with no position is never given the nearest name.
+      final name = FleetController.districtOf(alert)?.name ?? kOutsideCoverage;
       counts[name] = (counts[name] ?? 0) + 1;
     }
 
@@ -527,7 +529,7 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   Widget _incidentRow(FleetController fleet, AlertEvent alert) {
-    final district = FleetController.nearestDistrict(alert.lat, alert.lng);
+    final district = FleetController.districtOf(alert)?.name ?? kOutsideCoverage;
     final ack = alert.reachedAt(AlertStatus.acknowledged);
     final resolved = alert.reachedAt(AlertStatus.resolved);
 
@@ -560,7 +562,7 @@ class _ReportsPageState extends State<ReportsPage> {
           Expanded(flex: 3, child: cell(alert.riderName)),
           Expanded(
             flex: 3,
-            child: cell(district.name, color: NovaColors.secondaryText),
+            child: cell(district, color: NovaColors.secondaryText),
           ),
           Expanded(
             flex: 3,
@@ -693,7 +695,7 @@ String buildIncidentCsv(FleetController fleet, List<AlertEvent> alerts) {
   final rows = <String>[header.join(',')];
 
   for (final alert in alerts) {
-    final district = FleetController.nearestDistrict(alert.lat, alert.lng);
+    final district = FleetController.districtOf(alert)?.name ?? kOutsideCoverage;
     final ack = alert.reachedAt(AlertStatus.acknowledged);
     final dispatched = alert.reachedAt(AlertStatus.dispatched);
     final resolved = alert.reachedAt(AlertStatus.resolved);
@@ -705,7 +707,7 @@ String buildIncidentCsv(FleetController fleet, List<AlertEvent> alerts) {
         alert.riderId,
         alert.riderName,
         fleet.riderFor(alert.riderId)?.helmetId ?? '',
-        district.name,
+        district,
         alert.address,
         alert.status.label,
         formatIso(alert.timestamp),

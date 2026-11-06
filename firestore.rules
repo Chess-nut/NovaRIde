@@ -169,6 +169,24 @@ service cloud.firestore {
           && isOptionalLatLng(d);
     }
 
+    // A dispatcher opening an event the helmet reported in Realtime Database
+    // (crash / rider-check state, alcohol alert, emergency upload) as an
+    // alert. The RTDB firmware never writes alerts/, so without this a
+    // dispatcher would watch a helmet report a crash and be unable to put it
+    // on the board. Narrow on purpose: the same document the helmet itself
+    // must send (isHelmetAlert — open, server timestamp, no lifecycle
+    // stamps), marked as opened from the helmet, under the deterministic id
+    // `{deviceId}_{helmetEventAt}` so two consoles opening the same event
+    // collide on one document instead of creating two. A Super Admin needs
+    // no rule of their own here; the seed branch already admits them.
+    function isOpenedFromHelmet(alertId) {
+      let d = request.resource.data;
+      return isHelmetAlert()
+          && d.get('source', '') == 'helmet-rtdb'
+          && d.get('helmetEventAt', null) is int
+          && alertId == d.deviceId + '_' + string(d.helmetEventAt);
+    }
+
     // ------------------------------------------- the false-positive countdown
     //
     // A crash the helmet raises arrives `pending`. For COUNTDOWN seconds of
@@ -305,7 +323,8 @@ service cloud.firestore {
                   || isGuardianOfRoster(resource.data.riderId);
       allow create: if (isHelmetService() && isHelmetAlert())
                     || (hasRole(['superAdmin'])
-                        && request.resource.data.get('timestamp', null) is timestamp);
+                        && request.resource.data.get('timestamp', null) is timestamp)
+                    || (hasRole(['dispatcher']) && isOpenedFromHelmet(alertId));
       allow update: if (hasRole(['superAdmin', 'dispatcher'])
                         && onlyChanges(['status', 'acknowledgedAt', 'dispatchedAt', 'resolvedAt'])
                         && isLifecycleStep(request.resource.data.get('status', ''))

@@ -6,6 +6,7 @@ import 'package:firebase_database/firebase_database.dart'
 import 'package:flutter/foundation.dart';
 import 'package:novaride/admin/data/fleet_geography.dart';
 import 'package:novaride/admin/data/fleet_repository.dart';
+import 'package:novaride/admin/data/rtdb_fleet_merge.dart';
 import 'package:novaride/shared/models/models.dart';
 
 /// Cloud Firestore-backed fleet. Schema in `docs/FIRESTORE_SCHEMA.md`.
@@ -16,17 +17,30 @@ import 'package:novaride/shared/models/models.dart';
 /// entries are stitched onto their alert so the pages see one [AlertEvent]
 /// with its audit trail, exactly as the simulation hands it over.
 ///
-/// Telemetry has a second source. Helmets on the Realtime Database firmware
-/// write `deviceStatus/{id}` (sensors) and `devices/{id}/latest` (the last
-/// GPS fix) in camelCase instead of Firestore `devices/`. When a
-/// [FirebaseDatabase] is passed, both nodes are listened to and merged into
-/// the same [HelmetTelemetry] list; for a helmet present in both stores the
-/// fresher reading wins. Riders and alerts stay on Firestore.
+/// Telemetry has a second source, and on the bench today it is the main
+/// one. Helmets on the Realtime Database firmware write camelCase nodes
+/// instead of Firestore `devices/`: `deviceStatus/{id}` (30 s heartbeat),
+/// `devices/{id}/safety` (10 s sensors), `devices/{id}/tracking` (5-min
+/// fix), `devices/{id}/latest` (fix on alerts) and the `trackingLogs/{id}`
+/// and `gpsLogs/{id}` histories. When a [FirebaseDatabase] is passed, all of
+/// them are listened to — the two `…Logs` per helmet and only their last
+/// [kLogEntriesPerDevice] entries, never the roots whole — and merged by
+/// `rtdb_fleet_merge.dart` into the same [HelmetTelemetry] list. For a
+/// helmet present in both stores the fresher reading wins.
+///
+/// RTDB telemetry is published on its own. Firestore `devices/` is optional
+/// extra data and the source of `assigned_rider_id`; a slow, empty or
+/// refused `devices/` listener no longer hides the helmets RTDB can see.
+///
+/// This class is also the console's [HelmetFeed]: it hands the controller
+/// each helmet's fix history, the crash / rider-check / alcohol / emergency
+/// events the helmet reported in RTDB (which no Firestore alert covers on
+/// that firmware), and the RTDB link's own health for the top bar.
 ///
 /// Parsing is deliberately forgiving. A field that is missing or the wrong
-/// type falls back to a sensible default; a document that cannot be read at
-/// all is skipped with a `debugPrint`. One malformed write from a helmet must
-/// never blank an operator's board mid-shift.
+/// type is absent — never a made-up reading; a document that cannot be read
+/// at all is skipped with a `debugPrint`. One malformed write from a helmet
+/// must never blank an operator's board mid-shift.
 ///
 /// Roster writes run as transactions (see [addRider]) so that two operators
 /// working at once cannot claim the same rider id or the same helmet, and
@@ -34,7 +48,7 @@ import 'package:novaride/shared/models/models.dart';
 /// that the operator would see as saved. They use explicit field paths — the
 /// helmet writes its own fields into the same documents, and the console
 /// never erases one it does not know about.
-class FirestoreFleetRepository implements FleetRepository {
+class FirestoreFleetRepository implements FleetRepository, HelmetFeed {
   /// [database] is the Realtime Database helmet telemetry source; null
   /// leaves telemetry on Firestore alone. It must be built with an explicit
   /// `databaseURL` ([helmetDatabaseUrl]) — see there.
@@ -55,11 +69,14 @@ class FirestoreFleetRepository implements FleetRepository {
   static const helmetDatabaseUrl =
       'https://novaride-7a68c-default-rtdb.asia-southeast1.firebasedatabase.app';
 
-  /// How long a `devices/{id}/latest` fix still counts as current. The
-  /// firmware uploads its location every 5 min
-  /// (`PERIODIC_LOCATION_UPLOAD_INTERVAL_MS`) and a cellular upload may take
-  /// 90 s to land, so 7 min. Older than that, speed is not shown.
-  static const rtdbFixStaleAfter = Duration(minutes: 7);
+  /// How long an RTDB fix still counts as current: [kFixCurrentFor]. Older
+  /// than that, speed is not shown and the map marks the dot stale.
+  static const rtdbFixStaleAfter = kFixCurrentFor;
+
+  /// "Current" depends on the clock as well as the data, and a helmet that
+  /// stops writing sends nothing to say so. The RTDB view is recomputed on
+  /// this beat so a fix ages out on screen without waiting for a write.
+  static const _rtdbRefresh = Duration(seconds: 30);
 
   /// Newest alerts kept on the board. An uncapped listener bills every
   /// document on every change and slows down over a long session.
@@ -83,11 +100,20 @@ class FirestoreFleetRepository implements FleetRepository {
   final _telemetryCtrl = StreamController<List<HelmetTelemetry>>.broadcast();
   final _alertsCtrl = StreamController<List<AlertEvent>>.broadcast();
   final _connectionCtrl = StreamController<FleetConnection>.broadcast();
+  final _rtdbLinkCtrl = StreamController<RtdbLink>.broadcast();
+  final _fixHistoryCtrl =
+      StreamController<Map<String, List<HelmetFix>>>.broadcast();
+  final _helmetEventsCtrl = StreamController<List<HelmetEvent>>.broadcast();
 
   List<Rider> _riders = const [];
   List<HelmetTelemetry> _telemetry = const [];
   List<AlertEvent> _alerts = const [];
   FleetConnection _connection = FleetConnection.connecting;
+  late RtdbLink _rtdbLink = _rtdb == null
+      ? RtdbLink.notConfigured
+      : RtdbLink.connecting;
+  Map<String, List<HelmetFix>> _fixHistory = const {};
+  List<HelmetEvent> _helmetEvents = const [];
 
   /// Raw inputs kept so either side of a join can be recomputed when the
   /// other changes.
@@ -95,20 +121,41 @@ class FirestoreFleetRepository implements FleetRepository {
   List<AlertEvent> _bareAlerts = const [];
   Map<String, List<AlertAction>> _historyByAlert = const {};
 
-  /// Realtime Database nodes by device id: `deviceStatus/{id}` and
-  /// `devices/{id}/latest`.
-  Map<String, Map<String, dynamic>> _rtdbStatus = const {};
-  Map<String, Map<String, dynamic>> _rtdbLatest = const {};
+  /// Realtime Database node values by device id, exactly as delivered:
+  /// `deviceStatus/{id}`, `devices/{id}` (with `latest`, `tracking`,
+  /// `safety`), and the last entries of `trackingLogs/{id}` and
+  /// `gpsLogs/{id}`.
+  Map<String, Object?> _rtdbStatus = const {};
+  Map<String, Object?> _rtdbDevices = const {};
+  final Map<String, Object?> _trackingLogs = {};
+  final Map<String, Object?> _gpsLogs = {};
+
+  /// Remembers values across RTDB snapshots: event transitions, SW-420.
+  final RtdbHelmetTracker _tracker = RtdbHelmetTracker();
+
+  /// RTDB listener errors by listener name, for the link chip.
+  final Map<String, Object> _rtdbErrors = {};
+
+  /// `.info/connected`: null until the SDK first says, then its answer.
+  bool? _rtdbConnected;
 
   bool _ridersLoaded = false;
   bool _telemetryLoaded = false;
   bool _alertsLoaded = false;
   bool _disposed = false;
 
+  /// Either telemetry source has answered — with data or with an error.
+  /// Telemetry is "loaded" on the first answer from either, not both.
+  bool _devicesAnswered = false;
+  bool _rtdbAnswered = false;
+
   final Map<String, StreamSubscription<dynamic>> _subs = {};
   final Map<String, Timer> _retries = {};
   final Map<String, Duration> _backoff = {};
+  final Map<String, void Function()> _restarts = {};
   Timer? _firstSnapshotTimer;
+  Timer? _rtdbFirstAnswerTimer;
+  Timer? _rtdbRefreshTimer;
 
   @override
   FleetSource get source => FleetSource.firestore;
@@ -132,6 +179,18 @@ class FirestoreFleetRepository implements FleetRepository {
   @override
   Stream<FleetConnection> watchConnection() =>
       _replaying(() => _connection, _connectionCtrl.stream);
+
+  @override
+  Stream<RtdbLink> watchRtdbLink() =>
+      _replaying(() => _rtdbLink, _rtdbLinkCtrl.stream);
+
+  @override
+  Stream<Map<String, List<HelmetFix>>> watchFixHistory() =>
+      _replaying(() => _fixHistory, _fixHistoryCtrl.stream);
+
+  @override
+  Stream<List<HelmetEvent>> watchHelmetEvents() =>
+      _replaying(() => _helmetEvents, _helmetEventsCtrl.stream);
 
   /// New listeners get the latest value (once there is one), then updates.
   Stream<T> _replaying<T>(T? Function() current, Stream<T> updates) {
@@ -161,6 +220,21 @@ class FirestoreFleetRepository implements FleetRepository {
     _listenAlerts();
     _listenHistory();
     if (_rtdb != null) {
+      _rtdbFirstAnswerTimer = Timer(_firstSnapshotTimeout, () {
+        if (_rtdbLink.state == RtdbLinkState.connecting) {
+          _setRtdbLink(
+            const RtdbLink(
+              RtdbLinkState.offline,
+              'No answer from Realtime Database in 15 s — check the '
+              'network. Helmet telemetry will not update.',
+            ),
+          );
+        }
+      });
+      _rtdbRefreshTimer = Timer.periodic(_rtdbRefresh, (_) {
+        if (_rtdbAnswered) _publishTelemetry();
+      });
+      _listenRtdbConnected();
       _listenRtdbStatus();
       _listenRtdbPositions();
     }
@@ -175,11 +249,14 @@ class FirestoreFleetRepository implements FleetRepository {
         _ridersLoaded = true;
         _ridersCtrl.add(_riders);
         // Riders are the join key for devices and the name source for
-        // alerts, so both views are refreshed off the same snapshot.
+        // alerts and helmet events, so all three are refreshed off the
+        // same snapshot.
         _publishTelemetry();
+        _publishHelmetEvents();
         _publishAlerts();
         _reportMetadata(snap.metadata);
       },
+      restart: _listenRiders,
     );
   }
 
@@ -189,9 +266,17 @@ class FirestoreFleetRepository implements FleetRepository {
       _db.collection('devices').snapshots(includeMetadataChanges: true),
       (QuerySnapshot<Map<String, dynamic>> snap) {
         _deviceDocs = snap;
-        _telemetryLoaded = true;
+        _devicesAnswered = true;
         _publishTelemetry();
+        _publishHelmetEvents();
         _reportMetadata(snap.metadata);
+      },
+      restart: _listenDevices,
+      onFailure: () {
+        // A refused or broken devices/ listener is an answer too: RTDB
+        // helmets are shown without it rather than not at all.
+        _devicesAnswered = true;
+        _publishTelemetry();
       },
     );
   }
@@ -210,6 +295,7 @@ class FirestoreFleetRepository implements FleetRepository {
         _publishAlerts();
         _reportMetadata(snap.metadata);
       },
+      restart: _listenAlerts,
     );
   }
 
@@ -241,59 +327,241 @@ class FirestoreFleetRepository implements FleetRepository {
         _publishAlerts();
       },
       affectsConnection: false,
+      restart: _listenHistory,
     );
   }
 
-  /// RTDB listeners do not drive the connection pill: it reports Firestore,
-  /// which riders and alerts depend on. A refusal here is logged and retried.
+  // ------------------------------------------------- Realtime Database
+
+  /// RTDB listeners do not drive the FIRESTORE pill — riders and alerts
+  /// depend on Firestore alone. They drive the RTDB chip instead
+  /// ([watchRtdbLink]); a refusal is shown there, logged and retried.
+  void _listenRtdbConnected() {
+    _subscribe(
+      'rtdbConnected',
+      _rtdb!.ref('.info/connected').onValue,
+      (DatabaseEvent event) {
+        final value = event.snapshot.value;
+        if (value is bool) _rtdbConnected = value;
+        _updateRtdbLink();
+      },
+      affectsConnection: false,
+      rtdb: true,
+      restart: _listenRtdbConnected,
+    );
+  }
+
   void _listenRtdbStatus() {
-    _subscribe('deviceStatus', _rtdb!.ref('deviceStatus').onValue, (
-      DatabaseEvent event,
-    ) {
-      _rtdbStatus = _rtdbChildren(event.snapshot.value);
-      _publishTelemetry();
-    }, affectsConnection: false);
+    _subscribe(
+      'deviceStatus',
+      _rtdb!.ref('deviceStatus').onValue,
+      (DatabaseEvent event) {
+        _rtdbStatus = _rtdbChildren(event.snapshot.value);
+        _onRtdbChanged();
+      },
+      affectsConnection: false,
+      rtdb: true,
+      restart: _listenRtdbStatus,
+    );
   }
 
+  /// `devices/` whole: per helmet it holds `latest`, `tracking` and
+  /// `safety`, three small nodes overwritten in place, so the root stays
+  /// small however long the helmets run.
   void _listenRtdbPositions() {
-    _subscribe('rtdbDevices', _rtdb!.ref('devices').onValue, (
-      DatabaseEvent event,
-    ) {
-      _rtdbLatest = _rtdbChildren(event.snapshot.value, child: 'latest');
-      _publishTelemetry();
-    }, affectsConnection: false);
+    _subscribe(
+      'rtdbDevices',
+      _rtdb!.ref('devices').onValue,
+      (DatabaseEvent event) {
+        _rtdbDevices = _rtdbChildren(event.snapshot.value);
+        _onRtdbChanged();
+      },
+      affectsConnection: false,
+      rtdb: true,
+      restart: _listenRtdbPositions,
+    );
   }
 
-  /// `{id: {...}}` from an RTDB node, optionally one level down at [child].
-  /// Anything that is not a map is skipped, not read as empty telemetry.
-  static Map<String, Map<String, dynamic>> _rtdbChildren(
-    Object? value, {
-    String? child,
-  }) {
-    final out = <String, Map<String, dynamic>>{};
-    if (value is! Map) return out;
-    value.forEach((key, node) {
-      final data = child == null ? node : (node is Map ? node[child] : null);
-      if (data is Map) {
-        out['$key'] = {for (final e in data.entries) '${e.key}': e.value};
+  /// One listener per helmet on `trackingLogs/{id}` and `gpsLogs/{id}`,
+  /// each `limitToLast(kLogEntriesPerDevice)`. Never the roots: both are
+  /// append-only push lists that grow every 5 minutes per helmet, forever.
+  /// Called whenever the set of known helmets may have changed.
+  void _syncLogListeners() {
+    final ids = {..._rtdbStatus.keys, ..._rtdbDevices.keys};
+    for (final id in ids) {
+      for (final root in const ['trackingLogs', 'gpsLogs']) {
+        final name = '$root:$id';
+        if (_subs.containsKey(name) || _retries.containsKey(name)) continue;
+        _listenLog(root, id);
       }
-    });
-    return out;
+    }
+    // A helmet deleted from the database takes its listeners with it.
+    for (final name in _subs.keys.toList()) {
+      final split = name.indexOf(':');
+      if (split < 0) continue;
+      final root = name.substring(0, split);
+      if (root != 'trackingLogs' && root != 'gpsLogs') continue;
+      final id = name.substring(split + 1);
+      if (ids.contains(id)) continue;
+      _subs.remove(name)?.cancel();
+      _retries.remove(name)?.cancel();
+      _restarts.remove(name);
+      _rtdbErrors.remove(name);
+      _trackingLogs.remove(id);
+      _gpsLogs.remove(id);
+      _tracker.forget(id);
+    }
   }
+
+  void _listenLog(String root, String id) {
+    final target = root == 'trackingLogs' ? _trackingLogs : _gpsLogs;
+    void listen() => _subscribe(
+      '$root:$id',
+      _rtdb!.ref('$root/$id').limitToLast(kLogEntriesPerDevice).onValue,
+      (DatabaseEvent event) {
+        target[id] = event.snapshot.value;
+        _onRtdbChanged(syncLogs: false);
+      },
+      affectsConnection: false,
+      rtdb: true,
+      restart: () => _listenLog(root, id),
+    );
+    listen();
+  }
+
+  /// Every RTDB delivery lands here: remember transitions, then republish
+  /// telemetry, fix history and helmet events.
+  void _onRtdbChanged({bool syncLogs = true}) {
+    _rtdbAnswered = true;
+    _rtdbFirstAnswerTimer?.cancel();
+    if (syncLogs) _syncLogListeners();
+    var eventsChanged = false;
+    for (final id in _rtdbIds) {
+      eventsChanged |= _tracker.observe(
+        id,
+        status: _rtdbStatus[id],
+        device: _rtdbDevices[id],
+        trackingLogs: _trackingLogs[id],
+        gpsLogs: _gpsLogs[id],
+      );
+    }
+    _publishTelemetry();
+    _publishFixHistory();
+    if (eventsChanged || _helmetEvents.isEmpty) _publishHelmetEvents();
+    _updateRtdbLink();
+  }
+
+  Set<String> get _rtdbIds => {
+    ..._rtdbStatus.keys,
+    ..._rtdbDevices.keys,
+    ..._trackingLogs.keys,
+    ..._gpsLogs.keys,
+  };
+
+  /// `{id: value}` from an RTDB node. Values are kept raw for the merge.
+  static Map<String, Object?> _rtdbChildren(Object? value) {
+    if (value is Map) return {for (final e in value.entries) '${e.key}': e.value};
+    if (value is List) {
+      // RTDB returns a List for a node whose keys are 0, 1, 2…; a device
+      // id like that is unlikely but is not an error.
+      return {
+        for (var i = 0; i < value.length; i++)
+          if (value[i] != null) '$i': value[i],
+      };
+    }
+    return const {};
+  }
+
+  /// LIVE, DENIED, OFFLINE or CONNECTING, from the listeners' own errors
+  /// and `.info/connected`. A refusal outranks everything: it will not fix
+  /// itself, and the operator needs to know whom to ask.
+  void _updateRtdbLink() {
+    if (_rtdb == null) return;
+    Object? denied;
+    Object? failed;
+    for (final error in _rtdbErrors.values) {
+      if (_isPermissionDenied(error)) {
+        denied ??= error;
+      } else {
+        failed ??= error;
+      }
+    }
+    final RtdbLink link;
+    if (denied != null) {
+      link = RtdbLink(
+        RtdbLinkState.denied,
+        'Realtime Database refused to read helmet data '
+        '(${_errorText(denied)}). The RTDB rules (database.rules.json) are '
+        'not in this repository — a project owner must allow signed-in '
+        'console operators to read deviceStatus, devices, trackingLogs and '
+        'gpsLogs.',
+      );
+    } else if (failed != null) {
+      link = RtdbLink(
+        RtdbLinkState.offline,
+        'Realtime Database error: ${_errorText(failed)}. Retrying.',
+      );
+    } else if (_rtdbConnected == false && _rtdbAnswered) {
+      link = const RtdbLink(
+        RtdbLinkState.offline,
+        'Realtime Database connection lost — showing the last readings '
+        'received. Reconnecting.',
+      );
+    } else if (_rtdbAnswered) {
+      link = const RtdbLink(
+        RtdbLinkState.live,
+        'Receiving helmet telemetry from Realtime Database '
+        '(asia-southeast1).',
+      );
+    } else {
+      return; // still connecting; the first-answer timer reports silence
+    }
+    _setRtdbLink(link);
+  }
+
+  void _setRtdbLink(RtdbLink link) {
+    if (_disposed) return;
+    if (_rtdbLink.state == link.state && _rtdbLink.message == link.message) {
+      return;
+    }
+    _rtdbLink = link;
+    _rtdbLinkCtrl.add(link);
+  }
+
+  static bool _isPermissionDenied(Object error) {
+    final text = error is FirebaseException
+        ? '${error.code} ${error.message}'
+        : '$error';
+    return text.toLowerCase().contains('permission');
+  }
+
+  static String _errorText(Object error) => error is FirebaseException
+      ? (error.message?.isNotEmpty ?? false)
+            ? '${error.code}: ${error.message}'
+            : error.code
+      : '$error';
 
   /// Wires one listener with restart-on-error. Each listener backs off on
   /// its own, so a missing index on `history` cannot take `riders` down.
+  ///
+  /// [rtdb] listeners report into the RTDB chip; [onFailure] runs after an
+  /// error is recorded, for listeners whose silence would block a view.
   void _subscribe<T>(
     String name,
     Stream<T> stream,
     void Function(T snapshot) onData, {
+    required void Function() restart,
     bool affectsConnection = true,
+    bool rtdb = false,
+    void Function()? onFailure,
   }) {
     if (_disposed) return;
+    _restarts[name] = restart;
     _subs[name]?.cancel();
     _subs[name] = stream.listen(
       (snapshot) {
         _backoff.remove(name);
+        if (rtdb && _rtdbErrors.remove(name) != null) _updateRtdbLink();
         onData(snapshot);
       },
       onError: (Object error) {
@@ -304,6 +572,16 @@ class FirestoreFleetRepository implements FleetRepository {
             FleetConnection(FleetConnectionState.disconnected, message),
           );
         }
+        if (rtdb) {
+          _rtdbErrors[name] = error;
+          _rtdbFirstAnswerTimer?.cancel();
+          // An error is an answer: telemetry stops waiting for RTDB.
+          _rtdbAnswered = true;
+          _updateRtdbLink();
+          _publishTelemetry();
+        }
+        onFailure?.call();
+        _subs.remove(name)?.cancel();
         _scheduleRestart(name);
       },
     );
@@ -315,20 +593,8 @@ class FirestoreFleetRepository implements FleetRepository {
     _backoff[name] = delay * 2 > _maxBackoff ? _maxBackoff : delay * 2;
     _retries[name]?.cancel();
     _retries[name] = Timer(delay, () {
-      switch (name) {
-        case 'riders':
-          _listenRiders();
-        case 'devices':
-          _listenDevices();
-        case 'alerts':
-          _listenAlerts();
-        case 'history':
-          _listenHistory();
-        case 'deviceStatus':
-          _listenRtdbStatus();
-        case 'rtdbDevices':
-          _listenRtdbPositions();
-      }
+      _retries.remove(name);
+      _restarts[name]?.call();
     });
   }
 
@@ -380,36 +646,100 @@ class FirestoreFleetRepository implements FleetRepository {
 
   // ----------------------------------------------------------------- joins
 
-  /// Firestore `devices/` first, then the RTDB helmets laid over it by
-  /// device id. A helmet in both stores keeps whichever reading is newer.
+  /// Firestore `devices/` (if it has answered) and the RTDB helmets, joined
+  /// by device id, case-insensitively. A helmet in both stores keeps
+  /// whichever reading is newer.
+  ///
+  /// Either source alone is enough to publish: RTDB helmets no longer wait
+  /// for Firestore `devices/`, which is only extra telemetry and the
+  /// source of `assigned_rider_id`. Telemetry counts as loaded once either
+  /// source has answered, with data or with an error.
   void _publishTelemetry() {
-    final docs = _deviceDocs;
-    if (docs == null) return;
-    final byDevice = <String, HelmetTelemetry>{};
-    final assignedByDevice = <String, String?>{};
-    for (final doc in docs.docs) {
-      final key = doc.id.toUpperCase();
-      assignedByDevice[key] = _str(doc.data(), [
-        'assigned_rider_id',
-        'assignedRiderId',
-      ]);
-      final t = _parse(doc, _telemetryFrom);
-      if (t != null) byDevice[key] = t;
+    if (_disposed) return;
+    if (!_telemetryLoaded) {
+      _telemetryLoaded =
+          _devicesAnswered || (_rtdb != null && _rtdbAnswered);
+      if (!_telemetryLoaded) return;
     }
-    for (final id in {..._rtdbStatus.keys, ..._rtdbLatest.keys}) {
+    final byDevice = <String, HelmetTelemetry>{};
+    final assignedByDevice = _assignments();
+    for (final doc in _deviceDocs?.docs ?? const []) {
+      final t = _parse(doc, _telemetryFrom);
+      if (t != null) byDevice[doc.id.toUpperCase()] = t;
+    }
+    final now = DateTime.now();
+    for (final id in _rtdbIds) {
       final key = id.toUpperCase();
-      final HelmetTelemetry t;
+      final HelmetTelemetry? t;
       try {
-        t = _rtdbTelemetryFrom(id, assignedByDevice[key]);
+        t = mergeFleetNodes(
+          deviceId: id,
+          riderId: _riderForDevice(id, assignedByDevice[key])?.id,
+          status: _rtdbStatus[id],
+          device: _rtdbDevices[id],
+          trackingLogs: _trackingLogs[id],
+          gpsLogs: _gpsLogs[id],
+          now: now,
+          sw420ChangedAt: _tracker.sw420ChangedAt(id),
+        );
       } catch (error) {
         debugPrint('FirestoreFleetRepository: skipped RTDB $id: $error');
         continue;
       }
+      if (t == null) continue;
       final existing = byDevice[key];
       if (existing == null || !_isOlder(t, existing)) byDevice[key] = t;
     }
     _telemetry = byDevice.values.toList();
-    if (_telemetryLoaded) _telemetryCtrl.add(_telemetry);
+    _telemetryCtrl.add(_telemetry);
+  }
+
+  /// `assigned_rider_id` by upper-cased device id, from Firestore
+  /// `devices/` — empty until (or unless) that listener answers.
+  Map<String, String?> _assignments() => {
+    for (final doc in _deviceDocs?.docs ?? const [])
+      doc.id.toUpperCase(): _str(doc.data(), [
+        'assigned_rider_id',
+        'assignedRiderId',
+      ]),
+  };
+
+  /// Every real fix per helmet, from all its RTDB nodes.
+  void _publishFixHistory() {
+    if (_disposed) return;
+    final out = <String, List<HelmetFix>>{};
+    for (final id in _rtdbIds) {
+      try {
+        final fixes = fixHistoryFromNodes(
+          status: _rtdbStatus[id],
+          device: _rtdbDevices[id],
+          trackingLogs: _trackingLogs[id],
+          gpsLogs: _gpsLogs[id],
+        );
+        if (fixes.isNotEmpty) out[id] = fixes;
+      } catch (error) {
+        debugPrint('FirestoreFleetRepository: no fix history for $id: $error');
+      }
+    }
+    _fixHistory = out;
+    _fixHistoryCtrl.add(out);
+  }
+
+  /// The tracker's events, joined to the roster for a rider id and name.
+  void _publishHelmetEvents() {
+    if (_disposed || _rtdb == null) return;
+    final assigned = _assignments();
+    _helmetEvents = [
+      for (final e in _tracker.events)
+        () {
+          final rider = _riderForDevice(
+            e.deviceId,
+            assigned[e.deviceId.toUpperCase()],
+          );
+          return e.withRider(rider?.id, rider?.fullName);
+        }(),
+    ];
+    _helmetEventsCtrl.add(_helmetEvents);
   }
 
   /// A reading with no timestamp is older than one with any.
@@ -500,96 +830,46 @@ class FirestoreFleetRepository implements FleetRepository {
   ///
   /// No reading has a default. A missing speed, battery or timestamp is
   /// null and shows as a dash — never 0, never "now".
+  ///
+  /// Field names cover both the schema's spelling and what the
+  /// `USE_FIRESTORE 1` firmware actually writes (`alcohol_alert`,
+  /// `alcohol_raw`, `alcohol_voltage`, `state`).
   HelmetTelemetry? _telemetryFrom(String deviceId, Map<String, dynamic> d) {
     final assigned = _str(d, ['assigned_rider_id', 'assignedRiderId']);
-    final lat = _num(d, ['latitude', 'lat']);
-    final lng = _num(d, ['longitude', 'lng', 'lon']);
+    final rawLat = _num(d, ['latitude', 'lat']);
+    final rawLng = _num(d, ['longitude', 'lng', 'lon']);
+    final real = isRealPosition(rawLat, rawLng);
+    final lastUpdate = _date(d, [
+      'last_update',
+      'lastUpdate',
+      'last_seen',
+      'lastSeen',
+    ]);
     return HelmetTelemetry(
       riderId: _riderForDevice(deviceId, assigned)?.id,
       deviceId: deviceId,
       speedKmh: _num(d, ['speed_kmh', 'speedKmh', 'speed']),
       // No default: absent is "not measured", not "not detected".
-      alcoholDetected: _bool(d, ['alcohol_detected', 'alcoholDetected']),
+      alcoholDetected: _bool(d, [
+        'alcohol_detected',
+        'alcoholDetected',
+        'alcohol_alert',
+      ]),
+      alcoholRawIndex: _num(d, ['alcohol_raw', 'alcoholRaw']),
+      mq3Voltage: _num(d, ['alcohol_voltage']),
       batteryPct: _num(d, [
         'battery_pct',
         'batteryPct',
         'battery',
       ])?.round().clamp(0, 100),
-      gpsFix: _bool(d, ['gps_fix', 'gpsFix']) ?? _isFix(lat, lng),
-      lat: lat,
-      lng: lng,
-      lastUpdate: _date(d, [
-        'last_update',
-        'lastUpdate',
-        'last_seen',
-        'lastSeen',
-      ]),
-    );
-  }
-
-  /// A position, and not the 0,0 a GPS module reports before its first fix.
-  static bool _isFix(double? lat, double? lng) =>
-      lat != null && lng != null && (lat != 0 || lng != 0);
-
-  /// One helmet from Realtime Database: sensors from `deviceStatus/{id}`,
-  /// position and speed from `devices/{id}/latest`. The firmware's camelCase
-  /// mapped onto the console's model:
-  ///
-  /// - `accelMagnitudeG` → [HelmetTelemetry.accelMagnitudeG], in g. Not
-  ///   `vector_magnitude`, which is m/s²; null if the accelerometer is down,
-  ///   because the firmware then sends 0.000.
-  /// - `alcoholRelativeIndex` → [HelmetTelemetry.alcoholRawIndex], the raw
-  ///   ADC count. `alcoholAlert`, the firmware's own threshold verdict, →
-  ///   [HelmetTelemetry.alcoholDetected].
-  /// - `speedKmph`, `lat`, `lng` from the fix; speed only while the fix is
-  ///   current (`gpsAgeMs` ≤ 30 s when taken, uploaded within
-  ///   [rtdbFixStaleAfter]).
-  /// - `lastSeen` → last update. No battery: this firmware sends none.
-  HelmetTelemetry _rtdbTelemetryFrom(String deviceId, String? assigned) =>
-      telemetryFromRtdb(
-        deviceId: deviceId,
-        riderId: _riderForDevice(deviceId, assigned)?.id,
-        status: _rtdbStatus[deviceId] ?? const {},
-        fix: _rtdbLatest[deviceId] ?? const {},
-        now: DateTime.now(),
-      );
-
-  /// The mapping behind [_rtdbTelemetryFrom], without the join.
-  @visibleForTesting
-  static HelmetTelemetry telemetryFromRtdb({
-    required String deviceId,
-    required String? riderId,
-    required Map<String, dynamic> status,
-    required Map<String, dynamic> fix,
-    required DateTime now,
-  }) {
-    // Sensors come from the status node; a helmet that has only ever
-    // written a fix still shows the readings that fix carried.
-    final sensors = status.isNotEmpty ? status : fix;
-
-    final lat = _num(fix, ['lat']);
-    final lng = _num(fix, ['lng']);
-    final gpsAgeMs = _num(fix, ['gpsAgeMs']);
-    final fixAt = _date(fix, ['serverTime']);
-    final current =
-        _isFix(lat, lng) &&
-        (gpsAgeMs == null || gpsAgeMs <= 30000) &&
-        (fixAt == null || now.difference(fixAt) <= rtdbFixStaleAfter);
-
-    return HelmetTelemetry(
-      riderId: riderId,
-      deviceId: deviceId,
-      speedKmh: current ? _num(fix, ['speedKmph']) : null,
-      alcoholDetected: _bool(sensors, ['alcoholAlert']),
-      alcoholRawIndex: _num(sensors, ['alcoholRelativeIndex']),
-      accelMagnitudeG: _bool(sensors, ['accelerometerReady']) == false
-          ? null
-          : _num(sensors, ['accelMagnitudeG']),
-      batteryPct: null,
-      gpsFix: current,
-      lat: lat,
-      lng: lng,
-      lastUpdate: _date(status, ['lastSeen']) ?? fixAt,
+      gpsFix: (_bool(d, ['gps_fix', 'gpsFix']) ?? true) && real,
+      // A pre-lock 0 is not a position, so it is not plotted.
+      lat: real ? rawLat : null,
+      lng: real ? rawLng : null,
+      fixAt: real ? lastUpdate : null,
+      positionSource: real ? PositionSource.firestore : null,
+      safetyEvent: _str(d, ['state', 'safetyEvent']),
+      lastUpdate: lastUpdate,
     );
   }
 
@@ -602,11 +882,13 @@ class FirestoreFleetRepository implements FleetRepository {
       riderId: riderId,
       riderName: _str(d, ['riderName', 'rider_name']) ?? '',
       type: type,
-      lat: point.$1,
-      lng: point.$2,
-      address:
-          _str(d, ['address']) ??
-          nearestFleetDistrict(point.$1, point.$2).address,
+      lat: point?.$1,
+      lng: point?.$2,
+      // Only an address the document carries. Without one the controller
+      // describes the position — or says there is none. Never a district
+      // street invented from 0,0.
+      address: _str(d, ['address']) ?? '',
+      deviceId: _str(d, ['deviceId', 'device_id']),
       timestamp:
           _date(d, ['timestamp', 'created_at', 'createdAt']) ?? DateTime.now(),
       status:
@@ -656,22 +938,30 @@ class FirestoreFleetRepository implements FleetRepository {
     }
   }
 
-  /// `lat`/`lng` fields, a `location` GeoPoint, or a `location` map.
-  static (double, double) _point(Map<String, dynamic> d) {
+  /// `lat`/`lng` fields, a `location` GeoPoint, or a `location` map — or
+  /// null when the alert carries no real position. A crash with no GPS fix
+  /// is sent with no location (FIRMWARE_CONTRACT.md §3.1); it used to be
+  /// read here as 0,0, which put it in Sampaloc.
+  static (double, double)? _point(Map<String, dynamic> d) {
+    (double, double)? real(double? lat, double? lng) =>
+        isRealPosition(lat, lng) ? (lat!, lng!) : null;
+
     final lat = _num(d, ['lat', 'latitude']);
     final lng = _num(d, ['lng', 'longitude', 'lon']);
-    if (lat != null && lng != null) return (lat, lng);
+    if (lat != null && lng != null) return real(lat, lng);
 
     final location = d['location'];
-    if (location is GeoPoint) return (location.latitude, location.longitude);
+    if (location is GeoPoint) {
+      return real(location.latitude, location.longitude);
+    }
     if (location is Map) {
       final map = location.cast<String, dynamic>();
-      return (
-        _num(map, ['lat', 'latitude']) ?? 0,
-        _num(map, ['lng', 'longitude', 'lon']) ?? 0,
+      return real(
+        _num(map, ['lat', 'latitude']),
+        _num(map, ['lng', 'longitude', 'lon']),
       );
     }
-    return (0, 0);
+    return null;
   }
 
   static String? _str(Map<String, dynamic> d, List<String> keys) {
@@ -1036,10 +1326,87 @@ class FirestoreFleetRepository implements FleetRepository {
         return batch.commit();
       });
 
+  /// Creates `alerts/{event.id}` — `{deviceId}_{serverTimeMs}` — in one
+  /// transaction: read it, and write it only if nobody has. Two consoles
+  /// opening the same helmet event therefore produce one alert, and the
+  /// second simply resolves to the id the first created.
+  ///
+  /// The document satisfies the helmet branch of the alerts create rule
+  /// (`isHelmetAlert` in firestore.rules: `riderId`, `deviceId`, `type`,
+  /// lowercase `severity`, `status: open`, a server `timestamp`, a GeoPoint
+  /// `location` or none, no lifecycle stamps), which is what both the Super
+  /// Admin branch and the dispatcher branch (`isOpenedFromHelmet`, which
+  /// also checks the id against `deviceId` + `helmetEventAt`) accept.
+  ///
+  /// `timestamp` is when it was opened — the board and the response-time
+  /// metrics run from the moment an operator took it on. When the helmet
+  /// reported it is kept in `helmetEventAt` (epoch ms, the RTDB server
+  /// clock). The rider's status is not written: the console derives
+  /// "emergency" from the open alert itself.
+  @override
+  Future<String> openHelmetEventAsAlert(
+    HelmetEvent event, {
+    required String actorName,
+  }) async {
+    final riderId = event.riderId;
+    if (riderId == null || riderId.isEmpty) {
+      throw FleetWriteException(
+        'Helmet ${event.deviceId} is not paired to a rider, and an alert '
+        'needs one. Pair the helmet in User Management first.',
+      );
+    }
+    final ref = _db.collection('alerts').doc(event.id);
+    try {
+      await _db.runTransaction<void>((tx) async {
+        final existing = await tx.get(ref);
+        if (existing.exists) return;
+        tx.set(ref, {
+          'riderId': riderId,
+          'deviceId': event.deviceId,
+          'type': event.kind.alertType.name,
+          'severity': event.kind.severity,
+          'status': AlertStatus.open.name,
+          'timestamp': FieldValue.serverTimestamp(),
+          if (event.hasPosition) 'location': GeoPoint(event.lat!, event.lng!),
+          'source': helmetAlertSource,
+          'helmetEventAt': event.at.millisecondsSinceEpoch,
+          'helmetEventKind': event.kind.name,
+          'helmetDetail': event.detail,
+          'openedBy': actorName,
+        });
+      });
+      return event.id;
+    } on FirebaseException catch (error) {
+      debugPrint(
+        'FirestoreFleetRepository: open-as-alert refused — '
+        '${error.plugin}/${error.code}: ${error.message}',
+      );
+      if (error.code == 'permission-denied') {
+        throw const FleetWriteException(
+          'Firestore refused to open the alert. Only Super Admins and '
+          'dispatchers may, and the rules that allow dispatchers '
+          '(isOpenedFromHelmet in firestore.rules) must be deployed.',
+        );
+      }
+      throw FleetWriteException(messageForWriteCode(error.code));
+    } catch (error, stack) {
+      debugPrint('FirestoreFleetRepository: open-as-alert threw $error\n$stack');
+      throw const FleetWriteException(
+        'The alert was not created. Try again, and tell a Super Admin if it '
+        'keeps happening.',
+      );
+    }
+  }
+
+  /// `source` on an alert opened from a helmet event.
+  static const helmetAlertSource = 'helmet-rtdb';
+
   @override
   void dispose() {
     _disposed = true;
     _firstSnapshotTimer?.cancel();
+    _rtdbFirstAnswerTimer?.cancel();
+    _rtdbRefreshTimer?.cancel();
     for (final timer in _retries.values) {
       timer.cancel();
     }
@@ -1050,6 +1417,9 @@ class FirestoreFleetRepository implements FleetRepository {
     _telemetryCtrl.close();
     _alertsCtrl.close();
     _connectionCtrl.close();
+    _rtdbLinkCtrl.close();
+    _fixHistoryCtrl.close();
+    _helmetEventsCtrl.close();
   }
 }
 

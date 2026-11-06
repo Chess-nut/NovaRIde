@@ -5,8 +5,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:novaride/admin/data/mock_fleet_repository.dart';
 import 'package:novaride/admin/widgets/alert_feed_tile.dart';
+import 'package:novaride/admin/widgets/dashboard/live_fleet_map_panel.dart';
 import 'package:novaride/admin/widgets/dashboard/recent_alerts_feed_panel.dart';
+import 'package:novaride/admin/widgets/helmet_event_tile.dart';
 import 'package:novaride/main_admin.dart';
 
 /// Desktop-sized surface — the shell is designed for >= 1280px.
@@ -90,6 +93,44 @@ void main() {
     // Donut centre and map badge both count the whole mock fleet.
     expect(find.text('10'), findsOneWidget);
     expect(find.text('10 helmets'), findsOneWidget);
+    // The map is the interactive one, and says the GPS is simulated —
+    // only because this is the simulation.
+    expect(find.byKey(const ValueKey('map-fit-all')), findsOneWidget);
+    expect(find.textContaining('Simulated GPS'), findsOneWidget);
+    expect(find.textContaining('Mock basemap'), findsNothing);
+    expect(find.textContaining('Phase 5'), findsNothing);
+    // No Realtime Database behind the simulation, so no RTDB chip.
+    expect(find.textContaining('RTDB'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await _tearDownTree(tester);
+  });
+
+  test('the map badge counts helmets in the singular for one', () {
+    expect(LiveFleetMapPanel.helmetCount(0), '0 helmets');
+    expect(LiveFleetMapPanel.helmetCount(1), '1 helmet');
+    expect(LiveFleetMapPanel.helmetCount(2), '2 helmets');
+  });
+
+  testWidgets('a map marker opens a popup whose View rider lands on Rider '
+      'Monitoring with that rider selected', (tester) async {
+    await _useDesktopSurface(tester);
+    await tester.pumpWidget(const AdminApp());
+    await _signIn(tester);
+
+    final marker = find.byKey(const ValueKey('helmet-marker-R-001'));
+    expect(marker, findsOneWidget);
+    await tester.tap(marker);
+    await tester.pump();
+    await tester.tap(find.text('View rider'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // The top bar names the page; the detail card names the rider.
+    expect(find.text('Rider Monitoring'), findsWidgets);
+    expect(find.text('RIDER DETAIL'), findsOneWidget);
+    expect(find.text('Select a rider'), findsNothing);
+    expect(find.text('DIAGNOSTICS'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await _tearDownTree(tester);
@@ -282,6 +323,35 @@ void main() {
     await tester.pump(const Duration(seconds: 15));
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('5 shown'), findsNothing);
+
+    await _tearDownTree(tester);
+  });
+
+  testWidgets('a helmet-reported event is tagged unconfirmed and can be '
+      'opened as an alert', (tester) async {
+    await _useDesktopSurface(tester);
+    final repo = MockFleetRepository(simulate: false);
+    await tester.pumpWidget(AdminApp(createRepository: () => repo));
+    await _signIn(tester);
+
+    repo.debugEmitHelmetEvent();
+    await tester.pump(Duration.zero);
+    // On the dashboard feed first.
+    expect(find.text(kUnconfirmedFromHelmet), findsOneWidget);
+
+    await tester.tap(find.text('Alerts').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text(kUnconfirmedFromHelmet), findsOneWidget);
+    expect(find.text('5 shown'), findsOneWidget, reason: 'not an alert yet');
+
+    await tester.tap(find.text('Open as alert'));
+    await tester.pump(Duration.zero);
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text(kUnconfirmedFromHelmet), findsNothing);
+    expect(find.text('6 shown'), findsOneWidget);
+    expect(tester.takeException(), isNull);
 
     await _tearDownTree(tester);
   });

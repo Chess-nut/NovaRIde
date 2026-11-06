@@ -2,48 +2,47 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:novaride/core/theme/app_colors.dart';
-import 'package:novaride/core/theme/app_spacing.dart';
-import 'package:novaride/core/theme/app_typography.dart';
 import 'package:novaride/core/utils/coordinates.dart';
-import 'package:novaride/core/widgets/nova_lists.dart';
-import 'package:novaride/core/widgets/nova_surfaces.dart';
+import 'package:novaride/core/widgets/nova_lists.dart' show novaTimeAgo;
 import 'package:novaride/core/widgets/unavailable.dart';
+import 'package:novaride/shared/theme.dart';
 
 import '../../domain/entities/helmet_telemetry.dart';
 import '../providers/helmet_telemetry_provider.dart';
 
-/// "Location" — where the helmet last was, on Signal.
+/// "Location" — where the helmet last was, in the original NovaRide look.
 ///
-/// **Live.** Reads the same helmet node as Home. It used to show a
-/// scripted trip — 42 km/h heading NE on Makati Ave, ±4.8 m — over a
-/// drawn-in route.
+/// **Live.** Reads the same helmet data as Home. The old page showed a
+/// scripted trip — 42 km/h heading NE on Makati Ave, ±4.8 m.
 ///
-/// **The map is still a drawing, not tiles.** `google_maps_flutter`
-/// needs a billed key wired into native config before it renders; until
-/// then this paints a dark street grid with the helmet as a dot in the
-/// middle. Swapping the [CustomPaint] for a `GoogleMap` centred on
-/// [HelmetTelemetry.lat]/[HelmetTelemetry.lng] is the drop-in upgrade.
+/// **Speed sits on the map**, as a round speedometer where the old
+/// "follow me" button was, so it can be read at a glance without looking
+/// at the sheet. It shows only while the helmet is live and its fix is
+/// current; an old speed shown as current is worse than none.
 ///
-/// What is gone, because nothing measured it: the heading arrow (the
-/// firmware sends no heading), the accuracy figure (no HDOP), the route
-/// trail, and the "follow me" toggle, which had nothing to follow.
-/// "Share" now really copies a link.
+/// **Gone, because nothing measures them:** heading (the firmware sends
+/// none), accuracy (no HDOP), the route trail, the street address and the
+/// follow toggle. In their place the sheet shows what the GPS does send:
+/// satellites in view, whether the fix is current, and when it was taken.
+///
+/// **The map is still a drawing, not tiles.** `google_maps_flutter` needs
+/// a billed key wired into native config first; swapping the
+/// [CustomPaint] for a `GoogleMap` centred on [HelmetTelemetry.lat] /
+/// [HelmetTelemetry.lng] is the drop-in upgrade.
 class GpsMapPage extends ConsumerWidget {
   const GpsMapPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.colors;
     final now = ref.watch(helmetClockProvider).value ?? DateTime.now();
-    final telemetryAsync = ref.watch(helmetTelemetryProvider);
-    final t = telemetryAsync.value;
+    final t = ref.watch(helmetTelemetryProvider).value;
     final live =
         t != null && t.online == true && t.isFresh(now, helmetStaleAfter);
     final hasPosition = t?.lat != null && t?.lng != null;
+    final speed = live ? t?.currentSpeedKmph(now) : null;
 
     return Scaffold(
-      backgroundColor: colors.surface,
+      backgroundColor: NovaColors.background,
       body: Stack(
         children: [
           Positioned.fill(
@@ -52,23 +51,24 @@ class GpsMapPage extends ConsumerWidget {
                   ? 'Map with the helmet\'s last position at the centre'
                   : 'Map with no position yet',
               child: CustomPaint(
-                painter: _MapPainter(
-                  showMarker: hasPosition,
-                  grid: colors.border,
-                  avenue: colors.borderStrong,
-                  ground: colors.surfaceSunken,
-                  marker: live ? colors.riding : colors.offline,
-                  markerRing: colors.surface,
-                ),
+                painter: _MapPainter(showMarker: hasPosition, live: live),
               ),
             ),
           ),
           SafeArea(
             child: Column(
               children: [
-                _TopBar(telemetry: t, live: live, now: now),
+                _Header(telemetry: t, live: live, now: now),
                 const Spacer(),
-                _DetailsSheet(telemetry: t, live: live, now: now),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 16),
+                    child: _Speedometer(speed: speed, live: live),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _BottomSheet(telemetry: t, now: now),
               ],
             ),
           ),
@@ -78,9 +78,9 @@ class GpsMapPage extends ConsumerWidget {
   }
 }
 
-/// Back, and how fresh the position is, over the map.
-class _TopBar extends StatelessWidget {
-  const _TopBar({
+/// Back, how fresh the position is, and LIVE / OFFLINE.
+class _Header extends StatelessWidget {
+  const _Header({
     required this.telemetry,
     required this.live,
     required this.now,
@@ -92,7 +92,6 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final t = telemetry;
     final taken = t?.positionAt;
     final label = t?.lat == null
@@ -100,44 +99,65 @@ class _TopBar extends StatelessWidget {
         : taken == null
         ? 'Last known position'
         : 'Fix taken ${novaTimeAgo(taken, now)}';
+    final stateColor = live ? NovaColors.green : NovaColors.secondaryText;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.sm,
-        kRiderGutter,
-        0,
-      ),
+      padding: const EdgeInsets.fromLTRB(12, 8, 16, 0),
       child: Row(
         children: [
-          IconButton(
-            tooltip: 'Back',
-            onPressed: () => Navigator.of(context).maybePop(),
-            style: IconButton.styleFrom(
-              backgroundColor: colors.surfaceRaised,
-              fixedSize: const Size.square(AppSizes.minTouchTarget),
+          Material(
+            color: NovaColors.card.withValues(alpha: 0.92),
+            shape: const CircleBorder(
+              side: BorderSide(color: NovaColors.cardBorder),
             ),
-            icon: Icon(Icons.arrow_back, color: colors.textPrimary),
+            child: IconButton(
+              tooltip: 'Back',
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(
+                Icons.arrow_back,
+                color: NovaColors.primaryText,
+                size: 20,
+              ),
+            ),
           ),
-          const SizedBox(width: AppSpacing.md),
+          const SizedBox(width: 12),
           Expanded(
-            child: NovaCard(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg,
-                vertical: AppSpacing.md,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: NovaColors.card.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: NovaColors.cardBorder),
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.location_on_outlined,
-                    size: 18,
-                    color: colors.textSecondary,
+                  const Icon(
+                    Icons.location_on,
+                    color: NovaColors.cyan,
+                    size: 16,
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(child: Text(label, style: context.text.label)),
-                  NovaPill(
-                    label: live ? 'Live' : 'Offline',
-                    tone: live ? NovaTone.safe : NovaTone.offline,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: NovaColors.primaryText,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Icon(Icons.circle, color: stateColor, size: 7),
+                  const SizedBox(width: 5),
+                  Text(
+                    live ? 'LIVE' : 'OFFLINE',
+                    style: TextStyle(
+                      color: stateColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                    ),
                   ),
                 ],
               ),
@@ -149,101 +169,193 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-/// Speed, satellites, coordinates, and a link to share.
-class _DetailsSheet extends StatelessWidget {
-  const _DetailsSheet({
-    required this.telemetry,
-    required this.live,
-    required this.now,
-  });
+/// The current speed, on the map. A dash when there is no current one.
+class _Speedometer extends StatelessWidget {
+  const _Speedometer({required this.speed, required this.live});
+
+  final double? speed;
+  final bool live;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = speed;
+    final ring = value != null ? NovaColors.cyan : NovaColors.cardBorder;
+
+    return Semantics(
+      label: value == null
+          ? 'Speed unavailable'
+          : 'Speed ${value.toStringAsFixed(0)} kilometres per hour',
+      excludeSemantics: true,
+      child: Container(
+        width: 92,
+        height: 92,
+        decoration: BoxDecoration(
+          color: NovaColors.card.withValues(alpha: 0.95),
+          shape: BoxShape.circle,
+          border: Border.all(color: ring, width: 3),
+          boxShadow: value != null
+              ? [
+                  BoxShadow(
+                    color: NovaColors.cyan.withValues(alpha: 0.35),
+                    blurRadius: 16,
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              value == null ? Unavailable.dash : value.toStringAsFixed(0),
+              style: TextStyle(
+                color: value == null
+                    ? NovaColors.secondaryText
+                    : NovaColors.primaryText,
+                fontSize: 30,
+                fontWeight: FontWeight.w800,
+                height: 1.05,
+              ),
+            ),
+            const Text(
+              'km/h',
+              style: TextStyle(
+                color: NovaColors.secondaryText,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What the GPS sends — satellites, fix, when — then coordinates and a
+/// link to share.
+class _BottomSheet extends StatelessWidget {
+  const _BottomSheet({required this.telemetry, required this.now});
 
   final HelmetTelemetry? telemetry;
-  final bool live;
   final DateTime now;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final t = telemetry;
     final lat = t?.lat;
     final lng = t?.lng;
-    // An old speed shown as current is worse than none.
-    final speed = live ? t?.currentSpeedKmph(now) : null;
-    final satellites = t?.satellites;
+    final taken = t?.positionAt;
+    final current = t?.hasUsableFix == null ? null : t!.hasCurrentFix(now);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        kRiderGutter,
-        AppSpacing.xl,
-        kRiderGutter,
-        AppSpacing.xl,
-      ),
-      decoration: BoxDecoration(
-        color: colors.surfaceRaised,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(AppRadius.lg),
-        ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      decoration: const BoxDecoration(
+        color: NovaColors.card,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: NovaColors.cardBorder)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: NovaColors.cardBorder,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
-                child: _Stat(
-                  label: 'Speed',
-                  value: speed?.toStringAsFixed(0),
-                  unit: 'km/h',
+                child: _HudStat(
+                  icon: Icons.satellite_alt_outlined,
+                  color: NovaColors.purple,
+                  value: t?.satellites?.toString(),
+                  label: 'SATELLITES',
                 ),
               ),
               Expanded(
-                child: _Stat(
-                  label: 'Satellites',
-                  value: satellites?.toString(),
-                ),
-              ),
-              Expanded(
-                child: _Stat(
-                  label: 'Fix',
-                  value: switch (t?.hasUsableFix == null
-                      ? null
-                      : t!.hasCurrentFix(now)) {
+                child: _HudStat(
+                  icon: Icons.gps_fixed,
+                  color: current == true ? NovaColors.green : NovaColors.amber,
+                  value: switch (current) {
                     true => 'Current',
                     false => 'Old',
                     null => null,
                   },
+                  label: 'FIX',
+                ),
+              ),
+              Expanded(
+                child: _HudStat(
+                  icon: Icons.schedule,
+                  color: NovaColors.cyan,
+                  value: taken == null ? null : novaTimeAgo(taken, now),
+                  label: 'FIX TAKEN',
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
-          Divider(height: 1, color: colors.border),
-          const SizedBox(height: AppSpacing.sm),
-          NovaValueRow(
-            label: 'Latitude',
-            value: lat == null ? Unavailable.dash : formatLatitude(lat),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: NovaColors.background,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: NovaColors.cardBorder),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _CoordLabel(
+                    label: 'LATITUDE',
+                    value: lat == null ? Unavailable.dash : formatLatitude(lat),
+                  ),
+                ),
+                Container(width: 1, height: 32, color: NovaColors.cardBorder),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _CoordLabel(
+                    label: 'LONGITUDE',
+                    value: lng == null
+                        ? Unavailable.dash
+                        : formatLongitude(lng),
+                  ),
+                ),
+              ],
+            ),
           ),
-          NovaValueRow(
-            label: 'Longitude',
-            value: lng == null ? Unavailable.dash : formatLongitude(lng),
-          ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: 14),
           SizedBox(
-            height: AppSizes.buttonHeight,
+            height: 48,
             child: OutlinedButton.icon(
               onPressed: lat == null || lng == null
                   ? null
                   : () => _copyLink(context, t?.mapsUrl, lat, lng),
               style: OutlinedButton.styleFrom(
-                foregroundColor: colors.textPrimary,
-                side: BorderSide(color: colors.borderStrong),
-                shape: const StadiumBorder(),
-                textStyle: AppTypography.title,
+                side: BorderSide(
+                  color: lat == null ? NovaColors.cardBorder : NovaColors.cyan,
+                ),
+                foregroundColor: NovaColors.cyan,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
-              icon: const Icon(Icons.link, size: 20),
-              label: const Text('Copy map link'),
+              icon: const Icon(Icons.share_location_outlined, size: 18),
+              label: const Text(
+                'COPY MAP LINK',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                ),
+              ),
             ),
           ),
         ],
@@ -253,89 +365,138 @@ class _DetailsSheet extends StatelessWidget {
 
   /// The firmware's own Google Maps link when it sent one, else one built
   /// from the coordinates.
-  Future<void> _copyLink(
+  void _copyLink(
     BuildContext context,
     String? mapsUrl,
     double lat,
     double lng,
-  ) async {
+  ) {
     final messenger = ScaffoldMessenger.of(context);
     final link = (mapsUrl != null && mapsUrl.isNotEmpty)
         ? mapsUrl
         : 'https://maps.google.com/?q=$lat,$lng';
-    await Clipboard.setData(ClipboardData(text: link));
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(content: Text('Map link copied. Paste it to share.')),
-      );
+    // A void seam: the tap never holds the Future.
+    Clipboard.setData(ClipboardData(text: link))
+        .then((_) {
+          messenger
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(
+                backgroundColor: NovaColors.card,
+                behavior: SnackBarBehavior.floating,
+                content: Text(
+                  'Map link copied. Paste it to share.',
+                  style: TextStyle(color: NovaColors.primaryText),
+                ),
+              ),
+            );
+        })
+        .catchError((Object _) {
+          messenger.showSnackBar(
+            const SnackBar(content: Text('Couldn\'t copy the link.')),
+          );
+        });
   }
 }
 
-class _Stat extends StatelessWidget {
-  const _Stat({required this.label, required this.value, this.unit});
+class _HudStat extends StatelessWidget {
+  const _HudStat({
+    required this.icon,
+    required this.color,
+    required this.value,
+    required this.label,
+  });
 
-  final String label;
+  final IconData icon;
+  final Color color;
 
   /// Null is no reading: a dash.
   final String? value;
-  final String? unit;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: context.text.labelMuted),
+        Icon(icon, color: value == null ? NovaColors.secondaryText : color, size: 18),
+        const SizedBox(height: 6),
+        Text(
+          value ?? Unavailable.dash,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: value == null
+                ? NovaColors.secondaryText
+                : NovaColors.primaryText,
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
         const SizedBox(height: 2),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(
-              value ?? Unavailable.dash,
-              style: context.text.h1.copyWith(
-                color: value == null
-                    ? colors.textSecondary
-                    : colors.textPrimary,
-              ),
-            ),
-            if (unit != null && value != null) ...[
-              const SizedBox(width: AppSpacing.xs),
-              Text(unit!, style: context.text.caption),
-            ],
-          ],
+        Text(
+          label,
+          style: const TextStyle(
+            color: NovaColors.secondaryText,
+            fontSize: 12,
+            letterSpacing: 0.6,
+          ),
         ),
       ],
     );
   }
 }
 
-/// A dark street grid with the helmet as a dot at the centre.
+class _CoordLabel extends StatelessWidget {
+  const _CoordLabel({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: NovaColors.secondaryText,
+            fontSize: 12,
+            letterSpacing: 0.6,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(
+            color: NovaColors.primaryText,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The old dark street grid, with the helmet as a dot at the centre —
+/// cyan while live, grey when the position is only the last known one.
+/// No heading arrow and no trail: nothing measures either.
 class _MapPainter extends CustomPainter {
-  _MapPainter({
-    required this.showMarker,
-    required this.grid,
-    required this.avenue,
-    required this.ground,
-    required this.marker,
-    required this.markerRing,
-  });
+  _MapPainter({required this.showMarker, required this.live});
 
   final bool showMarker;
-  final Color grid;
-  final Color avenue;
-  final Color ground;
-  final Color marker;
-  final Color markerRing;
+  final bool live;
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = ground);
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xFF0D1220),
+    );
 
     final minor = Paint()
-      ..color = grid
+      ..color = NovaColors.cardBorder.withValues(alpha: 0.5)
       ..strokeWidth = 1;
     for (double x = 0; x < size.width; x += 46) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), minor);
@@ -345,8 +506,8 @@ class _MapPainter extends CustomPainter {
     }
 
     final major = Paint()
-      ..color = avenue
-      ..strokeWidth = 3;
+      ..color = NovaColors.cardBorder
+      ..strokeWidth = 2.5;
     canvas.drawLine(
       Offset(0, size.height * 0.38),
       Offset(size.width, size.height * 0.38),
@@ -357,22 +518,22 @@ class _MapPainter extends CustomPainter {
       Offset(size.width * 0.62, size.height),
       major,
     );
+    canvas.drawLine(
+      Offset(0, size.height * 0.85),
+      Offset(size.width, size.height * 0.15),
+      major,
+    );
 
     if (!showMarker) return;
+    final marker = live ? NovaColors.cyan : NovaColors.secondaryText;
     final centre = Offset(size.width / 2, size.height * 0.4);
-    canvas.drawCircle(
-      centre,
-      28,
-      Paint()..color = marker.withValues(alpha: 0.18),
-    );
-    canvas.drawCircle(centre, 11, Paint()..color = markerRing);
+    canvas.drawCircle(centre, 34, Paint()..color = marker.withValues(alpha: 0.12));
+    canvas.drawCircle(centre, 22, Paint()..color = marker.withValues(alpha: 0.15));
+    canvas.drawCircle(centre, 11, Paint()..color = NovaColors.background);
     canvas.drawCircle(centre, 8, Paint()..color = marker);
   }
 
   @override
   bool shouldRepaint(covariant _MapPainter old) =>
-      old.showMarker != showMarker ||
-      old.marker != marker ||
-      old.grid != grid ||
-      old.ground != ground;
+      old.showMarker != showMarker || old.live != live;
 }

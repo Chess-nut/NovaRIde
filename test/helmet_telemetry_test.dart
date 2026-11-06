@@ -133,21 +133,26 @@ void main() {
         ),
       );
 
-      expect(find.text('Helmet connected'), findsOneWidget);
-      expect(find.text('1.01'), findsOneWidget);
-      expect(find.text('g'), findsOneWidget);
+      expect(find.text('Connected'), findsOneWidget);
+      expect(find.text('1.01 g'), findsOneWidget);
       expect(find.text('512'), findsOneWidget);
-      expect(find.text('raw index'), findsOneWidget);
-      // The helmet's own verdict, sent as alcoholAlert: false.
-      expect(find.text('Below threshold'), findsOneWidget);
+      expect(find.text('RAW ALCOHOL INDEX'), findsOneWidget);
       expect(find.textContaining('%'), findsNothing);
       // No position on this node: not "No fix", which would be a claim.
-      expect(find.text('No fix'), findsNothing);
-      expect(find.text('No reading'), findsNWidgets(2)); // posture, location
-      // The status pill, and impact's status line.
-      expect(find.text('Live'), findsNWidgets(2));
-      // Posture, location and speed have nothing behind them.
-      expect(find.text(Unavailable.dash), findsNWidgets(3));
+      expect(find.text('NO FIX'), findsNothing);
+      expect(find.text('NO READING'), findsOneWidget); // location
+      // Impact's and alcohol's status lines.
+      expect(find.text('LIVE'), findsNWidgets(2));
+      // Live and fine: no banner under the rider card.
+      expect(find.textContaining('Helmet offline'), findsNothing);
+      // Location and speed have nothing behind them.
+      expect(find.text(Unavailable.dash), findsNWidgets(2));
+      // Gone for good: tiles that could only ever be dashes.
+      expect(find.text('BATTERY'), findsNothing);
+      expect(find.text('HARDWARE'), findsNothing);
+      expect(find.text('SIGNAL'), findsNothing);
+      expect(find.text('CURRENT TRIP'), findsNothing);
+      expect(find.text('CURRENT SPEED'), findsOneWidget);
     });
 
     testWidgets('a missing alcohol index is a dash, never 0', (tester) async {
@@ -159,8 +164,8 @@ void main() {
 
       expect(find.text('0'), findsNothing);
       expect(find.text('Below threshold'), findsNothing);
-      // Alcohol, posture, location.
-      expect(find.text('No reading'), findsNWidgets(3));
+      // Alcohol and location.
+      expect(find.text('NO READING'), findsNWidgets(2));
     });
 
     testWidgets('the device alert takes over the status card', (tester) async {
@@ -173,9 +178,11 @@ void main() {
           }),
         ),
       );
+      // The pill, the banner, and the tile's own status line.
       expect(find.text('Alcohol detected'), findsOneWidget);
-      expect(find.text('Above threshold'), findsOneWidget);
-      expect(find.text('Helmet connected'), findsNothing);
+      expect(find.textContaining('Please don\'t ride'), findsOneWidget);
+      expect(find.text('ALERT'), findsOneWidget);
+      expect(find.text('Connected'), findsNothing);
     });
 
     testWidgets('a quiet helmet is offline even though it says online', (
@@ -189,19 +196,20 @@ void main() {
         FakeHelmetTelemetryRepository(telemetry: HelmetTelemetry.fromMap(node)),
       );
 
-      expect(find.text('Helmet offline'), findsOneWidget);
+      expect(find.textContaining('Helmet offline · last report'), findsOneWidget);
       expect(find.text('Offline'), findsOneWidget);
-      expect(find.text('Helmet connected'), findsNothing);
-      expect(find.text('Stale'), findsNWidgets(2)); // impact, alcohol
-      expect(find.text('Live'), findsNothing);
+      expect(find.text('Connected'), findsNothing);
+      expect(find.text('STALE'), findsNWidgets(2)); // impact, alcohol
+      expect(find.text('LIVE'), findsNothing);
       // An old verdict is not repeated as if it were current.
       expect(find.text('Below threshold'), findsNothing);
     });
 
     testWidgets('nothing at that id is "No helmet"', (tester) async {
       await showHome(tester, FakeHelmetTelemetryRepository());
-      // The status card, and each of the four sensors.
-      expect(find.text('No helmet'), findsNWidgets(5));
+      // The pill, then each of the three sensors.
+      expect(find.text('No helmet'), findsOneWidget);
+      expect(find.text('NO HELMET'), findsNWidgets(3));
     });
 
     testWidgets('before the first snapshot it says so', (tester) async {
@@ -212,8 +220,8 @@ void main() {
         FakeHelmetTelemetryRepository.controlled(controller),
       );
 
-      expect(find.text('Connecting to helmet…'), findsOneWidget);
-      expect(find.text('Connecting…'), findsNWidgets(4));
+      expect(find.text('Connecting…'), findsOneWidget);
+      expect(find.text('CONNECTING…'), findsNWidgets(3));
     });
 
     testWidgets('a stream error shows its sentence, not a number', (
@@ -229,12 +237,12 @@ void main() {
       controller.addError(const PermissionFailure('Not allowed to read.'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Can\'t reach helmet data'), findsOneWidget);
       expect(find.text('Not allowed to read.'), findsOneWidget);
       expect(find.text('Retry'), findsOneWidget);
-      expect(find.text('Error'), findsNWidgets(4));
-      // Four sensors and the speed.
-      expect(find.text(Unavailable.dash), findsNWidgets(5));
+      expect(find.text('Error'), findsOneWidget);
+      expect(find.text('ERROR'), findsNWidgets(3));
+      // Three sensors and the speed.
+      expect(find.text(Unavailable.dash), findsNWidgets(4));
     });
 
     // Signal's smallest step is the 12px caption. The old home went down

@@ -201,10 +201,10 @@ void main() {
         ),
       );
 
-      expect(find.text('71°'), findsOneWidget); // safety's tilt, rounded
-      expect(find.text('174'), findsOneWidget);
-      expect(find.text('Last fix'), findsOneWidget);
-      expect(find.text('Last known'), findsOneWidget);
+      expect(find.text('174'), findsOneWidget); // safety's reading
+      expect(find.text('GPS'), findsOneWidget);
+      expect(find.text('LAST KNOWN'), findsOneWidget);
+      expect(find.textContaining('Helmet offline · last report'), findsOneWidget);
       expect(find.text('Speed shows only while the helmet is live.'), findsOneWidget);
     });
 
@@ -228,8 +228,8 @@ void main() {
       );
 
       expect(find.text('32'), findsOneWidget); // 32.4 km/h, rounded
-      expect(find.text('Fix'), findsOneWidget);
-      expect(find.text('8 satellites'), findsOneWidget);
+      expect(find.text('FIX'), findsOneWidget);
+      expect(find.text('Connected'), findsOneWidget);
       expect(find.text('From the helmet\'s GPS.'), findsOneWidget);
     });
 

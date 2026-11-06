@@ -72,9 +72,10 @@ void main() {
       await signedInAt(tester, '/rider');
 
       expect(find.byType(HomePage), findsOneWidget);
-      // First name only: the full name and @username live on Profile.
-      expect(find.text('Hi, Juan'), findsOneWidget);
-      expect(find.text('Hi, Deor'), findsNothing);
+      expect(find.text('Juan Dela Cruz'), findsOneWidget);
+      expect(find.text('@juandc'), findsOneWidget);
+      // First and last word, so "Juan Dela Cruz" is JC and not JD.
+      expect(find.text('JC'), findsOneWidget);
     });
 
     testWidgets('invents no telemetry', (tester) async {
@@ -83,23 +84,26 @@ void main() {
       for (final text in fabricated) {
         expect(find.text(text), findsNothing, reason: 'still showing "$text"');
       }
-      // Five readings with nothing behind them: alcohol, posture, impact,
+      // Four readings with nothing behind them: impact, alcohol,
       // location and speed. Battery, hardware, signal, distance and
       // duration are gone from the screen rather than dashed: nothing
       // will ever fill them.
-      expect(find.text(Unavailable.dash), findsNWidgets(5));
+      expect(find.text(Unavailable.dash), findsNWidgets(4));
+      expect(find.text('BATTERY'), findsNothing);
     });
 
     testWidgets('says plainly that no helmet is paired', (tester) async {
       await signedInAt(tester, '/rider');
-      // The status card, and each of the four sensors.
-      expect(find.text('No helmet'), findsNWidgets(5));
+      // The pill, and each of the three sensors.
+      expect(find.text('No helmet'), findsOneWidget);
+      expect(find.text('NO HELMET'), findsNWidgets(3));
       expect(
         find.text('Speed shows only while the helmet is live.'),
         findsOneWidget,
       );
       // A green "Live" over a row of em dashes was the contradiction.
-      expect(find.text('Live'), findsNothing);
+      expect(find.text('LIVE'), findsNothing);
+      expect(find.text('Connected'), findsNothing);
     });
   });
 

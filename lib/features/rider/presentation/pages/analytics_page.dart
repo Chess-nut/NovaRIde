@@ -1,101 +1,95 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:novaride/core/theme/app_colors.dart';
-import 'package:novaride/core/theme/app_spacing.dart';
-import 'package:novaride/core/theme/app_typography.dart';
-import 'package:novaride/core/widgets/nova_lists.dart';
-import 'package:novaride/core/widgets/nova_surfaces.dart';
+import 'package:novaride/shared/theme.dart';
 
 import '../../domain/entities/rider_alert.dart';
 import '../providers/rider_alerts_provider.dart';
 import '../widgets/nova_bottom_nav_bar.dart';
+import '../widgets/nova_classic.dart';
 import '../widgets/rider_alert_tile.dart';
 
-/// "Analytics" — what the helmet has recorded about this rider.
+/// "Analytics & History", in the original NovaRide look.
 ///
-/// Everything here now comes from `alerts/`. It used to show a week of
-/// impact readings, three May 2026 alerts on EDSA and Makati Avenue, a
-/// safety score of 92 "+5 this week" and two "frequent routes" — none of
-/// it recorded anywhere.
+/// Everything shown comes from `alerts/`. The old page's impact chart,
+/// safety score of 92 and "most frequent routes" were invented; they need
+/// recorded rides, which NovaRide does not keep yet, so one card says so.
 ///
 /// The counts are of the alerts the app loads, which the repository caps
 /// at the newest 20 — so the card says "latest", not "all time".
-///
-/// Impact trends, a score and routes need rides to be recorded, and they
-/// are not; one card says so instead of three charts pretending.
 class AnalyticsPage extends ConsumerWidget {
   const AnalyticsPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.colors;
     final linked = ref.watch(linkedRiderProvider).value;
     final alertsAsync = ref.watch(riderAlertsProvider);
     final alerts = alertsAsync.value ?? const <RiderAlert>[];
 
     return Scaffold(
-      backgroundColor: colors.surface,
+      backgroundColor: NovaColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.only(bottom: AppSpacing.xl),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const NovaScreenHeader(
-                title: 'Analytics',
-                subtitle: 'What your helmet has recorded',
+              const ClassicHeader(
+                title: 'Analytics & History',
+                subtitle: 'Your riding insights',
                 showBack: false,
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: kRiderGutter),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const SizedBox(height: AppSpacing.sm),
-                    if (alerts.isNotEmpty) ...[
-                      _Summary(alerts: alerts),
-                      const SizedBox(height: AppSpacing.xxl),
+              const SizedBox(height: 24),
+              if (alerts.isNotEmpty) ...[
+                _Summary(alerts: alerts),
+                const SizedBox(height: 24),
+              ],
+              const ClassicSectionTitle('Alert History'),
+              const SizedBox(height: 14),
+              if (alertsAsync.hasError)
+                const ClassicNotice(
+                  icon: Icons.error_outline,
+                  color: NovaColors.red,
+                  text:
+                      'Couldn\'t load your alerts. They\'ll appear here once '
+                      'the connection is back.',
+                )
+              else if (alerts.isEmpty)
+                ClassicNotice(
+                  icon: Icons.verified_user_outlined,
+                  color: NovaColors.green,
+                  title: 'No alerts recorded',
+                  text: linked == null
+                      ? 'Your history appears once operations links your '
+                            'account to your helmet.'
+                      : 'No crash, SOS or alcohol alert so far.',
+                )
+              else
+                ClassicCard(
+                  padding: const EdgeInsets.all(6),
+                  child: Column(
+                    children: [
+                      for (var i = 0; i < alerts.length; i++) ...[
+                        if (i > 0)
+                          const Divider(
+                            height: 1,
+                            color: NovaColors.cardBorder,
+                          ),
+                        ClassicAlertLine(alert: alerts[i]),
+                      ],
                     ],
-                    const NovaSectionLabel('Alert history'),
-                    const SizedBox(height: AppSpacing.md),
-                    if (alertsAsync.hasError)
-                      const NovaNote(
-                        tone: NovaTone.critical,
-                        icon: Icons.error_outline,
-                        text:
-                            'Couldn\'t load your alerts. They\'ll appear here '
-                            'once the connection is back.',
-                      )
-                    else if (alerts.isEmpty)
-                      NovaEmptyState(
-                        icon: Icons.verified_user_outlined,
-                        title: 'No alerts recorded',
-                        message: linked == null
-                            ? 'Your history appears once operations links your '
-                                  'account to your helmet.'
-                            : 'No crash, SOS or alcohol alert so far.',
-                      )
-                    else
-                      NovaListGroup(
-                        children: [
-                          for (final alert in alerts)
-                            RiderAlertRow(alert: alert),
-                        ],
-                      ),
-                    const SizedBox(height: AppSpacing.xxl),
-                    const NovaSectionLabel('Ride insights'),
-                    const SizedBox(height: AppSpacing.md),
-                    const NovaEmptyState(
-                      icon: Icons.insights_outlined,
-                      title: 'Needs recorded rides',
-                      message:
-                          'Impact trends, a safety score and your usual '
-                          'routes will appear once NovaRide records your '
-                          'rides. It doesn\'t yet.',
-                    ),
-                  ],
+                  ),
                 ),
+              const SizedBox(height: 24),
+              const ClassicSectionTitle('Ride Insights'),
+              const SizedBox(height: 14),
+              const ClassicNotice(
+                icon: Icons.insights_outlined,
+                color: NovaColors.cyan,
+                title: 'Needs recorded rides',
+                text:
+                    'Impact trends, a safety score and your usual routes will '
+                    'appear once NovaRide records your rides. It doesn\'t yet.',
               ),
             ],
           ),
@@ -114,11 +108,7 @@ class _Summary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    int count(bool Function(RiderAlert) test) => alerts.where(test).length;
-
-    final crashes = count((a) => a.type == 'crash');
-    final sos = count((a) => a.type == 'sos');
-    final alcohol = count((a) => a.type == 'alcoholWarning');
+    int count(String type) => alerts.where((a) => a.type == type).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,23 +116,35 @@ class _Summary extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: _Count(value: crashes, label: 'Crashes'),
+              child: _Count(
+                value: count('crash'),
+                label: 'CRASHES',
+                color: NovaColors.red,
+              ),
             ),
-            const SizedBox(width: AppSpacing.md),
+            const SizedBox(width: 10),
             Expanded(
-              child: _Count(value: sos, label: 'SOS'),
+              child: _Count(
+                value: count('sos'),
+                label: 'SOS',
+                color: NovaColors.pink,
+              ),
             ),
-            const SizedBox(width: AppSpacing.md),
+            const SizedBox(width: 10),
             Expanded(
-              child: _Count(value: alcohol, label: 'Alcohol'),
+              child: _Count(
+                value: count('alcoholWarning'),
+                label: 'ALCOHOL',
+                color: NovaColors.amber,
+              ),
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: 8),
         Text(
           'From your latest ${alerts.length} '
           '${alerts.length == 1 ? 'alert' : 'alerts'}.',
-          style: context.text.caption,
+          style: const TextStyle(color: NovaColors.secondaryText, fontSize: 12),
         ),
       ],
     );
@@ -150,20 +152,38 @@ class _Summary extends StatelessWidget {
 }
 
 class _Count extends StatelessWidget {
-  const _Count({required this.value, required this.label});
+  const _Count({required this.value, required this.label, required this.color});
 
   final int value;
   final String label;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    return NovaCard(
+    return ClassicCard(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$value', style: context.text.h1),
-          const SizedBox(height: 2),
-          Text(label, style: context.text.labelMuted),
+          Text(
+            '$value',
+            style: TextStyle(
+              color: color,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: NovaColors.secondaryText,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
         ],
       ),
     );
